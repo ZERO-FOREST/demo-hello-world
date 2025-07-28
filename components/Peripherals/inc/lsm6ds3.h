@@ -24,10 +24,9 @@ extern "C" {
 #define LSM6DS3_I2C_SDA_PIN        21          // I2C SDA引脚
 #define LSM6DS3_I2C_SCL_PIN        22          // I2C SCL引脚
 #define LSM6DS3_I2C_FREQ_HZ        400000      // I2C频率 400kHz
-#define LSM6DS3_I2C_PORT            I2C_NUM_0   // I2C端口
+#define LSM6DS3_I2C_PORT           I2C_NUM_0   // I2C端口
 
-// SPI模式配置 (如果使用SPI) - 注意：与ST7789冲突，建议使用I2C
-#define LSM6DS3_SPI_HOST            SPI3_HOST   // 使用SPI3避免与ST7789冲突
+#define LSM6DS3_SPI_HOST           SPI3_HOST   // 使用SPI3
 #define LSM6DS3_SPI_MOSI_PIN       35          // 使用不同引脚避免冲突
 #define LSM6DS3_SPI_MISO_PIN       37
 #define LSM6DS3_SPI_SCLK_PIN       36
