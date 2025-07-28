@@ -1,0 +1,377 @@
+#include "task_init.h"
+#include "esp_log.h"
+#include "esp_system.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
+// 引入各模块头文件
+#include "lvgl_main.h"
+#include "power_management.h"
+#include "ws2812.h"
+
+static const char *TAG = "TASK_INIT";
+
+// 任务句柄存储
+static TaskHandle_t s_lvgl_task_handle = NULL;
+static TaskHandle_t s_power_task_handle = NULL;
+static TaskHandle_t s_ws2812_task_handle = NULL;
+static TaskHandle_t s_monitor_task_handle = NULL;
+
+// WS2812演示任务
+static void ws2812_demo_task(void *pvParameters) {
+    ESP_LOGI(TAG, "WS2812 Demo Task started on core %d", xPortGetCoreID());
+    
+    // 初始化WS2812
+    esp_err_t ret = ws2812_init(8);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "WS2812 init failed: %s", esp_err_to_name(ret));
+        vTaskDelete(NULL);
+        return;
+    }
+    
+    ESP_LOGI(TAG, "WS2812 initialized with %d LEDs on GPIO48", ws2812_get_led_count());
+    
+    uint32_t demo_cycle = 0;
+    
+    while (1) {
+        demo_cycle++;
+        ESP_LOGI(TAG, "Demo cycle: %lu", demo_cycle);
+        
+        // 演示1: 基础颜色循环
+        ESP_LOGI(TAG, "Demo 1: Basic Colors");
+        ws2812_color_t colors[] = {
+            WS2812_COLOR_RED,
+            WS2812_COLOR_GREEN,
+            WS2812_COLOR_BLUE,
+            WS2812_COLOR_YELLOW,
+            WS2812_COLOR_CYAN,
+            WS2812_COLOR_MAGENTA,
+            WS2812_COLOR_WHITE,
+            WS2812_COLOR_ORANGE
+        };
+        
+        for (int i = 0; i < 8; i++) {
+            ws2812_set_pixel(i, colors[i]);
+        }
+        ws2812_refresh();
+        vTaskDelay(pdMS_TO_TICKS(3000));
+        
+        // 演示2: 彩虹效果
+        ESP_LOGI(TAG, "Demo 2: Rainbow Effect");
+        for (int i = 0; i < 30; i++) {
+            ws2812_effect_rainbow(255, 150);
+        }
+        
+        // 演示3: 呼吸灯效果
+        ESP_LOGI(TAG, "Demo 3: Breathing Effect");
+        ws2812_color_t breathing_color = WS2812_COLOR_BLUE;
+        for (int i = 0; i < 20; i++) {
+            ws2812_effect_breathing(breathing_color, 3000);
+        }
+        
+        // 演示4: 追逐效果
+        ESP_LOGI(TAG, "Demo 4: Chase Effect");
+        ws2812_color_t chase_color = WS2812_COLOR_GREEN;
+        for (int i = 0; i < 24; i++) {
+            ws2812_effect_chase(chase_color, 3, 250);
+        }
+        
+        // 演示5: 火焰效果
+        ESP_LOGI(TAG, "Demo 5: Fire Effect");
+        for (int i = 0; i < 30; i++) {
+            ws2812_fire_effect(200);
+        }
+        
+        // 演示6: 预设场景
+        ESP_LOGI(TAG, "Demo 6: Preset Scenes");
+        
+        ws2812_scene_christmas();
+        vTaskDelay(pdMS_TO_TICKS(2000));
+        
+        ws2812_scene_party();
+        vTaskDelay(pdMS_TO_TICKS(2000));
+        
+        ws2812_scene_relax();
+        vTaskDelay(pdMS_TO_TICKS(2000));
+        
+        ws2812_scene_focus();
+        vTaskDelay(pdMS_TO_TICKS(2000));
+        
+        // 演示7: 亮度控制
+        ESP_LOGI(TAG, "Demo 7: Brightness Control");
+        ws2812_color_t white = WS2812_COLOR_WHITE;
+        ws2812_set_all(white);
+        
+        // 亮度渐变: 100% -> 20% -> 100%
+        for (int brightness = 255; brightness >= 50; brightness -= 10) {
+            ws2812_set_brightness(brightness);
+            ws2812_set_all(white);
+            ws2812_refresh();
+            vTaskDelay(pdMS_TO_TICKS(100));
+        }
+        
+        for (int brightness = 50; brightness <= 255; brightness += 10) {
+            ws2812_set_brightness(brightness);
+            ws2812_set_all(white);
+            ws2812_refresh();
+            vTaskDelay(pdMS_TO_TICKS(100));
+        }
+        
+        // 关闭所有LED
+        ws2812_clear_all();
+        ws2812_refresh();
+        
+        ESP_LOGI(TAG, "Demo cycle %lu completed, waiting before next cycle...", demo_cycle);
+        vTaskDelay(pdMS_TO_TICKS(3000));
+    }
+}
+
+// 电源管理任务包装
+static void power_management_task(void *pvParameters) {
+    ESP_LOGI(TAG, "Power Management Task started on core %d", xPortGetCoreID());
+    power_management_demo();
+    vTaskDelete(NULL);
+}
+
+// 系统监控任务
+static void system_monitor_task(void *pvParameters) {
+    ESP_LOGI(TAG, "System Monitor Task started on core %d", xPortGetCoreID());
+    
+    while (1) {
+        // 系统状态监控
+        ESP_LOGI(TAG, "=== System Status ===");
+        ESP_LOGI(TAG, "Free heap: %lu bytes", (unsigned long)esp_get_free_heap_size());
+        ESP_LOGI(TAG, "Min free heap: %lu bytes", (unsigned long)esp_get_minimum_free_heap_size());
+        ESP_LOGI(TAG, "Stack high water mark: %lu bytes", (unsigned long)uxTaskGetStackHighWaterMark(NULL));
+        
+        // 任务状态检查
+        if (s_lvgl_task_handle) {
+            ESP_LOGI(TAG, "LVGL task: Running");
+        }
+        if (s_ws2812_task_handle) {
+            ESP_LOGI(TAG, "WS2812 task: Running");
+        }
+        if (s_power_task_handle) {
+            ESP_LOGI(TAG, "Power task: Running");
+        }
+        
+        ESP_LOGI(TAG, "==================");
+        
+        vTaskDelay(pdMS_TO_TICKS(10000));  // 10秒监控一次
+    }
+}
+
+// 任务初始化函数实现
+esp_err_t init_lvgl_task(void) {
+    if (s_lvgl_task_handle != NULL) {
+        ESP_LOGW(TAG, "LVGL task already running");
+        return ESP_OK;
+    }
+    
+    BaseType_t result = xTaskCreatePinnedToCore(
+        lvgl_main_task,         // 任务函数
+        "LVGL_Main",            // 任务名称
+        TASK_STACK_LARGE,       // 堆栈大小 (8KB)
+        NULL,                   // 参数
+        TASK_PRIORITY_HIGH,     // 高优先级
+        &s_lvgl_task_handle,    // 任务句柄
+        1                       // 绑定到Core 1 (用户核心)
+    );
+    
+    if (result != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create LVGL task");
+        return ESP_ERR_NO_MEM;
+    }
+    
+    ESP_LOGI(TAG, "LVGL task created successfully on Core 1");
+    return ESP_OK;
+}
+
+esp_err_t init_power_management_task(void) {
+    if (s_power_task_handle != NULL) {
+        ESP_LOGW(TAG, "Power management task already running");
+        return ESP_OK;
+    }
+    
+    BaseType_t result = xTaskCreatePinnedToCore(
+        power_management_task,  // 任务函数
+        "Power_Mgmt",           // 任务名称
+        TASK_STACK_MEDIUM,      // 堆栈大小 (4KB)
+        NULL,                   // 参数
+        TASK_PRIORITY_LOW,      // 低优先级
+        &s_power_task_handle,   // 任务句柄
+        0                       // 绑定到Core 0 (系统核心)
+    );
+    
+    if (result != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create power management task");
+        return ESP_ERR_NO_MEM;
+    }
+    
+    ESP_LOGI(TAG, "Power management task created successfully on Core 0");
+    return ESP_OK;
+}
+
+esp_err_t init_ws2812_demo_task(void) {
+    if (s_ws2812_task_handle != NULL) {
+        ESP_LOGW(TAG, "WS2812 demo task already running");
+        return ESP_OK;
+    }
+    
+    BaseType_t result = xTaskCreatePinnedToCore(
+        ws2812_demo_task,       // 任务函数
+        "WS2812_Demo",          // 任务名称
+        TASK_STACK_MEDIUM,      // 堆栈大小 (4KB)
+        NULL,                   // 参数
+        TASK_PRIORITY_NORMAL,   // 中等优先级
+        &s_ws2812_task_handle,  // 任务句柄
+        0                       // 绑定到Core 0
+    );
+    
+    if (result != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create WS2812 demo task");
+        return ESP_ERR_NO_MEM;
+    }
+    
+    ESP_LOGI(TAG, "WS2812 demo task created successfully on Core 0");
+    return ESP_OK;
+}
+
+esp_err_t init_system_monitor_task(void) {
+    if (s_monitor_task_handle != NULL) {
+        ESP_LOGW(TAG, "System monitor task already running");
+        return ESP_OK;
+    }
+    
+    BaseType_t result = xTaskCreatePinnedToCore(
+        system_monitor_task,    // 任务函数
+        "Sys_Monitor",          // 任务名称
+        TASK_STACK_SMALL,       // 堆栈大小 (2KB)
+        NULL,                   // 参数
+        TASK_PRIORITY_LOW,      // 低优先级
+        &s_monitor_task_handle, // 任务句柄
+        0                       // 绑定到Core 0
+    );
+    
+    if (result != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create system monitor task");
+        return ESP_ERR_NO_MEM;
+    }
+    
+    ESP_LOGI(TAG, "System monitor task created successfully on Core 0");
+    return ESP_OK;
+}
+
+esp_err_t init_all_tasks(void) {
+    ESP_LOGI(TAG, "Initializing all tasks...");
+    
+    esp_err_t ret;
+    
+    // 根据编译选项初始化不同的任务
+#ifdef WS2812_DEMO_ONLY
+    ESP_LOGI(TAG, "WS2812 Demo Mode - Only WS2812 and Monitor tasks");
+    
+    ret = init_ws2812_demo_task();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to init WS2812 demo task");
+        return ret;
+    }
+    
+    ret = init_system_monitor_task();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to init system monitor task");
+        return ret;
+    }
+    
+#else
+    ESP_LOGI(TAG, "Full Demo Mode - All tasks");
+    
+    // 初始化LVGL任务
+    ret = init_lvgl_task();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to init LVGL task");
+        return ret;
+    }
+    
+    // 初始化电源管理任务
+    ret = init_power_management_task();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to init power management task");
+        return ret;
+    }
+    
+    // 初始化系统监控任务
+    ret = init_system_monitor_task();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to init system monitor task");
+        return ret;
+    }
+    
+    // 可选：也启动WS2812演示（注释掉避免冲突）
+    // ret = init_ws2812_demo_task();
+    // if (ret != ESP_OK) {
+    //     ESP_LOGE(TAG, "Failed to init WS2812 demo task");
+    //     return ret;
+    // }
+#endif
+    
+    ESP_LOGI(TAG, "All tasks initialized successfully");
+    return ESP_OK;
+}
+
+esp_err_t stop_all_tasks(void) {
+    ESP_LOGI(TAG, "Stopping all tasks...");
+    
+    if (s_lvgl_task_handle) {
+        vTaskDelete(s_lvgl_task_handle);
+        s_lvgl_task_handle = NULL;
+        ESP_LOGI(TAG, "LVGL task stopped");
+    }
+    
+    if (s_power_task_handle) {
+        vTaskDelete(s_power_task_handle);
+        s_power_task_handle = NULL;
+        ESP_LOGI(TAG, "Power management task stopped");
+    }
+    
+    if (s_ws2812_task_handle) {
+        vTaskDelete(s_ws2812_task_handle);
+        s_ws2812_task_handle = NULL;
+        ESP_LOGI(TAG, "WS2812 demo task stopped");
+    }
+    
+    if (s_monitor_task_handle) {
+        vTaskDelete(s_monitor_task_handle);
+        s_monitor_task_handle = NULL;
+        ESP_LOGI(TAG, "System monitor task stopped");
+    }
+    
+    ESP_LOGI(TAG, "All tasks stopped");
+    return ESP_OK;
+}
+
+void list_running_tasks(void) {
+    ESP_LOGI(TAG, "=== Running Tasks ===");
+    ESP_LOGI(TAG, "LVGL Task: %s", s_lvgl_task_handle ? "Running" : "Stopped");
+    ESP_LOGI(TAG, "Power Task: %s", s_power_task_handle ? "Running" : "Stopped");
+    ESP_LOGI(TAG, "WS2812 Task: %s", s_ws2812_task_handle ? "Running" : "Stopped");
+    ESP_LOGI(TAG, "Monitor Task: %s", s_monitor_task_handle ? "Running" : "Stopped");
+    ESP_LOGI(TAG, "==================");
+}
+
+// 任务句柄获取函数
+TaskHandle_t get_lvgl_task_handle(void) {
+    return s_lvgl_task_handle;
+}
+
+TaskHandle_t get_power_task_handle(void) {
+    return s_power_task_handle;
+}
+
+TaskHandle_t get_ws2812_task_handle(void) {
+    return s_ws2812_task_handle;
+}
+
+TaskHandle_t get_monitor_task_handle(void) {
+    return s_monitor_task_handle;
+} 
