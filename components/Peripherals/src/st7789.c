@@ -185,43 +185,69 @@ static void st7789_hardware_reset(void)
  */
 static void st7789_init_sequence(void)
 {
-    ESP_LOGI(TAG, "Starting ST7789 initialization sequence");
+    ESP_LOGI(TAG, "Starting ST7789 initialization sequence based on STM32 driver");
     
     // 软件复位
     st7789_write_cmd(ST7789_CMD_SWRESET);
-    vTaskDelay(pdMS_TO_TICKS(150));
+    vTaskDelay(pdMS_TO_TICKS(120));
     
     // 退出睡眠模式
     st7789_write_cmd(ST7789_CMD_SLPOUT);
     vTaskDelay(pdMS_TO_TICKS(120));
     
+    // 内存访问控制 (旋转和颜色顺序)
+    st7789_set_rotation(ST7789_ROTATION);
+    
     // 设置颜色模式为RGB565 (16位)
     st7789_write_cmd(ST7789_CMD_COLMOD);
     st7789_write_data(0x05);                // 16-bit color
     
-    // 内存访问控制
-    st7789_write_cmd(ST7789_CMD_MADCTL);
-    st7789_write_data(0x00);                // 根据需要调整旋转
-    
-    // 设置显示区域 (240x320)
-    st7789_write_cmd(ST7789_CMD_CASET);     // 列地址设置
-    st7789_write_data(0x00);
-    st7789_write_data(0x00);
-    st7789_write_data(0x00);
-    st7789_write_data(0xEF);                // 239
-    
-    st7789_write_cmd(ST7789_CMD_RASET);     // 行地址设置  
-    st7789_write_data(0x00);
-    st7789_write_data(0x00);
+    // Porch control
+    st7789_write_cmd(ST7789_CMD_PORCTRL);
+    st7789_write_data_buf((const uint8_t[]){0x0C, 0x0C, 0x00, 0x33, 0x33}, 5);
+
+    // Gate Control
+    st7789_write_cmd(ST7789_CMD_GCTRL);
+    st7789_write_data(0x35);
+
+    // VCOM Setting
+    st7789_write_cmd(ST7789_CMD_VCOMS);
+    st7789_write_data(0x32);
+
+    // LCM Control
+    st7789_write_cmd(ST7789_CMD_LCMCTRL);
     st7789_write_data(0x01);
-    st7789_write_data(0x3F);                // 319
-    
-    // 反转关闭
-    st7789_write_cmd(ST7789_CMD_INVOFF);
-    
+
+    // VDV and VRH Command Enable
+    st7789_write_cmd(ST7789_CMD_VDVVRHEN);
+    st7789_write_data(0x15);
+
+    // VRH Set
+    st7789_write_cmd(ST7789_CMD_VRHSET);
+    st7789_write_data(0x20);
+
+    // VDV Set
+    st7789_write_cmd(ST7789_CMD_VDVSET);
+    st7789_write_data(0x0F);
+
+    // Power Control 1
+    st7789_write_cmd(ST7789_CMD_PWCTRL1);
+    st7789_write_data(0xA4);
+    st7789_write_data(0xA1);
+
+    // Positive Gamma Correction
+    st7789_write_cmd(ST7789_CMD_GMCTRP1);
+    st7789_write_data_buf((const uint8_t[]){0xD0, 0x08, 0x0E, 0x09, 0x09, 0x05, 0x31, 0x33, 0x48, 0x17, 0x14, 0x15, 0x31, 0x34}, 14);
+
+    // Negative Gamma Correction
+    st7789_write_cmd(ST7789_CMD_GMCTRN1);
+    st7789_write_data_buf((const uint8_t[]){0xD0, 0x08, 0x0E, 0x09, 0x09, 0x05, 0x31, 0x33, 0x48, 0x17, 0x14, 0x15, 0x31, 0x34}, 14);
+
+    // 开启反色 (与STM32驱动保持一致)
+    st7789_write_cmd(ST7789_CMD_INVON);
+
     // 正常显示模式
     st7789_write_cmd(ST7789_CMD_NORON);
-    vTaskDelay(pdMS_TO_TICKS(10));
     
     // 开启显示
     st7789_write_cmd(ST7789_CMD_DISPON);
@@ -304,6 +330,12 @@ esp_err_t st7789_deinit(void)
  */
 void st7789_set_window(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1)
 {
+    // 应用坐标偏移
+    x0 += X_SHIFT;
+    x1 += X_SHIFT;
+    y0 += Y_SHIFT;
+    y1 += Y_SHIFT;
+
     // 设置列地址
     st7789_write_cmd(ST7789_CMD_CASET);
     st7789_write_data(x0 >> 8);
@@ -330,18 +362,26 @@ void st7789_write_pixels(const uint16_t *data, size_t length)
     if (data == NULL || length == 0) {
         return;
     }
-    
-    // 转换为字节数组并发送
+
+    #if ST7789_COLOR_SWAP == 1
+    uint16_t *swapped_data = (uint16_t *)malloc(length * sizeof(uint16_t));
+    if (!swapped_data) {
+        ESP_LOGE(TAG, "Failed to allocate memory for color swap buffer");
+        return;
+    }
+    for (size_t i = 0; i < length; i++) {
+        swapped_data[i] = (data[i] >> 8) | (data[i] << 8);
+    }
+    st7789_write_data_buf((const uint8_t *)swapped_data, length * 2);
+    free(swapped_data);
+    #else
+    // 直接发送字节数组
     st7789_write_data_buf((const uint8_t *)data, length * 2);
+    #endif
 }
 
 /**
  * @brief 填充颜色到指定区域
- * @param x0 起始X坐标
- * @param y0 起始Y坐标
- * @param x1 结束X坐标  
- * @param y1 结束Y坐标
- * @param color RGB565颜色值
  */
 void st7789_fill_area(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16_t color)
 {
@@ -387,34 +427,41 @@ void st7789_set_rotation(uint8_t rotation)
 {
     uint8_t madctl_value = 0;
     
-    switch (rotation % 4) {
-        case 0: // 0度
+    rotation %= 4; // 标准化旋转值
+
+    switch (rotation) {
+        case 0:
+            madctl_value = ST7789_MADCTL_MX | ST7789_MADCTL_MY;
+            g_st7789_handle.width = ST7789_WIDTH;
+            g_st7789_handle.height = ST7789_HEIGHT;
+            break;
+        case 1:
+            madctl_value = ST7789_MADCTL_MY | ST7789_MADCTL_MV;
+            g_st7789_handle.width = ST7789_HEIGHT;
+            g_st7789_handle.height = ST7789_WIDTH;
+            break;
+        case 2:
             madctl_value = 0x00;
             g_st7789_handle.width = ST7789_WIDTH;
             g_st7789_handle.height = ST7789_HEIGHT;
             break;
-        case 1: // 90度
-            madctl_value = 0x60;
-            g_st7789_handle.width = ST7789_HEIGHT;
-            g_st7789_handle.height = ST7789_WIDTH;
-            break;
-        case 2: // 180度
-            madctl_value = 0xC0;
-            g_st7789_handle.width = ST7789_WIDTH;
-            g_st7789_handle.height = ST7789_HEIGHT;
-            break;
-        case 3: // 270度
-            madctl_value = 0xA0;
+        case 3:
+            madctl_value = ST7789_MADCTL_MX | ST7789_MADCTL_MV;
             g_st7789_handle.width = ST7789_HEIGHT;
             g_st7789_handle.height = ST7789_WIDTH;
             break;
     }
+
+    // 根据ST7789_RGB_ORDER调整颜色顺序
+    #if ST7789_RGB_ORDER == 1
+        madctl_value |= 0x08; // BGR order
+    #endif
     
     st7789_write_cmd(ST7789_CMD_MADCTL);
     st7789_write_data(madctl_value);
     
-    g_st7789_handle.rotation = rotation % 4;
-    ESP_LOGI(TAG, "Rotation set to %d degrees", g_st7789_handle.rotation * 90);
+    g_st7789_handle.rotation = rotation;
+    ESP_LOGI(TAG, "Rotation set to %d, MADCTL=0x%02X", rotation * 90, madctl_value);
 }
 
 /**

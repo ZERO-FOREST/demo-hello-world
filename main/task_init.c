@@ -38,16 +38,16 @@ static void ws2812_demo_task(void* pvParameters) {
     while (1) {
         ESP_LOGI(TAG, "Breathing Effect");
         for (uint8_t j = 0; j < 5; j++) {
-            // 亮度渐变：从 0 到 255
-            for (int brightness = 0; brightness <= 255; brightness += 5) {
+            // 亮度渐变：从 0 到 127
+            for (int brightness = 0; brightness <= 127; brightness += 5) {
                 ws2812_set_brightness(brightness);  // 设置亮度
                 ws2812_set_all(breathing_color[j]); // 设置所有LED颜色
                 ws2812_refresh();                   // 刷新显示
                 vTaskDelay(pdMS_TO_TICKS(50));      // 延时
             }
 
-            // 亮度渐变：从 255 到 0
-            for (int brightness = 255; brightness >= 0; brightness -= 5) {
+            // 亮度渐变：从 127 到 0
+            for (int brightness = 127; brightness >= 0; brightness -= 5) {
                 ws2812_set_brightness(brightness);  // 设置亮度
                 ws2812_set_all(breathing_color[j]); // 设置所有LED颜色
                 ws2812_refresh();                   // 刷新显示

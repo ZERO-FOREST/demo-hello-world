@@ -12,9 +12,26 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
+// 声明启动动画函数 (从ui.h或直接声明)
+void ui_start_animation_create(lv_obj_t *parent, ui_start_anim_finished_cb_t finished_cb);
+
 static void lv_tick_task(void *arg) {
     (void) arg;
     lv_tick_inc(10);
+}
+
+/**
+ * @brief 启动动画完成后的回调函数
+ */
+static void on_start_anim_finished(void)
+{
+    ESP_LOGI("LVGL_DEMO", "Start animation finished, creating main UI...");
+    
+    // 动画结束后，在这里创建你的主UI
+    // 例如: 创建一个简单的开关
+    lv_obj_t *switch1 = lv_switch_create(lv_scr_act());
+    lv_obj_align(switch1, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_set_size(switch1, 100, 50);
 }
 
 void lvgl_main_task(void *pvParameters) {
@@ -37,12 +54,10 @@ void lvgl_main_task(void *pvParameters) {
     ESP_ERROR_CHECK(esp_timer_start_periodic(periodic_timer, 10000));  // 10ms周期
     ESP_LOGI(TAG, "LVGL tick timer started (10ms period)");
 
-    // 创建一个简单的标签
-    lv_obj_t *switch1 = lv_switch_create(lv_scr_act());
-    lv_obj_align(switch1, LV_ALIGN_TOP_MID, 0, 0);
-    lv_obj_set_size(switch1, 100, 50);
+    // 创建并启动动画，动画结束后调用 on_start_anim_finished
+    ui_start_animation_create(lv_scr_act(), on_start_anim_finished);
 
-    ESP_LOGI(TAG, "LVGL UI created successfully");
+    ESP_LOGI(TAG, "LVGL UI creation initiated with start animation");
     
     // LVGL主循环 - 专用任务处理
     while (1) {

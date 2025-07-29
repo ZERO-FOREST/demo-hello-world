@@ -32,9 +32,12 @@ extern "C" {
 // 显示器参数配置
 // ========================================
 #define ST7789_WIDTH            240         // 屏幕宽度
-#define ST7789_HEIGHT           320         // 屏幕高度 (可改为240)
-#define ST7789_ROTATION         0           // 旋转角度 0/1/2/3
-#define ST7789_RGB_ORDER        0           // RGB顺序 0=RGB, 1=BGR
+#define ST7789_HEIGHT           280         // 屏幕高度 (可改为240)
+#define ST7789_ROTATION         1           // 旋转角度 0/1/2/3
+#define ST7789_RGB_ORDER        1           // RGB顺序 0=RGB, 1=BGR
+#define ST7789_COLOR_SWAP       1           // 颜色字节交换 0=关闭, 1=开启
+#define X_SHIFT                 0           // X坐标偏移 (适配不同屏幕)
+#define Y_SHIFT                 0           // Y坐标偏移 (适配不同屏幕)
 
 // ========================================
 // SPI传输配置
@@ -67,6 +70,22 @@ extern "C" {
 #define ST7789_CMD_PTLAR        0x30
 #define ST7789_CMD_COLMOD       0x3A
 #define ST7789_CMD_MADCTL       0x36
+
+#define ST7789_MADCTL_MY        0x80  // Row Address Order
+#define ST7789_MADCTL_MX        0x40  // Column Address Order
+#define ST7789_MADCTL_MV        0x20  // Row/Column Exchange
+
+// Commands from working STM32 driver, required for full init
+#define ST7789_CMD_PORCTRL      0xB2  // Porch Control
+#define ST7789_CMD_GCTRL        0xB7  // Gate Control
+#define ST7789_CMD_VCOMS        0xBB  // VCOM Setting
+#define ST7789_CMD_LCMCTRL      0xC2  // LCM Control
+#define ST7789_CMD_VDVVRHEN     0xC3  // VDV and VRH Command Enable
+#define ST7789_CMD_VRHSET       0xC4  // VRH Set
+#define ST7789_CMD_VDVSET       0xC6  // VDV Set
+#define ST7789_CMD_PWCTRL1      0xD0  // Power Control 1
+#define ST7789_CMD_GMCTRP1      0xE0  // Positive Gamma Correction
+#define ST7789_CMD_GMCTRN1      0xE1  // Negative Gamma Correction
 
 // ========================================
 // 颜色定义 (RGB565格式)
