@@ -21,23 +21,20 @@
 static const char *TAG = "MAIN";
 
 void app_main(void) {
-        // ... 其他初始化代码 ...
-
-    // 初始化NVS
+    // 初始化NVS (Non-Volatile Storage)
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-      // NVS分区已满或版本不匹配，擦除并重新初始化
-      ESP_ERROR_CHECK(nvs_flash_erase());
-      ret = nvs_flash_init();
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        ret = nvs_flash_init();
     }
     ESP_ERROR_CHECK(ret);
+    
     ESP_LOGI(TAG, "ESP32-S3 Demo Application Starting...");
     ESP_LOGI(TAG, "App main running on core %d", xPortGetCoreID());
 
     // 首先检查唤醒原因
     check_wakeup_reason();
-    
-    
+
     // 配置自动电源管理
     configure_auto_power_management();
 

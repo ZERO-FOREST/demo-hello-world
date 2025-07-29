@@ -15,12 +15,13 @@ extern "C" {
 #define WS2812_MAX_LEDS         256         // 最大LED数量
 #define WS2812_RMT_TX_BUFFER    400         // RMT发送缓冲区大小
 
-// WS2812时序参数 (基于RMT时钟分频)
-#define WS2812_T0H_TICKS        14          // 0码高电平时间 (0.35µs)
-#define WS2812_T0L_TICKS        52          // 0码低电平时间 (1.30µs)
-#define WS2812_T1H_TICKS        52          // 1码高电平时间 (1.30µs)  
-#define WS2812_T1L_TICKS        26          // 1码低电平时间 (0.65µs)
-#define WS2812_RESET_TICKS      4000        // 复位信号时间 (100µs)
+// WS2812时序参数 (基于10MHz RMT时钟, 1 tick = 100ns)
+// 根据WS2812B数据手册进行调整
+#define WS2812_T0H_TICKS        4           // 0码高电平时间 (0.4µs)
+#define WS2812_T0L_TICKS        8           // 0码低电平时间 (0.8µs)
+#define WS2812_T1H_TICKS        8           // 1码高电平时间 (0.8µs)
+#define WS2812_T1L_TICKS        4           // 1码低电平时间 (0.4µs)
+#define WS2812_RESET_TICKS      500         // 复位信号时间 (50µs), 确保 > 50us
 
 // 颜色结构体
 typedef struct {

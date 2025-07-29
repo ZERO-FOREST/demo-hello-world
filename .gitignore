@@ -21,6 +21,9 @@ dependencies.lock
 .clangd
 .ccls-cache/
 
+# clangd
+.cache/
+
 # VS Code
 *.code-workspace
 

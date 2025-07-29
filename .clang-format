@@ -1,0 +1,26 @@
+# .clang-format
+# Based on the code style in task_init.c
+
+# 使用LLVM风格作为基础
+BasedOnStyle: LLVM
+
+# 缩进宽度
+IndentWidth: 4
+
+# 不使用Tab键进行缩进
+UseTab: Never
+
+# 每行最大字符数
+ColumnLimit: 120
+
+# 大括号换行
+BreakBeforeBraces: Attach
+
+# 在C++11的大括号列表前添加空格
+Cpp11BracedListStyle: true
+
+# 在头文件中排序#include
+SortIncludes: true
+
+# 指针和引用对齐
+PointerAlignment: Left
