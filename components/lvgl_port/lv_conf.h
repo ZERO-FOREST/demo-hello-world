@@ -1,87 +1,136 @@
+/**
+ * @file lv_conf.h
+ * Configuration file for v8.4.0
+ *
+ * ESP32-S3 N16R8 Optimized Configuration
+ */
+
+/*
+ * Copy this file as `lv_conf.h`
+ * 1. simply next to the `lvgl` folder
+ * 2. or any other places and
+ *    - define `LV_CONF_INCLUDE_SIMPLE`
+ *    - add the path as include path
+ */
+
+/* clang-format off */
+#if 1 /*Set it to "1" to enable content*/
+
 #ifndef LV_CONF_H
 #define LV_CONF_H
 
-// ====================
-//   ESP32-S3 N16R8 优化配置
-// ====================
+#include <stdint.h>
 
-// 颜色设置
+/*====================
+   LVGL VERSION
+ *====================*/
+#define LVGL_VERSION_MAJOR 8
+#define LVGL_VERSION_MINOR 4
+#define LVGL_VERSION_PATCH 0
+
+/*====================
+   COLOR SETTINGS
+ *====================*/
+
+/*Color depth: 1 (1 byte per pixel), 8 (RGB332), 16 (RGB565), 32 (ARGB8888)*/
 #define LV_COLOR_DEPTH 16
+
+/*Swap the 2 bytes of RGB565 color. Useful if the display has an 8-bit interface (e.g. SPI)*/
 #define LV_COLOR_16_SWAP 0
 
-// 内存配置 - 针对8MB PSRAM优化
-#define LV_MEM_CUSTOM 0
-#define LV_MEM_SIZE (256U * 1024U)  // 256K内存池，充分利用PSRAM
+#define LV_COLOR_SCREEN_TRANSP 0
 
-// 刷新设置
+/*=========================
+   MEMORY SETTINGS
+ *=========================*/
+
+#define LV_MEM_CUSTOM 0
+#if LV_MEM_CUSTOM == 0
+    /*Size of the memory available for `lv_mem_alloc()` in bytes (>= 2kB)*/
+    #define LV_MEM_SIZE (256U * 1024U)  /* 256K for PSRAM */
+#endif
+
+/*====================
+   HAL SETTINGS
+ *====================*/
+
 #define LV_DISP_DEF_REFR_PERIOD 30
 #define LV_INDEV_DEF_READ_PERIOD 30
+#define LV_TICK_CUSTOM 0
 
-// 定时器配置
-#define LV_TICK_CUSTOM 1
+#define LV_DPI_DEF 130     /*[px/inch]*/
 
-// DPI设置
-#define LV_DPI_DEF 130
+/*=======================
+ * FEATURE CONFIGURATION
+ *=======================*/
 
-// 启用日志
+#define LV_DRAW_COMPLEX 1
+#if LV_DRAW_COMPLEX
+#define LV_SHADOW_CACHE_SIZE 0
+#define LV_CIRCLE_CACHE_SIZE 4
+#endif
+
+#define LV_USE_GPU_ESP32_S3 1
+#if LV_USE_GPU_ESP32_S3
+    #define LV_GPU_ESP32_S3_USE_DRAW_BLEND 1
+    #define LV_GPU_ESP32_S3_USE_DRAW_BG 1
+    #define LV_GPU_ESP32_S3_USE_DRAW_RECT 1
+    #define LV_GPU_ESP32_S3_USE_DRAW_ARC 1
+#endif
+
+
+/*-------------
+ * Logging
+ *-----------*/
 #define LV_USE_LOG 1
-#define LV_LOG_LEVEL LV_LOG_LEVEL_INFO
-#define LV_LOG_PRINTF 1
+#if LV_USE_LOG
+    #define LV_LOG_LEVEL LV_LOG_LEVEL_INFO
+    #define LV_LOG_PRINTF 1
+#endif
 
-// 断言设置
+/*-------------
+ * Asserts
+ *-----------*/
 #define LV_USE_ASSERT_STYLE 1
 
-// 字体设置
+/*==================
+ *   FONT USAGE
+ *===================*/
+
 #define LV_FONT_MONTSERRAT_14 1
 #define LV_FONT_MONTSERRAT_16 1
 #define LV_FONT_MONTSERRAT_18 1
 #define LV_FONT_MONTSERRAT_20 1
+#define LV_FONT_MONTSERRAT_32 1
 #define LV_FONT_DEFAULT &lv_font_montserrat_16
 
-// 主题
+/*==================
+ *  WIDGET USAGE
+ *================*/
+#define LV_USE_ARC        1
+#define LV_USE_BAR        1
+#define LV_USE_BTN        1
+#define LV_USE_LABEL      1
+#define LV_USE_SWITCH     1
+#define LV_USE_MSGBOX     1
+
+
+/*==================
+ * EXTRA COMPONENTS
+ *==================*/
 #define LV_USE_THEME_DEFAULT 1
-#define LV_THEME_DEFAULT_DARK 0
+#if LV_USE_THEME_DEFAULT
+    #define LV_THEME_DEFAULT_DARK 0
+    #define LV_THEME_DEFAULT_GROW 1
+    #define LV_THEME_DEFAULT_TRANSITION_TIME 80
+#endif
 
-// 动画
-#define LV_USE_ANIM 1
+#define LV_USE_FLEX 1
+#define LV_USE_GRID 1
 
-// 组件启用
-#define LV_USE_ARC 1
-#define LV_USE_BAR 1
-#define LV_USE_BTN 1
-#define LV_USE_BTNMATRIX 1
-#define LV_USE_CANVAS 1
-#define LV_USE_CHECKBOX 1
-#define LV_USE_DROPDOWN 1
-#define LV_USE_IMG 1
-#define LV_USE_LABEL 1
-#define LV_USE_LINE 1
-#define LV_USE_ROLLER 1
-#define LV_USE_SLIDER 1
-#define LV_USE_SWITCH 1
-#define LV_USE_TEXTAREA 1
-#define LV_USE_TABLE 1
 
-// GPU加速（ESP32-S3支持）
-#define LV_USE_GPU_ESP32_S3 1
-
-// 🚀 ESP32-S3图形加速优化配置
-// 启用硬件加速的具体功能
-#define LV_GPU_ESP32_S3_USE_DRAW_BLEND 1      // Alpha混合加速
-#define LV_GPU_ESP32_S3_USE_DRAW_BG 1         // 背景绘制加速  
-#define LV_GPU_ESP32_S3_USE_DRAW_RECT 1       // 矩形绘制加速
-#define LV_GPU_ESP32_S3_USE_DRAW_ARC 1        // 圆弧绘制加速
-
-// 性能监控（开发阶段启用）
-#define LV_USE_PERF_MONITOR 0
-#define LV_USE_MEM_MONITOR 0
-
-// 📐 渲染优化
-#define LV_DISP_ROT_MAX_BUF (32*1024)        // 旋转缓冲区（32KB）
-#define LV_IMG_CACHE_DEF_SIZE 1              // 图像缓存
-
-// 🎯 针对你的320x240屏幕优化
-#define LV_HOR_RES_MAX 320
-#define LV_VER_RES_MAX 240
+/*--END OF LV_CONF_H--*/
 
 #endif /*LV_CONF_H*/
+
+#endif /*End of "Content enable"*/

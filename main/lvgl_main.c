@@ -1,9 +1,16 @@
-#include "lvgl.h"
+/**
+ * @file lvgl_main.c
+ * @brief LVGL主任务，负责UI的初始化和流程控制
+ * @author Your Name
+ * @date 2024
+ */
+#include "ui.h"
 #include "lv_port_disp.h"
 #include "lv_port_indev.h"
 #include "esp_log.h"
 #include "esp_timer.h"
-#include "lvgl_main.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 static void lv_tick_task(void *arg) {
     (void) arg;
