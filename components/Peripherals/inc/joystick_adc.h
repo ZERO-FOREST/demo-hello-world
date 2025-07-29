@@ -13,34 +13,68 @@ extern "C" {
 #endif
 
 #include "esp_err.h"
-#include "esp_adc/adc_oneshot.h"
+#include "driver/adc.h"
 
 // ========================================
 // 摇杆硬件配置
 // ========================================
 // 摇杆1
-#define JOYSTICK1_ADC_X_CHANNEL ADC_CHANNEL_0 // IO1
-#define JOYSTICK1_ADC_Y_CHANNEL ADC_CHANNEL_1 // IO2
+#define JOYSTICK1_ADC_X_CHANNEL ADC1_CHANNEL_0 // IO1
+#define JOYSTICK1_ADC_Y_CHANNEL ADC1_CHANNEL_1 // IO2
 
 // 摇杆2
-#define JOYSTICK2_ADC_X_CHANNEL ADC_CHANNEL_3 // IO4
-#define JOYSTICK2_ADC_Y_CHANNEL ADC_CHANNEL_4 // IO5
+#define JOYSTICK2_ADC_X_CHANNEL ADC1_CHANNEL_3 // IO4
+#define JOYSTICK2_ADC_Y_CHANNEL ADC1_CHANNEL_4 // IO5
 
 // ADC衰减配置
 #define JOYSTICK_ADC_ATTEN      ADC_ATTEN_DB_11
 
+// ADC低通滤波系数 (0.0 < alpha < 1.0)
+// 值越小，平滑效果越好，但延迟越高
+#define JOYSTICK_LOW_PASS_ALPHA 0.2f
+
 // ========================================
 // 数据结构定义
 // ========================================
+
+/**
+ * @brief 单个摇杆轴的校准数据
+ */
 typedef struct {
-    int joy1_x;     // 摇杆1 X轴原始值
-    int joy1_y;     // 摇杆1 Y轴原始值
-    int joy2_x;     // 摇杆2 X轴原始值
-    int joy2_y;     // 摇杆2 Y轴原始值
-    int joy1_x_mv;  // 摇杆1 X轴电压 (mV)
-    int joy1_y_mv;  // 摇杆1 Y轴电压 (mV)
-    int joy2_x_mv;  // 摇杆2 X轴电压 (mV)
-    int joy2_y_mv;  // 摇杆2 Y轴电压 (mV)
+    int min;      // 采集到的最小值
+    int max;      // 采集到的最大值
+    int center;   // 中心点
+} joystick_axis_cal_t;
+
+/**
+ * @brief 所有摇杆的校准数据
+ */
+typedef struct {
+    joystick_axis_cal_t joy1_x;
+    joystick_axis_cal_t joy1_y;
+    joystick_axis_cal_t joy2_x;
+    joystick_axis_cal_t joy2_y;
+} joystick_cal_data_t;
+
+/**
+ * @brief 摇杆最终输出数据
+ */
+typedef struct {
+    int raw_joy1_x;     // 摇杆1 X轴原始值
+    int raw_joy1_y;     // 摇杆1 Y轴原始值
+    int raw_joy2_x;     // 摇杆2 X轴原始值
+    int raw_joy2_y;     // 摇杆2 Y轴原始值
+
+    int joy1_x_mv;      // 摇杆1 X轴电压 (mV)
+    int joy1_y_mv;      // 摇杆1 Y轴电压 (mV)
+    int joy2_x_mv;      // 摇杆2 X轴电压 (mV)
+    int joy2_y_mv;      // 摇杆2 Y轴电压 (mV)
+    
+    // 归一化后的输出值 (-100 到 100)
+    int norm_joy1_x;
+    int norm_joy1_y;
+    int norm_joy2_x;
+    int norm_joy2_y;
 } joystick_data_t;
 
 // ========================================
@@ -65,14 +99,51 @@ esp_err_t joystick_adc_init(void);
 esp_err_t joystick_adc_deinit(void);
 
 /**
- * @brief 从两个摇杆读取数据
+ * @brief 从两个摇杆读取经过滤波和校准的数据
  *
  * @param[out] data 指向joystick_data_t结构体的指针，用于存储读取的数据
  * @return
  *     - ESP_OK: 成功
  *     - ESP_ERR_INVALID_ARG: 参数错误
+ *     - ESP_ERR_INVALID_STATE: 驱动未初始化
  */
 esp_err_t joystick_adc_read(joystick_data_t *data);
+
+/**
+ * @brief 开始摇杆校准
+ *        会重置当前的校准数据
+ */
+void joystick_start_calibration(void);
+
+/**
+ * @brief 结束摇杆校准
+ *        会根据校准过程中记录的最大最小值计算中心点
+ */
+void joystick_stop_calibration(void);
+
+/**
+ * @brief 检查当前是否已经校准
+ * @return true - 已校准, false - 未校准
+ */
+bool joystick_is_calibrated(void);
+
+/**
+ * @brief 从NVS加载校准数据
+ * @return 
+ *      - ESP_OK: 成功加载
+ *      - ESP_ERR_NVS_NOT_FOUND: 未找到校准数据
+ *      - 其他: NVS错误
+ */
+esp_err_t joystick_load_calibration_from_nvs(void);
+
+/**
+ * @brief 将当前校准数据保存到NVS
+ * @return
+ *      - ESP_OK: 成功保存
+ *      - ESP_ERR_INVALID_STATE: 尚未校准
+ *      - 其他: NVS错误
+ */
+esp_err_t joystick_save_calibration_to_nvs(void);
 
 #ifdef __cplusplus
 }

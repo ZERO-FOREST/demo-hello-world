@@ -12,18 +12,31 @@
 #include "esp_chip_info.h"
 #include "esp_system.h"
 #include "esp_log.h"
-#include "power_management.h"  // 添加电源管理
-#include "task_init.h"         // 添加任务初始化模块
-#include "lsm6ds3_demo.h"      // 添加LSM6DS3演示
+#include "nvs_flash.h"
+#include "power_management.h"
+#include "task_init.h"         
+#include "lsm6ds3_demo.h"
+
 
 static const char *TAG = "MAIN";
 
 void app_main(void) {
+        // ... 其他初始化代码 ...
+
+    // 初始化NVS
+    esp_err_t ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+      // NVS分区已满或版本不匹配，擦除并重新初始化
+      ESP_ERROR_CHECK(nvs_flash_erase());
+      ret = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK(ret);
     ESP_LOGI(TAG, "ESP32-S3 Demo Application Starting...");
     ESP_LOGI(TAG, "App main running on core %d", xPortGetCoreID());
 
     // 首先检查唤醒原因
     check_wakeup_reason();
+    
     
     // 配置自动电源管理
     configure_auto_power_management();
@@ -36,7 +49,7 @@ void app_main(void) {
     ESP_LOGI(TAG, "");
 
     // 使用任务初始化模块统一管理任务
-    esp_err_t ret = init_all_tasks();
+    ret = init_all_tasks();
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize tasks: %s", esp_err_to_name(ret));
         return;

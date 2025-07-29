@@ -5,5 +5,5 @@ idf_component_register(
          "src/lsm6ds3.c"
          "src/joystick_adc.c"
     INCLUDE_DIRS "inc"
-    REQUIRES driver log
+    REQUIRES driver log nvs_flash
 ) 

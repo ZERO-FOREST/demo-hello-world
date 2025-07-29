@@ -4,4 +4,4 @@ idf_component_register(SRCS "hello_world_main.c"
                             "task_init.c"
                             "lsm6ds3_demo.c"
                     INCLUDE_DIRS "inc"
-                    REQUIRES lvgl esp_timer lvgl_port Peripherals driver)
+                    REQUIRES lvgl esp_timer lvgl_port Peripherals driver nvs_flash)
