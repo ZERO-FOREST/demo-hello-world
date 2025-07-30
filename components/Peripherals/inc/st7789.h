@@ -31,13 +31,20 @@ extern "C" {
 // ========================================
 // 显示器参数配置
 // ========================================
-#define ST7789_WIDTH            240         // 屏幕宽度
-#define ST7789_HEIGHT           280         // 屏幕高度 (可改为240)
-#define ST7789_ROTATION         1           // 旋转角度 0/1/2/3
-#define ST7789_RGB_ORDER        1           // RGB顺序 0=RGB, 1=BGR
+#define ST7789_WIDTH            240         // 屏幕物理宽度
+#define ST7789_HEIGHT           282         // 屏幕物理高度
+#define ST7789_ROTATION         2           // 默认旋转方向 (与STM32驱动一致)
+#define ST7789_RGB_ORDER        0           // RGB顺序 0=RGB, 1=BGR (根据STM32驱动设为RGB)
 #define ST7789_COLOR_SWAP       1           // 颜色字节交换 0=关闭, 1=开启
-#define X_SHIFT                 0           // X坐标偏移 (适配不同屏幕)
-#define Y_SHIFT                 0           // Y坐标偏移 (适配不同屏幕)
+
+// 坐标偏移量 (适配不同屏幕, 参考STM32驱动)
+#if ST7789_ROTATION == 0 || ST7789_ROTATION == 2
+    #define X_SHIFT                 0
+    #define Y_SHIFT                 18
+#else
+    #define X_SHIFT                 18
+    #define Y_SHIFT                 0
+#endif
 
 // ========================================
 // SPI传输配置

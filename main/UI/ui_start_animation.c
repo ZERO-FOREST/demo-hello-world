@@ -6,16 +6,24 @@
  */
 #include "ui.h"
 
-// 全局变量来存储回调函数
+// 全局变量来存储回调函数和需要清理的UI元素
 static ui_start_anim_finished_cb_t g_finished_cb = NULL;
+static lv_obj_t *g_anim_arc = NULL;
+static lv_timer_t *g_status_timer = NULL;
 
 // 动画相关的静态函数
 static void anim_logo_fade_in_cb(void *var, int32_t v) {
     lv_obj_set_style_opa(var, v, 0);
 }
 
-static void anim_arc_rotate_cb(void *var, int32_t v) {
-    lv_arc_set_value(var, v);
+static void anim_rotation_cb(void *var, int32_t v)
+{
+    lv_obj_set_style_transform_angle(var, v, 0);
+}
+
+static void anim_zoom_cb(void *var, int32_t v)
+{
+    lv_obj_set_style_transform_zoom(var, v, 0);
 }
 
 static void anim_bar_progress_cb(void *var, int32_t v) {
@@ -36,6 +44,16 @@ static void anim_status_text_timer_cb(lv_timer_t *timer) {
 }
 
 static void all_anims_finished_cb(lv_anim_t *a) {
+    // 关键修复：在删除对象前，先停止所有关联的动画和定时器
+    if (g_anim_arc) {
+        lv_anim_del(g_anim_arc, NULL);
+        g_anim_arc = NULL;
+    }
+    if (g_status_timer) {
+        lv_timer_del(g_status_timer);
+        g_status_timer = NULL;
+    }
+
     // 清理界面
     lv_obj_t* screen = (lv_obj_t*) a->user_data;
     if(screen) {
@@ -50,6 +68,9 @@ static void all_anims_finished_cb(lv_anim_t *a) {
 
 void ui_start_animation_create(lv_obj_t *parent, ui_start_anim_finished_cb_t finished_cb) {
     g_finished_cb = finished_cb;
+    // 每次创建时重置静态变量
+    g_anim_arc = NULL;
+    g_status_timer = NULL;
     lv_obj_set_style_bg_color(parent, lv_color_hex(0x000000), 0);
 
     // 1. 创建Logo (这里用一个标签代替)
@@ -61,6 +82,7 @@ void ui_start_animation_create(lv_obj_t *parent, ui_start_anim_finished_cb_t fin
 
     // 2. 创建旋转光环 (使用Arc)
     lv_obj_t *arc = lv_arc_create(parent);
+    g_anim_arc = arc; // 保存arc指针以便后续清理
     lv_obj_set_size(arc, 150, 150);
     lv_arc_set_rotation(arc, 270);
     lv_arc_set_bg_angles(arc, 0, 360);
@@ -100,7 +122,7 @@ void ui_start_animation_create(lv_obj_t *parent, ui_start_anim_finished_cb_t fin
     lv_anim_set_values(&a, 0, 3600); // 旋转360度 (LVGL角度单位是0.1度)
     lv_anim_set_time(&a, 2000);
     lv_anim_set_repeat_count(&a, LV_ANIM_REPEAT_INFINITE);
-    lv_anim_set_exec_cb(&a, (lv_anim_exec_xcb_t)lv_arc_set_rotation);
+    lv_anim_set_exec_cb(&a, anim_rotation_cb);
     lv_anim_start(&a);
 
     // 动画2: 缩放 (呼吸效果)
@@ -110,7 +132,7 @@ void ui_start_animation_create(lv_obj_t *parent, ui_start_anim_finished_cb_t fin
     lv_anim_set_time(&a, 1000);
     lv_anim_set_playback_time(&a, 1000);
     lv_anim_set_repeat_count(&a, LV_ANIM_REPEAT_INFINITE);
-    lv_anim_set_exec_cb(&a, (lv_anim_exec_xcb_t)lv_obj_set_style_transform_zoom);
+    lv_anim_set_exec_cb(&a, anim_zoom_cb);
     lv_anim_start(&a);
 
 
@@ -125,5 +147,5 @@ void ui_start_animation_create(lv_obj_t *parent, ui_start_anim_finished_cb_t fin
     lv_anim_start(&a);
 
     // 状态文本更新定时器
-    lv_timer_create(anim_status_text_timer_cb, 500, status_label);
+    g_status_timer = lv_timer_create(anim_status_text_timer_cb, 500, status_label);
 } 

@@ -189,7 +189,7 @@ static void st7789_init_sequence(void)
     
     // 软件复位
     st7789_write_cmd(ST7789_CMD_SWRESET);
-    vTaskDelay(pdMS_TO_TICKS(120));
+    vTaskDelay(pdMS_TO_TICKS(150)); // Recommended delay after SWRESET
     
     // 退出睡眠模式
     st7789_write_cmd(ST7789_CMD_SLPOUT);
@@ -200,52 +200,50 @@ static void st7789_init_sequence(void)
     
     // 设置颜色模式为RGB565 (16位)
     st7789_write_cmd(ST7789_CMD_COLMOD);
-    st7789_write_data(0x05);                // 16-bit color
+    st7789_write_data(0x55); // RGB565 format
     
-    // Porch control
+    // Porch control (from STM32 driver)
     st7789_write_cmd(ST7789_CMD_PORCTRL);
     st7789_write_data_buf((const uint8_t[]){0x0C, 0x0C, 0x00, 0x33, 0x33}, 5);
 
-    // Gate Control
+    // Gate Control (from STM32 driver)
     st7789_write_cmd(ST7789_CMD_GCTRL);
     st7789_write_data(0x35);
 
-    // VCOM Setting
+    // VCOM Setting (from STM32 driver)
     st7789_write_cmd(ST7789_CMD_VCOMS);
-    st7789_write_data(0x32);
+    st7789_write_data(0x32); // 0.725v
 
-    // LCM Control
+    // LCM Control (from STM32 driver)
     st7789_write_cmd(ST7789_CMD_LCMCTRL);
-    st7789_write_data(0x01);
+    st7789_write_data(0x01); // Default value
 
-    // VDV and VRH Command Enable
+    // VDV and VRH Command Enable (from STM32 driver)
     st7789_write_cmd(ST7789_CMD_VDVVRHEN);
-    st7789_write_data(0x15);
-
-    // VRH Set
+    st7789_write_data(0x01); // Enable
     st7789_write_cmd(ST7789_CMD_VRHSET);
+    st7789_write_data(0x12);
+
+    // VDV Set (from STM32 driver)
+    st7789_write_cmd(ST7789_CMD_VDVSET);
     st7789_write_data(0x20);
 
-    // VDV Set
-    st7789_write_cmd(ST7789_CMD_VDVSET);
-    st7789_write_data(0x0F);
-
-    // Power Control 1
+    // Power Control 1 (from STM32 driver)
     st7789_write_cmd(ST7789_CMD_PWCTRL1);
     st7789_write_data(0xA4);
     st7789_write_data(0xA1);
 
-    // Positive Gamma Correction
+    // Positive Gamma Correction (from STM32 driver)
     st7789_write_cmd(ST7789_CMD_GMCTRP1);
     st7789_write_data_buf((const uint8_t[]){0xD0, 0x08, 0x0E, 0x09, 0x09, 0x05, 0x31, 0x33, 0x48, 0x17, 0x14, 0x15, 0x31, 0x34}, 14);
 
-    // Negative Gamma Correction
+    // Negative Gamma Correction (from STM32 driver)
     st7789_write_cmd(ST7789_CMD_GMCTRN1);
     st7789_write_data_buf((const uint8_t[]){0xD0, 0x08, 0x0E, 0x09, 0x09, 0x05, 0x31, 0x33, 0x48, 0x17, 0x14, 0x15, 0x31, 0x34}, 14);
 
     // 开启反色 (与STM32驱动保持一致)
     st7789_write_cmd(ST7789_CMD_INVON);
-
+    
     // 正常显示模式
     st7789_write_cmd(ST7789_CMD_NORON);
     
@@ -362,22 +360,8 @@ void st7789_write_pixels(const uint16_t *data, size_t length)
     if (data == NULL || length == 0) {
         return;
     }
-
-    #if ST7789_COLOR_SWAP == 1
-    uint16_t *swapped_data = (uint16_t *)malloc(length * sizeof(uint16_t));
-    if (!swapped_data) {
-        ESP_LOGE(TAG, "Failed to allocate memory for color swap buffer");
-        return;
-    }
-    for (size_t i = 0; i < length; i++) {
-        swapped_data[i] = (data[i] >> 8) | (data[i] << 8);
-    }
-    st7789_write_data_buf((const uint8_t *)swapped_data, length * 2);
-    free(swapped_data);
-    #else
-    // 直接发送字节数组
+    // LVGL 已在 lv_conf.h 中通过 LV_COLOR_16_SWAP 处理了字节序，这里直接发送
     st7789_write_data_buf((const uint8_t *)data, length * 2);
-    #endif
 }
 
 /**
@@ -461,7 +445,7 @@ void st7789_set_rotation(uint8_t rotation)
     st7789_write_data(madctl_value);
     
     g_st7789_handle.rotation = rotation;
-    ESP_LOGI(TAG, "Rotation set to %d, MADCTL=0x%02X", rotation * 90, madctl_value);
+    ESP_LOGI(TAG, "Rotation set to %d, MADCTL=0x%02X", rotation, madctl_value);
 }
 
 /**

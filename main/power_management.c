@@ -125,25 +125,19 @@ void check_wakeup_reason(void) {
 }
 
 // ⚙️ 配置自动低功耗管理
-void configure_auto_power_management(void) {
-    ESP_LOGI(TAG, "⚙️ Configuring automatic power management...");
-    
-    // 自动功耗管理配置
-    esp_pm_config_esp32s3_t pm_config = {
-        .max_freq_mhz = 240,        // 最大频率240MHz
-        .min_freq_mhz = 10,         // 最小频率10MHz（自动降频）
-        .light_sleep_enable = true   // 启用自动Light Sleep
+void configure_auto_power_management(void)
+{
+    ESP_LOGI(TAG, "Configuring automatic power management");
+
+    // 配置自动调频和tickless idle
+    esp_pm_config_t pm_config = {
+        .max_freq_mhz = 240,            // 最大CPU频率
+        .min_freq_mhz = 80,             // 最小CPU频率
+        .light_sleep_enable = true      // 启用自动浅睡眠
     };
-    
-    esp_err_t ret = esp_pm_configure(&pm_config);
-    if (ret == ESP_OK) {
-        ESP_LOGI(TAG, "✅ Auto power management enabled");
-        ESP_LOGI(TAG, "  - Max frequency: %d MHz", pm_config.max_freq_mhz);
-        ESP_LOGI(TAG, "  - Min frequency: %d MHz", pm_config.min_freq_mhz);
-        ESP_LOGI(TAG, "  - Auto Light Sleep: %s", pm_config.light_sleep_enable ? "ON" : "OFF");
-    } else {
-        ESP_LOGE(TAG, "❌ Failed to configure power management: %s", esp_err_to_name(ret));
-    }
+    ESP_ERROR_CHECK(esp_pm_configure(&pm_config));
+    ESP_LOGI(TAG, "Automatic power management configured: min_freq=%d, max_freq=%d, light_sleep=%d",
+             pm_config.min_freq_mhz, pm_config.max_freq_mhz, pm_config.light_sleep_enable);
 }
 
 // 🎛️ 智能电源管理演示

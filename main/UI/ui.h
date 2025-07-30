@@ -32,6 +32,18 @@ typedef void (*ui_start_anim_finished_cb_t)(void);
  */
 void ui_start_animation_create(lv_obj_t *parent, ui_start_anim_finished_cb_t finished_cb);
 
+/**
+ * @brief 创建主菜单界面
+ * @param parent 父对象，通常是 lv_scr_act()
+ */
+void ui_main_menu_create(lv_obj_t *parent);
+
+/**
+ * @brief 创建WiFi设置界面
+ * @param parent 父对象，通常是 lv_scr_act()
+ */
+void ui_wifi_settings_create(lv_obj_t *parent);
+
 
 // --- 在这里添加您未来的其他UI模块声明 ---
 //

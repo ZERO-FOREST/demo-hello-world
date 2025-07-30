@@ -14,8 +14,8 @@
 /*********************
  *      DEFINES
  *********************/
-#define MY_DISP_HOR_RES    320
-#define MY_DISP_VER_RES    240
+#define MY_DISP_HOR_RES    ST7789_WIDTH
+#define MY_DISP_VER_RES    ST7789_HEIGHT
 
 static const char *TAG = "lv_port_disp";
 
@@ -108,7 +108,7 @@ static void disp_flush(lv_disp_drv_t * disp_drv, const lv_area_t * area, lv_colo
 {
     if(disp_flush_enabled) {
         st7789_set_window(area->x1, area->y1, area->x2, area->y2);
-        size_t pixel_count = (area->x2 - area->x1 + 1) * (area->y2 - area->y1 + 1);
+        size_t pixel_count = lv_area_get_size(area);
         st7789_write_pixels((uint16_t*)color_p, pixel_count);
     }
 
