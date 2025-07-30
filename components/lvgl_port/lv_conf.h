@@ -36,7 +36,7 @@
 #define LV_COLOR_DEPTH 16
 
 /*Swap the 2 bytes of RGB565 color. Useful if the display has an 8-bit interface (e.g. SPI)*/
-#define LV_COLOR_16_SWAP 1
+#define LV_COLOR_16_SWAP 0
 
 #define LV_COLOR_SCREEN_TRANSP 0
 
@@ -54,7 +54,7 @@
    HAL SETTINGS
  *====================*/
 
-#define LV_DISP_DEF_REFR_PERIOD 30
+#define LV_DISP_DEF_REFR_PERIOD 16  // 60FPS (1000/60≈16ms)
 #define LV_INDEV_DEF_READ_PERIOD 30
 #define LV_TICK_CUSTOM 0
 
@@ -106,6 +106,13 @@
 #define LV_FONT_DEFAULT &lv_font_montserrat_16
 
 /*==================
+ *  TEXT SETTINGS
+ *=================*/
+#define LV_TXT_ENC_UTF8 1  // 启用UTF-8编码支持（显示中文必需）
+#define LV_TXT_ENC_ASCII 0
+#define LV_TXT_BREAK_CHARS " ,.;:-_"
+
+/*==================
  *  WIDGET USAGE
  *================*/
 #define LV_USE_ARC        1
@@ -128,6 +135,15 @@
 
 #define LV_USE_FLEX 1
 #define LV_USE_GRID 1
+
+/*==================
+ * PERFORMANCE MONITOR
+ *==================*/
+#define LV_USE_PERF_MONITOR 1  // 启用性能监控
+#if LV_USE_PERF_MONITOR
+    #define LV_USE_MEM_MONITOR 1   // 内存监控
+    #define LV_USE_OBSERVER 1      // 观察器
+#endif
 
 
 /*--END OF LV_CONF_H--*/

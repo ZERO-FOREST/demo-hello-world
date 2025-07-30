@@ -214,15 +214,9 @@ esp_err_t init_all_tasks(void) {
         return ret;
     }
 
-    // 初始化电源管理任务
-    ret = init_power_management_task();
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to init power management task");
-        return ret;
-    }
-
     ESP_LOGI(TAG, "All tasks initialized successfully");
     return ESP_OK;
+
 }
 
 esp_err_t stop_all_tasks(void) {

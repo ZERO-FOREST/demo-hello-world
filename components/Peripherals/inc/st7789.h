@@ -49,7 +49,7 @@ extern "C" {
 // ========================================
 // SPI传输配置
 // ========================================
-#define ST7789_SPI_CLOCK_HZ     40000000    // 40MHz SPI时钟
+#define ST7789_SPI_CLOCK_HZ     80000000    // 80MHz SPI时钟 (最大速度)
 #define ST7789_SPI_QUEUE_SIZE   7           // SPI队列大小
 
 // ========================================
@@ -81,6 +81,8 @@ extern "C" {
 #define ST7789_MADCTL_MY        0x80  // Row Address Order
 #define ST7789_MADCTL_MX        0x40  // Column Address Order
 #define ST7789_MADCTL_MV        0x20  // Row/Column Exchange
+#define ST7789_MADCTL_ML        0x10  // Line Address Order
+#define ST7789_MADCTL_RGB       0x00  // RGB Order (0=RGB, 0x08=BGR)
 
 // Commands from working STM32 driver, required for full init
 #define ST7789_CMD_PORCTRL      0xB2  // Porch Control

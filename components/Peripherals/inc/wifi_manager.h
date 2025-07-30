@@ -66,6 +66,19 @@ esp_err_t wifi_manager_set_power(int8_t power_dbm);
  */
 wifi_manager_info_t wifi_manager_get_info(void);
 
+/**
+ * @brief 启动时间同步
+ */
+void wifi_manager_sync_time(void);
+
+/**
+ * @brief 获取当前时间字符串
+ * @param time_str 输出缓冲区
+ * @param max_len 缓冲区最大长度
+ * @return 是否成功获取时间
+ */
+bool wifi_manager_get_time_str(char *time_str, size_t max_len);
+
 
 #ifdef __cplusplus
 }

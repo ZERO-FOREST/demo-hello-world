@@ -6,5 +6,6 @@ idf_component_register(SRCS "hello_world_main.c"
                             "UI/ui_start_animation.c"
                             "UI/ui_main.c"
                             "UI/ui_wifi_settings.c"
+                            "UI/ui_settings.c"
                     INCLUDE_DIRS "inc" "UI"
                     REQUIRES lvgl esp_timer lvgl_port Peripherals driver)

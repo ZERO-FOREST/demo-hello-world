@@ -44,11 +44,35 @@ void ui_main_menu_create(lv_obj_t *parent);
  */
 void ui_wifi_settings_create(lv_obj_t *parent);
 
+/**
+ * @brief 创建系统设置界面
+ * @param parent 父对象，通常是 lv_scr_act()
+ */
+void ui_settings_create(lv_obj_t *parent);
+
+// --- 语言设置相关 ---
+// 语言类型枚举
+typedef enum {
+    LANG_ENGLISH = 0,
+    LANG_CHINESE = 1
+} ui_language_t;
+
+/**
+ * @brief 获取当前语言设置
+ * @return 当前语言
+ */
+ui_language_t ui_get_current_language(void);
+
+/**
+ * @brief 设置语言
+ * @param lang 要设置的语言
+ */
+void ui_set_language(ui_language_t lang);
+
 
 // --- 在这里添加您未来的其他UI模块声明 ---
 //
-// void ui_main_screen_create(lv_obj_t* parent);
-// void ui_settings_screen_create(lv_obj_t* parent);
+// void ui_other_screen_create(lv_obj_t* parent);
 //
 // ---
 

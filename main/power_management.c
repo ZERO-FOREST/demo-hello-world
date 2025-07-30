@@ -129,6 +129,7 @@ void configure_auto_power_management(void)
 {
     ESP_LOGI(TAG, "Configuring automatic power management");
 
+#ifdef CONFIG_PM_ENABLE
     // 配置自动调频和tickless idle
     esp_pm_config_t pm_config = {
         .max_freq_mhz = 240,            // 最大CPU频率
@@ -138,6 +139,10 @@ void configure_auto_power_management(void)
     ESP_ERROR_CHECK(esp_pm_configure(&pm_config));
     ESP_LOGI(TAG, "Automatic power management configured: min_freq=%d, max_freq=%d, light_sleep=%d",
              pm_config.min_freq_mhz, pm_config.max_freq_mhz, pm_config.light_sleep_enable);
+#else
+    ESP_LOGW(TAG, "Power management is not enabled in project configuration");
+    ESP_LOGI(TAG, "To enable, set CONFIG_PM_ENABLE=y in sdkconfig or run 'idf.py menuconfig'");
+#endif
 }
 
 // 🎛️ 智能电源管理演示

@@ -200,7 +200,7 @@ static void st7789_init_sequence(void)
     
     // 设置颜色模式为RGB565 (16位)
     st7789_write_cmd(ST7789_CMD_COLMOD);
-    st7789_write_data(0x55); // RGB565 format
+    st7789_write_data(0x55); // RGB565 format (标准值)
     
     // Porch control (from STM32 driver)
     st7789_write_cmd(ST7789_CMD_PORCTRL);
@@ -291,7 +291,10 @@ esp_err_t st7789_init(void)
     // 初始化序列
     st7789_init_sequence();
     
-    // 清屏为黑色
+    // 开启背光
+    st7789_backlight_enable(true);
+    
+    // 清屏为绿色，测试显示是否存在问题
     st7789_clear_screen(ST7789_BLACK);
     
     g_st7789_handle.is_initialized = true;
@@ -360,8 +363,23 @@ void st7789_write_pixels(const uint16_t *data, size_t length)
     if (data == NULL || length == 0) {
         return;
     }
-    // LVGL 已在 lv_conf.h 中通过 LV_COLOR_16_SWAP 处理了字节序，这里直接发送
-    st7789_write_data_buf((const uint8_t *)data, length * 2);
+    
+    // ST7789需要大端序(MSB first)，ESP32是小端序，需要交换字节
+    static uint8_t temp_buffer[64]; // 32个像素的缓冲区
+    
+    for (size_t i = 0; i < length; ) {
+        size_t chunk_size = (length - i > 32) ? 32 : (length - i);
+        
+        // 转换字节序：ESP32小端序 -> ST7789大端序
+        for (size_t j = 0; j < chunk_size; j++) {
+            uint16_t color = data[i + j];
+            temp_buffer[j * 2] = color >> 8;        // 高字节先发送
+            temp_buffer[j * 2 + 1] = color & 0xFF;  // 低字节后发送
+        }
+        
+        st7789_write_data_buf(temp_buffer, chunk_size * 2);
+        i += chunk_size;
+    }
 }
 
 /**
@@ -382,15 +400,15 @@ void st7789_fill_area(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16
     // 计算像素数量
     uint32_t pixel_count = (x1 - x0 + 1) * (y1 - y0 + 1);
     
-    // 创建颜色缓冲区
-    uint16_t color_buffer[64];  // 64像素的缓冲区
-    for (int i = 0; i < 64; i++) {
+    // 创建颜色缓冲区 - 减小批次大小，避免传输问题
+    uint16_t color_buffer[32];  // 32像素的缓冲区
+    for (int i = 0; i < 32; i++) {
         color_buffer[i] = color;
     }
     
     // 分批发送数据
     while (pixel_count > 0) {
-        uint32_t chunk_size = (pixel_count > 64) ? 64 : pixel_count;
+        uint32_t chunk_size = (pixel_count > 32) ? 32 : pixel_count;
         st7789_write_pixels(color_buffer, chunk_size);
         pixel_count -= chunk_size;
     }
@@ -413,33 +431,29 @@ void st7789_set_rotation(uint8_t rotation)
     
     rotation %= 4; // 标准化旋转值
 
+    // 根据参考STM32代码设置旋转，并始终包含RGB标志
     switch (rotation) {
         case 0:
-            madctl_value = ST7789_MADCTL_MX | ST7789_MADCTL_MY;
+            madctl_value = ST7789_MADCTL_MX | ST7789_MADCTL_MY | ST7789_MADCTL_RGB;
             g_st7789_handle.width = ST7789_WIDTH;
             g_st7789_handle.height = ST7789_HEIGHT;
             break;
         case 1:
-            madctl_value = ST7789_MADCTL_MY | ST7789_MADCTL_MV;
+            madctl_value = ST7789_MADCTL_MY | ST7789_MADCTL_MV | ST7789_MADCTL_RGB;
             g_st7789_handle.width = ST7789_HEIGHT;
             g_st7789_handle.height = ST7789_WIDTH;
             break;
         case 2:
-            madctl_value = 0x00;
+            madctl_value = ST7789_MADCTL_RGB;  // 只设置RGB标志，与参考代码一致
             g_st7789_handle.width = ST7789_WIDTH;
             g_st7789_handle.height = ST7789_HEIGHT;
             break;
         case 3:
-            madctl_value = ST7789_MADCTL_MX | ST7789_MADCTL_MV;
+            madctl_value = ST7789_MADCTL_MX | ST7789_MADCTL_MV | ST7789_MADCTL_RGB;
             g_st7789_handle.width = ST7789_HEIGHT;
             g_st7789_handle.height = ST7789_WIDTH;
             break;
     }
-
-    // 根据ST7789_RGB_ORDER调整颜色顺序
-    #if ST7789_RGB_ORDER == 1
-        madctl_value |= 0x08; // BGR order
-    #endif
     
     st7789_write_cmd(ST7789_CMD_MADCTL);
     st7789_write_data(madctl_value);

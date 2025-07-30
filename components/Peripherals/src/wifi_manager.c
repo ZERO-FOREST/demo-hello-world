@@ -10,6 +10,9 @@
 #include "nvs_flash.h"
 #include "lwip/err.h"
 #include "lwip/sys.h"
+#include "esp_sntp.h"
+#include <time.h>
+#include <sys/time.h>
 
 static const char *TAG = "WIFI_MANAGER";
 
@@ -53,6 +56,9 @@ static void event_handler(void* arg, esp_event_base_t event_base,
         s_retry_num = 0;
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
         ESP_LOGI(TAG, "Got IP address: %s", g_wifi_info.ip_addr);
+        
+        // WiFi连接成功后，启动时间同步
+        wifi_manager_sync_time();
     }
 
     // 如果设置了回调函数，则调用它
@@ -78,8 +84,10 @@ static esp_err_t wifi_init_stack(void)
     ESP_ERROR_CHECK(esp_event_loop_create_default());
     esp_netif_create_default_wifi_sta();
 
+    // 初始化WiFi驱动
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+    ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
 
     // 注册事件处理器
     esp_event_handler_instance_t instance_any_id;
@@ -105,10 +113,19 @@ esp_err_t wifi_manager_init(wifi_manager_event_cb_t event_cb)
     g_wifi_info.state = WIFI_STATE_DISABLED;
     strcpy(g_wifi_info.ip_addr, "N/A");
     
-    // 获取MAC地址
-    ESP_ERROR_CHECK(esp_wifi_get_mac(ESP_IF_WIFI_STA, g_wifi_info.mac_addr));
+    // 先初始化WiFi底层
+    esp_err_t ret = wifi_init_stack();
+    if (ret != ESP_OK) {
+        return ret;
+    }
 
-    return wifi_init_stack();
+    // 获取MAC地址
+    ret = esp_wifi_get_mac(ESP_IF_WIFI_STA, g_wifi_info.mac_addr);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to get MAC address: %s", esp_err_to_name(ret));
+    }
+
+    return ESP_OK;
 }
 
 esp_err_t wifi_manager_start(void)
@@ -117,20 +134,23 @@ esp_err_t wifi_manager_start(void)
     
     wifi_config_t wifi_config = {
         .sta = {
-            // 在这里填入您的WiFi名称和密码
-            // 注意：SSID 和 密码 都必须是C语言字符串（用双引号括起来）
-            .ssid = "YOUR_WIFI_SSID",
-            .password = "YOUR_WIFI_PASSWORD",
-            /* Setting a password implies station will connect to all security modes including WEP/WPA.
-             * However these modes are deprecated and not advisable to be used. Incase your Access point
-             * doesn't support WPA2, these mode can be enabled by commenting below line */
-            .threshold.authmode = WIFI_AUTH_WPA2_PSK,
+            // 连接到用户指定的WiFi
+            .ssid = "TidyC",
+            .password = "22989822",
+            /* 设置最低安全等级为WPA/WPA2 PSK */
+            .threshold.authmode = WIFI_AUTH_WPA_PSK,
         },
     };
 
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
     ESP_ERROR_CHECK(esp_wifi_start());
+    
+    // WiFi启动后设置发射功率为8dBm（较为适中的功率）
+    esp_err_t power_ret = esp_wifi_set_max_tx_power(32);  // 8dBm = 32/4
+    if (power_ret != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to set WiFi power: %s", esp_err_to_name(power_ret));
+    }
 
     ESP_LOGI(TAG, "wifi_manager_start finished.");
     return ESP_OK;
@@ -167,4 +187,64 @@ esp_err_t wifi_manager_set_power(int8_t power_dbm)
 wifi_manager_info_t wifi_manager_get_info(void)
 {
     return g_wifi_info;
+}
+
+/**
+ * @brief 时间同步回调函数
+ */
+static void time_sync_notification_cb(struct timeval *tv)
+{
+    ESP_LOGI(TAG, "Time synchronized!");
+}
+
+/**
+ * @brief 启动时间同步
+ */
+void wifi_manager_sync_time(void)
+{
+    ESP_LOGI(TAG, "Initializing SNTP time sync...");
+    
+    // 设置时区为北京时间 (UTC+8)
+    setenv("TZ", "CST-8", 1);
+    tzset();
+    
+    // 配置SNTP
+    esp_sntp_setoperatingmode(ESP_SNTP_OPMODE_POLL);
+    esp_sntp_setservername(0, "pool.ntp.org");
+    esp_sntp_setservername(1, "time.nist.gov");
+    esp_sntp_setservername(2, "cn.pool.ntp.org");  // 中国NTP服务器
+    
+    // 设置时间同步回调
+    esp_sntp_set_time_sync_notification_cb(time_sync_notification_cb);
+    
+    // 启动SNTP
+    esp_sntp_init();
+    
+    ESP_LOGI(TAG, "SNTP time sync started");
+}
+
+/**
+ * @brief 获取当前时间字符串
+ * @param time_str 输出缓冲区
+ * @param max_len 缓冲区最大长度
+ * @return 是否成功获取时间
+ */
+bool wifi_manager_get_time_str(char *time_str, size_t max_len)
+{
+    time_t now = 0;
+    struct tm timeinfo = {0};
+    
+    // 获取当前时间
+    time(&now);
+    localtime_r(&now, &timeinfo);
+    
+    // 检查时间是否已同步（年份应该大于2020）
+    if (timeinfo.tm_year < (2020 - 1900)) {
+        snprintf(time_str, max_len, "Syncing...");
+        return false;
+    }
+    
+    // 格式化时间字符串：YYYY-MM-DD HH:MM
+    strftime(time_str, max_len, "%Y-%m-%d %H:%M", &timeinfo);
+    return true;
 } 
