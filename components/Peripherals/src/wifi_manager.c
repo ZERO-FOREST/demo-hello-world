@@ -1,5 +1,6 @@
 #include "wifi_manager.h"
 #include <string.h>
+#include "esp_wifi_types_generic.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
@@ -58,7 +59,23 @@ static void event_handler(void* arg, esp_event_base_t event_base,
         ESP_LOGI(TAG, "Got IP address: %s", g_wifi_info.ip_addr);
         
         // WiFi连接成功后，启动时间同步
+        ESP_LOGI(TAG, "Starting time synchronization...");
         wifi_manager_sync_time();
+        
+        // 等待时间同步完成
+        int retry = 0;
+        const int max_retry = 10;
+        while (sntp_get_sync_status() != SNTP_SYNC_STATUS_COMPLETED && retry < max_retry) {
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            retry++;
+            ESP_LOGI(TAG, "Waiting for time sync... (%d/%d)", retry, max_retry);
+        }
+        
+        if (retry < max_retry) {
+            ESP_LOGI(TAG, "Time synchronized successfully!");
+        } else {
+            ESP_LOGW(TAG, "Time sync timeout!");
+        }
     }
 
     // 如果设置了回调函数，则调用它
@@ -138,7 +155,7 @@ esp_err_t wifi_manager_start(void)
             .ssid = "TidyC",
             .password = "22989822",
             /* 设置最低安全等级为WPA/WPA2 PSK */
-            .threshold.authmode = WIFI_AUTH_WPA_PSK,
+            .threshold.authmode = WIFI_AUTH_WPA_WPA2_PSK,
         },
     };
 
@@ -210,9 +227,12 @@ void wifi_manager_sync_time(void)
     
     // 配置SNTP
     esp_sntp_setoperatingmode(ESP_SNTP_OPMODE_POLL);
-    esp_sntp_setservername(0, "pool.ntp.org");
-    esp_sntp_setservername(1, "time.nist.gov");
-    esp_sntp_setservername(2, "cn.pool.ntp.org");  // 中国NTP服务器
+    esp_sntp_setservername(0, "ntp.aliyun.com");  // 阿里云NTP服务器
+    esp_sntp_setservername(1, "ntp1.aliyun.com");
+    esp_sntp_setservername(2, "ntp2.aliyun.com");
+    
+    // 设置更新间隔（15分钟）
+    esp_sntp_set_sync_interval(900000);
     
     // 设置时间同步回调
     esp_sntp_set_time_sync_notification_cb(time_sync_notification_cb);
@@ -220,7 +240,7 @@ void wifi_manager_sync_time(void)
     // 启动SNTP
     esp_sntp_init();
     
-    ESP_LOGI(TAG, "SNTP time sync started");
+    ESP_LOGI(TAG, "SNTP time sync started with Aliyun NTP servers");
 }
 
 /**

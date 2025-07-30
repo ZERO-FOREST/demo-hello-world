@@ -1,5 +1,6 @@
 #include "ui.h"
 #include "wifi_manager.h"
+#include "esp_log.h"
 
 // 全局变量保存时间标签
 static lv_obj_t *g_time_label = NULL;
@@ -7,11 +8,18 @@ static lv_obj_t *g_time_label = NULL;
 // 时间更新定时器回调函数
 static void time_update_timer_cb(lv_timer_t *timer)
 {
-    if (!g_time_label) return;
+    if (!g_time_label) {
+        ESP_LOGW("UI_MAIN", "Time label is NULL!");
+        return;
+    }
 
     char time_str[32];
     if (wifi_manager_get_time_str(time_str, sizeof(time_str))) {
+        ESP_LOGI("UI_MAIN", "Updating time: %s", time_str);
         lv_label_set_text(g_time_label, time_str);
+        lv_obj_invalidate(g_time_label);
+    } else {
+        ESP_LOGW("UI_MAIN", "Failed to get time string");
     }
 }
 
@@ -83,14 +91,28 @@ void ui_main_menu_create(lv_obj_t *parent) {
         lv_obj_center(label);
     }
 
+    // 创建时间显示容器
+    lv_obj_t *time_cont = lv_obj_create(parent);
+    lv_obj_set_size(time_cont, 150, 30);
+    lv_obj_align(time_cont, LV_ALIGN_BOTTOM_RIGHT, -5, -5);
+    lv_obj_set_style_bg_color(time_cont, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_bg_opa(time_cont, LV_OPA_70, 0);
+    lv_obj_set_style_radius(time_cont, 4, 0);
+    lv_obj_set_style_pad_all(time_cont, 5, 0);
+
     // 创建时间显示标签
-    g_time_label = lv_label_create(parent);
+    g_time_label = lv_label_create(time_cont);
     lv_obj_set_style_text_font(g_time_label, &lv_font_montserrat_16, 0);
-    lv_obj_align(g_time_label, LV_ALIGN_BOTTOM_RIGHT, -10, -10);
+    lv_obj_set_style_text_color(g_time_label, lv_color_hex(0x000000), 0);
+    lv_obj_center(g_time_label);
     lv_label_set_text(g_time_label, "Syncing...");
 
     // 创建时间更新定时器（每秒更新一次）
-    lv_timer_create(time_update_timer_cb, 1000, NULL);
+    static lv_timer_t *timer = NULL;
+    if (timer == NULL) {
+        timer = lv_timer_create(time_update_timer_cb, 1000, NULL);
+        ESP_LOGI("UI_MAIN", "Time update timer created");
+    }
 
     // 扩展提示：要添加新选项，在 menu_items 数组中添加新项，并实现对应的回调函数
 } 
