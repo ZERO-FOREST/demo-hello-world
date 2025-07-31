@@ -1,6 +1,7 @@
 #include "ui.h"
 #include "wifi_manager.h"
 #include "esp_log.h"
+#include <time.h>
 
 // 全局变量保存时间标签
 static lv_obj_t *g_time_label = NULL;
@@ -13,14 +14,24 @@ static void time_update_timer_cb(lv_timer_t *timer)
         return;
     }
 
-    char time_str[32];
-    if (wifi_manager_get_time_str(time_str, sizeof(time_str))) {
-        ESP_LOGI("UI_MAIN", "Updating time: %s", time_str);
-        lv_label_set_text(g_time_label, time_str);
-        lv_obj_invalidate(g_time_label);
-    } else {
-        ESP_LOGW("UI_MAIN", "Failed to get time string");
+    time_t now = 0;
+    struct tm timeinfo = {0};
+    
+    // 获取当前时间
+    time(&now);
+    localtime_r(&now, &timeinfo);
+    
+    // 检查时间是否已同步（年份应该大于2020）
+    if (timeinfo.tm_year < (2020 - 1900)) {
+        lv_label_set_text(g_time_label, "--:--");
+        return;
     }
+    
+    // 只显示时间，格式为 HH:MM
+    char time_str[16];
+    strftime(time_str, sizeof(time_str), "%H:%M", &timeinfo);
+    lv_label_set_text(g_time_label, time_str);
+    lv_obj_invalidate(g_time_label);
 }
 
 // 菜单项回调函数类型
@@ -93,7 +104,7 @@ void ui_main_menu_create(lv_obj_t *parent) {
 
     // 创建时间显示容器
     lv_obj_t *time_cont = lv_obj_create(parent);
-    lv_obj_set_size(time_cont, 150, 30);
+    lv_obj_set_size(time_cont, 80, 30);
     lv_obj_align(time_cont, LV_ALIGN_BOTTOM_RIGHT, -5, -5);
     lv_obj_set_style_bg_color(time_cont, lv_color_hex(0xFFFFFF), 0);
     lv_obj_set_style_bg_opa(time_cont, LV_OPA_70, 0);
@@ -105,7 +116,7 @@ void ui_main_menu_create(lv_obj_t *parent) {
     lv_obj_set_style_text_font(g_time_label, &lv_font_montserrat_16, 0);
     lv_obj_set_style_text_color(g_time_label, lv_color_hex(0x000000), 0);
     lv_obj_center(g_time_label);
-    lv_label_set_text(g_time_label, "Syncing...");
+    lv_label_set_text(g_time_label, "--:--");
 
     // 创建时间更新定时器（每秒更新一次）
     static lv_timer_t *timer = NULL;
