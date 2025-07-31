@@ -18,6 +18,7 @@
 #include "lsm6ds3_demo.h"
 #include "st7789.h"
 #include "wifi_manager.h"
+#include "battery_monitor.h"
 
 
 static const char *TAG = "MAIN";
@@ -33,6 +34,14 @@ void app_main(void) {
     
     ESP_LOGI(TAG, "ESP32-S3 Demo Application Starting...");
     ESP_LOGI(TAG, "App main running on core %d", xPortGetCoreID());
+
+    // 初始化电池监测模块
+    ret = battery_monitor_init();
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "Battery monitor initialized");
+    } else {
+        ESP_LOGW(TAG, "Battery monitor init failed: %s", esp_err_to_name(ret));
+    }
 
     // 初始化并启动WiFi连接
     ret = wifi_manager_init(NULL);

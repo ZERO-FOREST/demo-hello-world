@@ -8,6 +8,8 @@
 #include "lvgl_main.h"
 #include "power_management.h"
 #include "ws2812.h"
+#include "battery_monitor.h"
+#include "ui.h"
 #include <stdint.h>
 
 static const char* TAG = "TASK_INIT";
@@ -17,6 +19,7 @@ static TaskHandle_t s_lvgl_task_handle = NULL;
 static TaskHandle_t s_power_task_handle = NULL;
 static TaskHandle_t s_ws2812_task_handle = NULL;
 static TaskHandle_t s_monitor_task_handle = NULL;
+static TaskHandle_t s_battery_task_handle = NULL;
 
 // WS2812演示任务
 static void ws2812_demo_task(void* pvParameters) {
@@ -85,10 +88,50 @@ static void system_monitor_task(void* pvParameters) {
         if (s_power_task_handle) {
             ESP_LOGI(TAG, "Power task: Running");
         }
+        if (s_battery_task_handle) {
+            ESP_LOGI(TAG, "Battery task: Running");
+        }
 
         ESP_LOGI(TAG, "==================");
 
         vTaskDelay(pdMS_TO_TICKS(10000)); // 10秒监控一次
+    }
+}
+
+// 电池监测任务
+static void battery_monitor_task(void* pvParameters) {
+    ESP_LOGI(TAG, "Battery Monitor Task started on core %d", xPortGetCoreID());
+
+    // 等待系统初始化完成
+    vTaskDelay(pdMS_TO_TICKS(5000)); // 增加等待时间，确保UI完全初始化
+
+    while (1) {
+        // 读取电池信息
+        battery_info_t battery_info;
+        esp_err_t ret = battery_monitor_read(&battery_info);
+        
+        if (ret == ESP_OK) {
+            ESP_LOGI(TAG, "Battery: %dmV, %d%%, Status: %d", 
+                     battery_info.voltage_mv, 
+                     battery_info.percentage, 
+                     battery_info.status);
+            
+            // 检查低电量警告
+            if (battery_info.is_critical) {
+                ESP_LOGW(TAG, "CRITICAL BATTERY LEVEL: %d%%", battery_info.percentage);
+            } else if (battery_info.is_low_battery) {
+                ESP_LOGW(TAG, "LOW BATTERY LEVEL: %d%%", battery_info.percentage);
+            }
+            
+            // 暂时禁用UI更新，先确保基本功能正常
+            // vTaskDelay(pdMS_TO_TICKS(1000));
+            // ui_main_update_battery_display();
+        } else {
+            ESP_LOGW(TAG, "Failed to read battery info: %s", esp_err_to_name(ret));
+        }
+
+        // 每30秒更新一次（调试用）
+        vTaskDelay(pdMS_TO_TICKS(30 * 1000)); // 30秒
     }
 }
 
@@ -189,6 +232,30 @@ esp_err_t init_system_monitor_task(void) {
     return ESP_OK;
 }
 
+esp_err_t init_battery_monitor_task(void) {
+    if (s_battery_task_handle != NULL) {
+        ESP_LOGW(TAG, "Battery monitor task already running");
+        return ESP_OK;
+    }
+
+    BaseType_t result = xTaskCreatePinnedToCore(battery_monitor_task,   // 任务函数
+                                                "Battery_Monitor",      // 任务名称
+                                                TASK_STACK_MEDIUM,      // 堆栈大小 (4KB)
+                                                NULL,                   // 参数
+                                                TASK_PRIORITY_LOW,      // 低优先级
+                                                &s_battery_task_handle, // 任务句柄
+                                                0                       // 绑定到Core 0
+    );
+
+    if (result != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create battery monitor task");
+        return ESP_ERR_NO_MEM;
+    }
+
+    ESP_LOGI(TAG, "Battery monitor task created successfully on Core 0");
+    return ESP_OK;
+}
+
 esp_err_t init_all_tasks(void) {
     ESP_LOGI(TAG, "Initializing all tasks...");
 
@@ -204,6 +271,13 @@ esp_err_t init_all_tasks(void) {
     ret = init_system_monitor_task();
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to init system monitor task");
+        return ret;
+    }
+
+    // 初始化电池监测任务
+    ret = init_battery_monitor_task();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to init battery monitor task");
         return ret;
     }
 
@@ -246,6 +320,12 @@ esp_err_t stop_all_tasks(void) {
         ESP_LOGI(TAG, "System monitor task stopped");
     }
 
+    if (s_battery_task_handle) {
+        vTaskDelete(s_battery_task_handle);
+        s_battery_task_handle = NULL;
+        ESP_LOGI(TAG, "Battery monitor task stopped");
+    }
+
     ESP_LOGI(TAG, "All tasks stopped");
     return ESP_OK;
 }
@@ -256,6 +336,7 @@ void list_running_tasks(void) {
     ESP_LOGI(TAG, "Power Task: %s", s_power_task_handle ? "Running" : "Stopped");
     ESP_LOGI(TAG, "WS2812 Task: %s", s_ws2812_task_handle ? "Running" : "Stopped");
     ESP_LOGI(TAG, "Monitor Task: %s", s_monitor_task_handle ? "Running" : "Stopped");
+    ESP_LOGI(TAG, "Battery Task: %s", s_battery_task_handle ? "Running" : "Stopped");
     ESP_LOGI(TAG, "==================");
 }
 
@@ -267,3 +348,4 @@ TaskHandle_t get_power_task_handle(void) { return s_power_task_handle; }
 TaskHandle_t get_ws2812_task_handle(void) { return s_ws2812_task_handle; }
 
 TaskHandle_t get_monitor_task_handle(void) { return s_monitor_task_handle; }
+TaskHandle_t get_battery_task_handle(void) { return s_battery_task_handle; }

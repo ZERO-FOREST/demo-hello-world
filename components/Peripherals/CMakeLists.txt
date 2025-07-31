@@ -4,5 +4,6 @@ idf_component_register(SRCS "src/st7789.c"
                          "src/lsm6ds3.c"
                          "src/joystick_adc.c"
                          "src/wifi_manager.c"
+                         "src/battery_monitor.c"
                     INCLUDE_DIRS "inc"
                     REQUIRES lvgl log esp_wifi esp_event esp_netif nvs_flash driver) 

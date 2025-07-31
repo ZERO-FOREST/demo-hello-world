@@ -50,6 +50,12 @@ void ui_wifi_settings_create(lv_obj_t *parent);
  */
 void ui_settings_create(lv_obj_t *parent);
 
+/**
+ * @brief 更新电池电量显示
+ * 由任务调用，每5分钟更新一次
+ */
+void ui_main_update_battery_display(void);
+
 // --- 语言设置相关 ---
 // 语言类型枚举
 typedef enum {
