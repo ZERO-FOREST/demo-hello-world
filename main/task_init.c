@@ -5,11 +5,11 @@
 #include "freertos/task.h"
 
 // 引入各模块头文件
+#include "battery_monitor.h"
 #include "lvgl_main.h"
 #include "power_management.h"
-#include "ws2812.h"
-#include "battery_monitor.h"
 #include "ui.h"
+#include "ws2812.h"
 #include <stdint.h>
 
 static const char* TAG = "TASK_INIT";
@@ -35,28 +35,29 @@ static void ws2812_demo_task(void* pvParameters) {
 
     ESP_LOGI(TAG, "WS2812 initialized with %d LEDs on GPIO48", ws2812_get_led_count());
 
-    ws2812_color_t breathing_color[] = {WS2812_COLOR_GREEN, WS2812_COLOR_RED, WS2812_COLOR_BLUE, WS2812_COLOR_YELLOW,
-                                        WS2812_COLOR_WHITE}; // 选择呼吸灯颜色
+    ws2812_color_t breathing_color = WS2812_COLOR_BLACK; // 选择呼吸灯颜色
 
     while (1) {
-        ESP_LOGI(TAG, "Breathing Effect");
-        for (uint8_t j = 0; j < 5; j++) {
-            // 亮度渐变：从 0 到 127
-            for (int brightness = 0; brightness <= 127; brightness += 5) {
-                ws2812_set_brightness(brightness);  // 设置亮度
-                ws2812_set_all(breathing_color[j]); // 设置所有LED颜色
-                ws2812_refresh();                   // 刷新显示
-                vTaskDelay(pdMS_TO_TICKS(50));      // 延时
-            }
+        ws2812_set_all(breathing_color);
+        ws2812_refresh();                 // 刷新显示
+        vTaskDelay(pdMS_TO_TICKS(10000)); // 每10秒更新一次
+        // for (uint8_t j = 0; j < 5; j++) {
+        //     // 亮度渐变：从 0 到 127
+        //     for (int brightness = 0; brightness <= 127; brightness += 5) {
+        //         ws2812_set_brightness(brightness);  // 设置亮度
+        //         ws2812_set_all(breathing_color[j]); // 设置所有LED颜色
+        //         ws2812_refresh();                   // 刷新显示
+        //         vTaskDelay(pdMS_TO_TICKS(50));      // 延时
+        //     }
 
-            // 亮度渐变：从 127 到 0
-            for (int brightness = 127; brightness >= 0; brightness -= 5) {
-                ws2812_set_brightness(brightness);  // 设置亮度
-                ws2812_set_all(breathing_color[j]); // 设置所有LED颜色
-                ws2812_refresh();                   // 刷新显示
-                vTaskDelay(pdMS_TO_TICKS(50));      // 延时
-            }
-        }
+        //     // 亮度渐变：从 127 到 0
+        //     for (int brightness = 127; brightness >= 0; brightness -= 5) {
+        //         ws2812_set_brightness(brightness);  // 设置亮度
+        //         ws2812_set_all(breathing_color[j]); // 设置所有LED颜色
+        //         ws2812_refresh();                   // 刷新显示
+        //         vTaskDelay(pdMS_TO_TICKS(50));      // 延时
+        //     }
+        // }
     }
 }
 
@@ -109,29 +110,26 @@ static void battery_monitor_task(void* pvParameters) {
         // 读取电池信息
         battery_info_t battery_info;
         esp_err_t ret = battery_monitor_read(&battery_info);
-        
+
         if (ret == ESP_OK) {
-            ESP_LOGI(TAG, "Battery: %dmV, %d%%, Status: %d", 
-                     battery_info.voltage_mv, 
-                     battery_info.percentage, 
+            ESP_LOGI(TAG, "Battery: %dmV, %d%%, Status: %d", battery_info.voltage_mv, battery_info.percentage,
                      battery_info.status);
-            
+
             // 检查低电量警告
             if (battery_info.is_critical) {
                 ESP_LOGW(TAG, "CRITICAL BATTERY LEVEL: %d%%", battery_info.percentage);
             } else if (battery_info.is_low_battery) {
                 ESP_LOGW(TAG, "LOW BATTERY LEVEL: %d%%", battery_info.percentage);
             }
-            
-            // 暂时禁用UI更新，先确保基本功能正常
-            // vTaskDelay(pdMS_TO_TICKS(1000));
-            // ui_main_update_battery_display();
+
+            // 更新主菜单的电池显示
+            ui_main_update_battery_display();
         } else {
             ESP_LOGW(TAG, "Failed to read battery info: %s", esp_err_to_name(ret));
         }
 
-        // 每30秒更新一次（调试用）
-        vTaskDelay(pdMS_TO_TICKS(30 * 1000)); // 30秒
+        // 每5秒更新一次
+        vTaskDelay(pdMS_TO_TICKS(5000)); // 5秒
     }
 }
 
@@ -290,7 +288,6 @@ esp_err_t init_all_tasks(void) {
 
     ESP_LOGI(TAG, "All tasks initialized successfully");
     return ESP_OK;
-
 }
 
 esp_err_t stop_all_tasks(void) {

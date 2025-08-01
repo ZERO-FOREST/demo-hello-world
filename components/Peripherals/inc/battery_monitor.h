@@ -12,33 +12,33 @@
 extern "C" {
 #endif
 
-#include "esp_err.h"
 #include "driver/adc.h"
+#include "esp_err.h"
 
 // ========================================
 // 硬件配置
 // ========================================
-#define BATTERY_ADC_CHANNEL ADC1_CHANNEL_4  // GPIO5
-#define BATTERY_ADC_ATTEN   ADC_ATTEN_DB_12 // 0-3.3V (使用新的衰减值)
+#define BATTERY_ADC_CHANNEL ADC1_CHANNEL_4 // GPIO5
+#define BATTERY_ADC_ATTEN ADC_ATTEN_DB_12  // 0-3.3V (使用新的衰减值)
 
 // 电池电压分压比例 (如果使用分压电路)
-#define BATTERY_VOLTAGE_DIVIDER_RATIO 2.0f  // 根据实际分压电路调整
+#define BATTERY_VOLTAGE_DIVIDER_RATIO 2.0f // 根据实际分压电路调整
 
 // 电池电压范围 (mV)
-#define BATTERY_VOLTAGE_MIN 3000  // 3.0V
-#define BATTERY_VOLTAGE_MAX 4200  // 4.2V
+#define BATTERY_VOLTAGE_MIN 3000 // 3.0V
+#define BATTERY_VOLTAGE_MAX 4200 // 4.2V
 
 // 校准数据存储
 #define BATTERY_NVS_NAMESPACE "battery_cal"
 #define BATTERY_NVS_CAL_KEY "cal_data"
 
 // 电量百分比阈值
-#define BATTERY_PERCENT_CRITICAL 10   // 10% 以下为严重
-#define BATTERY_PERCENT_LOW      20   // 20% 以下为低电量
-#define BATTERY_PERCENT_MEDIUM   50   // 50% 以下为中等电量
+#define BATTERY_PERCENT_CRITICAL 10 // 10% 以下为严重
+#define BATTERY_PERCENT_LOW 20      // 20% 以下为低电量
+#define BATTERY_PERCENT_MEDIUM 50   // 50% 以下为中等电量
 
 // 滤波系数
-#define BATTERY_FILTER_ALPHA 0.1f  // 低通滤波系数 (0.0 < alpha < 1.0)
+#define BATTERY_FILTER_ALPHA 0.1f // 低通滤波系数 (0.0 < alpha < 1.0)
 
 // ========================================
 // 数据结构定义
@@ -59,22 +59,22 @@ typedef enum {
  * @brief 电池校准数据
  */
 typedef struct {
-    float voltage_offset;     // 电压偏移量 (mV)
-    float voltage_scale;      // 电压缩放系数
-    int min_voltage_mv;       // 最小电压 (mV)
-    int max_voltage_mv;       // 最大电压 (mV)
-    bool is_calibrated;       // 是否已校准
+    float voltage_offset; // 电压偏移量 (mV)
+    float voltage_scale;  // 电压缩放系数
+    int min_voltage_mv;   // 最小电压 (mV)
+    int max_voltage_mv;   // 最大电压 (mV)
+    bool is_calibrated;   // 是否已校准
 } battery_cal_data_t;
 
 /**
  * @brief 电池信息结构体
  */
 typedef struct {
-    int voltage_mv;           // 电池电压 (mV)
-    int percentage;           // 电量百分比 (0-100)
-    battery_status_t status;  // 电池状态
-    bool is_low_battery;      // 是否低电量
-    bool is_critical;         // 是否严重低电量
+    int voltage_mv;          // 电池电压 (mV)
+    int percentage;          // 电量百分比 (0-100)
+    battery_status_t status; // 电池状态
+    bool is_low_battery;     // 是否低电量
+    bool is_critical;        // 是否严重低电量
 } battery_info_t;
 
 // ========================================
@@ -107,7 +107,7 @@ esp_err_t battery_monitor_deinit(void);
  *     - ESP_ERR_INVALID_ARG: 参数错误
  *     - ESP_ERR_INVALID_STATE: 模块未初始化
  */
-esp_err_t battery_monitor_read(battery_info_t *info);
+esp_err_t battery_monitor_read(battery_info_t* info);
 
 /**
  * @brief 获取电池电压 (mV)
@@ -117,7 +117,7 @@ esp_err_t battery_monitor_read(battery_info_t *info);
  *     - ESP_OK: 成功
  *     - ESP_ERR_INVALID_STATE: 模块未初始化
  */
-esp_err_t battery_monitor_get_voltage(int *voltage_mv);
+esp_err_t battery_monitor_get_voltage(int* voltage_mv);
 
 /**
  * @brief 获取电池电量百分比
@@ -127,7 +127,7 @@ esp_err_t battery_monitor_get_voltage(int *voltage_mv);
  *     - ESP_OK: 成功
  *     - ESP_ERR_INVALID_STATE: 模块未初始化
  */
-esp_err_t battery_monitor_get_percentage(int *percentage);
+esp_err_t battery_monitor_get_percentage(int* percentage);
 
 /**
  * @brief 检查是否为低电量
@@ -223,4 +223,4 @@ esp_err_t battery_monitor_reset_calibration(void);
 }
 #endif
 
-#endif // BATTERY_MONITOR_H 
+#endif // BATTERY_MONITOR_H

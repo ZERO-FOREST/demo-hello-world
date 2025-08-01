@@ -1,23 +1,20 @@
 #include "battery_monitor.h"
-#include "esp_log.h"
 #include "driver/adc.h"
-#include "nvs_flash.h"
+#include "esp_log.h"
 #include "nvs.h"
+#include "nvs_flash.h"
 #include <math.h>
-
 
 static const char* TAG = "BATTERY_MONITOR";
 static bool s_is_initialized = false;
 static float s_filtered_voltage = 0.0f;
 
 // 校准相关变量
-static battery_cal_data_t s_cal_data = {
-    .voltage_offset = 0.0f,
-    .voltage_scale = 1.0f,
-    .min_voltage_mv = BATTERY_VOLTAGE_MIN,
-    .max_voltage_mv = BATTERY_VOLTAGE_MAX,
-    .is_calibrated = false
-};
+static battery_cal_data_t s_cal_data = {.voltage_offset = 0.0f,
+                                        .voltage_scale = 1.0f,
+                                        .min_voltage_mv = BATTERY_VOLTAGE_MIN,
+                                        .max_voltage_mv = BATTERY_VOLTAGE_MAX,
+                                        .is_calibrated = false};
 static bool s_is_calibrating = false;
 static int s_calibration_known_voltage = 0;
 
@@ -25,22 +22,22 @@ static int adc_raw_to_voltage_mv(int adc_reading) {
     // 使用简单的线性转换，将ADC原始值转换为电压
     // ADC1在11dB衰减下，0-3.3V对应0-4095
     int voltage = (adc_reading * 3300) / 4095; // 转换为mV
-    
+
     // 应用分压比例
     voltage = (int)(voltage * BATTERY_VOLTAGE_DIVIDER_RATIO);
-    
+
     // 应用校准数据
     if (s_cal_data.is_calibrated) {
         voltage = (int)(voltage * s_cal_data.voltage_scale + s_cal_data.voltage_offset);
     }
-    
+
     return voltage;
 }
 
 static int calculate_percentage(int voltage_mv) {
     int min_voltage = s_cal_data.is_calibrated ? s_cal_data.min_voltage_mv : BATTERY_VOLTAGE_MIN;
     int max_voltage = s_cal_data.is_calibrated ? s_cal_data.max_voltage_mv : BATTERY_VOLTAGE_MAX;
-    
+
     if (voltage_mv <= min_voltage) {
         return 0;
     } else if (voltage_mv >= max_voltage) {
@@ -199,7 +196,7 @@ esp_err_t battery_monitor_start_calibration(int known_voltage_mv) {
     if (!s_is_initialized) {
         return ESP_ERR_INVALID_STATE;
     }
-    
+
     s_is_calibrating = true;
     s_calibration_known_voltage = known_voltage_mv;
     ESP_LOGI(TAG, "Started calibration with known voltage: %dmV", known_voltage_mv);
@@ -210,30 +207,30 @@ esp_err_t battery_monitor_finish_calibration(void) {
     if (!s_is_initialized || !s_is_calibrating) {
         return ESP_ERR_INVALID_STATE;
     }
-    
+
     // 读取当前ADC值
     int adc_reading = adc1_get_raw(BATTERY_ADC_CHANNEL);
-    
+
     // 计算校准参数
     int raw_voltage = adc_raw_to_voltage_mv(adc_reading);
-    
+
     // 计算校准系数
     float expected_voltage = (float)s_calibration_known_voltage;
     float measured_voltage = (float)raw_voltage;
-    
+
     if (measured_voltage > 0) {
         s_cal_data.voltage_scale = expected_voltage / measured_voltage;
         s_cal_data.voltage_offset = 0.0f; // 可以扩展为偏移量校准
         s_cal_data.is_calibrated = true;
-        
-        ESP_LOGI(TAG, "Calibration completed: scale=%.3f, measured=%dmV, expected=%dmV", 
-                 s_cal_data.voltage_scale, raw_voltage, s_calibration_known_voltage);
+
+        ESP_LOGI(TAG, "Calibration completed: scale=%.3f, measured=%dmV, expected=%dmV", s_cal_data.voltage_scale,
+                 raw_voltage, s_calibration_known_voltage);
     } else {
         ESP_LOGE(TAG, "Invalid measured voltage for calibration: %dmV", raw_voltage);
         s_is_calibrating = false;
         return ESP_ERR_INVALID_ARG;
     }
-    
+
     s_is_calibrating = false;
     return ESP_OK;
 }
@@ -244,13 +241,9 @@ esp_err_t battery_monitor_cancel_calibration(void) {
     return ESP_OK;
 }
 
-bool battery_monitor_is_calibrating(void) {
-    return s_is_calibrating;
-}
+bool battery_monitor_is_calibrating(void) { return s_is_calibrating; }
 
-bool battery_monitor_is_calibrated(void) {
-    return s_cal_data.is_calibrated;
-}
+bool battery_monitor_is_calibrated(void) { return s_cal_data.is_calibrated; }
 
 esp_err_t battery_monitor_load_calibration_from_nvs(void) {
     nvs_handle_t nvs_handle;
@@ -258,16 +251,16 @@ esp_err_t battery_monitor_load_calibration_from_nvs(void) {
     if (ret != ESP_OK) {
         return ret;
     }
-    
+
     size_t required_size = sizeof(battery_cal_data_t);
     ret = nvs_get_blob(nvs_handle, BATTERY_NVS_CAL_KEY, &s_cal_data, &required_size);
     nvs_close(nvs_handle);
-    
+
     if (ret == ESP_OK) {
-        ESP_LOGI(TAG, "Loaded calibration data: scale=%.3f, offset=%.1f", 
-                 s_cal_data.voltage_scale, s_cal_data.voltage_offset);
+        ESP_LOGI(TAG, "Loaded calibration data: scale=%.3f, offset=%.1f", s_cal_data.voltage_scale,
+                 s_cal_data.voltage_offset);
     }
-    
+
     return ret;
 }
 
@@ -275,24 +268,24 @@ esp_err_t battery_monitor_save_calibration_to_nvs(void) {
     if (!s_cal_data.is_calibrated) {
         return ESP_ERR_INVALID_STATE;
     }
-    
+
     nvs_handle_t nvs_handle;
     esp_err_t ret = nvs_open(BATTERY_NVS_NAMESPACE, NVS_READWRITE, &nvs_handle);
     if (ret != ESP_OK) {
         return ret;
     }
-    
+
     ret = nvs_set_blob(nvs_handle, BATTERY_NVS_CAL_KEY, &s_cal_data, sizeof(battery_cal_data_t));
     if (ret == ESP_OK) {
         ret = nvs_commit(nvs_handle);
     }
-    
+
     nvs_close(nvs_handle);
-    
+
     if (ret == ESP_OK) {
         ESP_LOGI(TAG, "Calibration data saved to NVS");
     }
-    
+
     return ret;
 }
 
@@ -302,7 +295,7 @@ esp_err_t battery_monitor_reset_calibration(void) {
     s_cal_data.min_voltage_mv = BATTERY_VOLTAGE_MIN;
     s_cal_data.max_voltage_mv = BATTERY_VOLTAGE_MAX;
     s_cal_data.is_calibrated = false;
-    
+
     // 从NVS中删除校准数据
     nvs_handle_t nvs_handle;
     esp_err_t ret = nvs_open(BATTERY_NVS_NAMESPACE, NVS_READWRITE, &nvs_handle);
@@ -311,7 +304,7 @@ esp_err_t battery_monitor_reset_calibration(void) {
         nvs_commit(nvs_handle);
         nvs_close(nvs_handle);
     }
-    
+
     ESP_LOGI(TAG, "Calibration data reset to default values");
     return ESP_OK;
 }
