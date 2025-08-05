@@ -125,6 +125,7 @@ server_cert.pem
 # firmware/
 # *.bin
 # *.hex
+others/consultation/
 
 # ========================================
 # 保留重要文件（使用 ! 来取消忽略）

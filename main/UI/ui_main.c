@@ -3,6 +3,8 @@
 #include "esp_log.h"
 #include "ui.h"
 #include "wifi_manager.h"
+#include "wifi_image_transfer.h"
+#include "ui_image_transfer.h"
 
 // 全局变量保存时间标签和电池标签
 static lv_obj_t* g_time_label = NULL;
@@ -91,6 +93,14 @@ static void game_cb(void) {
     }
 }
 
+static void image_transfer_cb(void) {
+    lv_obj_t* screen = lv_scr_act();
+    if (screen) {
+        lv_obj_clean(screen);            // 清空当前屏幕
+        ui_image_transfer_create(screen); // 加载图传界面
+    }
+}
+
 // 可扩展的菜单项结构
 typedef struct {
     const char* text;
@@ -99,7 +109,7 @@ typedef struct {
 
 // 示例菜单项数组
 static menu_item_t menu_items[] = {
-    {"Demo", option1_cb}, {"WiFi Setup", wifi_settings_cb}, {"Settings", settings_cb}, {"Game", game_cb},
+    {"Demo", option1_cb}, {"WiFi Setup", wifi_settings_cb}, {"Settings", settings_cb}, {"Game", game_cb}, {"Image Transfer", image_transfer_cb},
     // 添加更多项...
 };
 

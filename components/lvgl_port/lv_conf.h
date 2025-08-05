@@ -44,10 +44,17 @@
    MEMORY SETTINGS
  *=========================*/
 
-#define LV_MEM_CUSTOM 0
+#define LV_MEM_CUSTOM 1
 #if LV_MEM_CUSTOM == 0
     /*Size of the memory available for `lv_mem_alloc()` in bytes (>= 2kB)*/
-    #define LV_MEM_SIZE (256U * 1024U)  /* 256K for PSRAM */
+    #define LV_MEM_SIZE (128U * 1024U)  /* 128K for internal RAM */
+#else
+    /*Header to include for the custom memory function*/
+    #define LV_MEM_CUSTOM_INCLUDE "esp_heap_caps.h"
+    /*Set the custom memory alloc functions. 'my_malloc' and 'my_free' must be declared.*/
+    #define LV_MEM_CUSTOM_ALLOC(size)      heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)
+    #define LV_MEM_CUSTOM_FREE(ptr)        heap_caps_free(ptr)
+    #define LV_MEM_CUSTOM_REALLOC(ptr, size) heap_caps_realloc(ptr, size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)
 #endif
 
 /*====================
@@ -109,7 +116,7 @@
  *  TEXT SETTINGS
  *=================*/
 #define LV_TXT_ENC_UTF8 1  // 启用UTF-8编码支持（显示中文必需）
-#define LV_TXT_ENC_ASCII 0
+/* LV_TXT_ENC_ASCII is defined by LVGL internally */
 #define LV_TXT_BREAK_CHARS " ,.;:-_"
 
 /*==================
