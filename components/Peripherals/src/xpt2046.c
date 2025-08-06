@@ -301,6 +301,9 @@ esp_err_t xpt2046_read_touch(int16_t *x, int16_t *y, bool *pressed)
     
     if (raw_data.pressed) {
         xpt2046_apply_calibration(raw_data.x, raw_data.y, x, y);
+        // 显示原始触摸数据和校准后的数据
+        ESP_LOGI(TAG, "Raw touch: x=%d, y=%d -> Calibrated: x=%d, y=%d", 
+                 raw_data.x, raw_data.y, *x, *y);
     } else {
         *x = 0;
         *y = 0;

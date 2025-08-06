@@ -104,13 +104,28 @@ static void touchpad_read(lv_indev_drv_t * indev_drv, lv_indev_data_t * data)
 {
     static lv_coord_t last_x = 0;
     static lv_coord_t last_y = 0;
+    static bool last_pressed = false;
 
     /*Save the pressed coordinates and the state*/
     if(touchpad_is_pressed()) {
         touchpad_get_xy(&last_x, &last_y);
         data->state = LV_INDEV_STATE_PR;
+        
+        // 实时显示触摸坐标
+        if (!last_pressed) {
+            ESP_LOGI(TAG, "Touch PRESSED at x:%d y:%d", last_x, last_y);
+        } else {
+            ESP_LOGI(TAG, "Touch MOVING at x:%d y:%d", last_x, last_y);
+        }
+        last_pressed = true;
     } else {
         data->state = LV_INDEV_STATE_REL;
+        
+        // 显示触摸释放
+        if (last_pressed) {
+            ESP_LOGI(TAG, "Touch RELEASED at x:%d y:%d", last_x, last_y);
+        }
+        last_pressed = false;
     }
 
     /*Set the last pressed coordinates*/

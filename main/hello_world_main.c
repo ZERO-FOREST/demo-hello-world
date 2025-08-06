@@ -70,6 +70,9 @@ void app_main(void) {
         ESP_LOGE(TAG, "Failed to initialize tasks: %s", esp_err_to_name(ret));
         return;
     }
+    
+    // 启动触摸测试（可选）
+    // touch_test_start();  // 取消注释以启用触摸测试
 
     ESP_LOGI(TAG, "=== System Information ===");
     ESP_LOGI(TAG, "Hardware: ESP32-S3 N16R8 (16MB Flash + 8MB PSRAM)");
