@@ -91,7 +91,7 @@ static void touchpad_init(void)
     // 因为ST7789负责初始化SPI总线，XPT2046只是添加设备到已有总线
     
     // 初始化XPT2046触摸控制器
-    esp_err_t ret = xpt2046_init(320, 240);  // 假设屏幕分辨率为320x240
+    esp_err_t ret = xpt2046_init(280, 240);  // 假设屏幕分辨率为320x240
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "XPT2046 initialization failed: %s", esp_err_to_name(ret));
     } else {

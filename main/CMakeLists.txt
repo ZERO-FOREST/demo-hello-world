@@ -1,6 +1,6 @@
 idf_component_register(SRCS "hello_world_main.c"
-                            "lvgl_main.c"
-                            "power_management.c"
+                            "app/lvgl_main.c"
+                            "app/power_management.c"
                             "task_init.c"
                             "demo/lsm6ds3_demo.c"
                             "demo/i2s_tdm_demo.c"

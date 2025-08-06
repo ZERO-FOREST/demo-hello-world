@@ -91,7 +91,7 @@
  *-----------*/
 #define LV_USE_LOG 1
 #if LV_USE_LOG
-    #define LV_LOG_LEVEL LV_LOG_LEVEL_INFO
+    #define LV_LOG_LEVEL LV_LOG_LEVEL_WARN  // 改为只显示警告和错误
     #define LV_LOG_PRINTF 1
 #endif
 
