@@ -190,74 +190,83 @@ static void st7789_hardware_reset(void)
  */
 static void st7789_init_sequence(void)
 {
-    ESP_LOGI(TAG, "Starting ST7789 initialization sequence based on STM32 driver");
-    st7789_power_enable(true);//打开电源
-    vTaskDelay(pdMS_TO_TICKS(500)); // 等待电源稳定
-    // 软件复位
-    st7789_write_cmd(ST7789_CMD_SWRESET);
-    vTaskDelay(pdMS_TO_TICKS(150)); // Recommended delay after SWRESET
-    
+    ESP_LOGI(TAG, "Starting ST7789 initialization sequence based on manufacturer driver");
+
+    // The reference driver does not use software reset, only hardware reset.
+    // Hardware reset is handled in st7789_init() before this function is called.
+    // st7789_write_cmd(ST7789_CMD_SWRESET);
+    // vTaskDelay(pdMS_TO_TICKS(150));
+
     // 退出睡眠模式
     st7789_write_cmd(ST7789_CMD_SLPOUT);
-    vTaskDelay(pdMS_TO_TICKS(120));
-    
+    vTaskDelay(pdMS_TO_TICKS(120)); // Reference driver uses 100ms, 120ms is fine.
+
     // 内存访问控制 (旋转和颜色顺序)
     st7789_set_rotation(ST7789_ROTATION);
     
-    // 设置颜色模式为RGB565 (16位)
+    // 设置颜色模式 (Reference: 0x05)
     st7789_write_cmd(ST7789_CMD_COLMOD);
-    st7789_write_data(0x55); // RGB565 format (标准值)
-    
-    // Porch control (from STM32 driver)
-    st7789_write_cmd(ST7789_CMD_PORCTRL);
+    st7789_write_data(0x05); 
+
+    // Frame rate setting (from reference)
+    st7789_write_cmd(ST7789_CMD_PORCTRL); // 0xB2
     st7789_write_data_buf((const uint8_t[]){0x0C, 0x0C, 0x00, 0x33, 0x33}, 5);
 
-    // Gate Control (from STM32 driver)
-    st7789_write_cmd(ST7789_CMD_GCTRL);
+    // Gate Control (from reference)
+    st7789_write_cmd(ST7789_CMD_GCTRL); // 0xB7
     st7789_write_data(0x35);
 
-    // VCOM Setting (from STM32 driver)
-    st7789_write_cmd(ST7789_CMD_VCOMS);
-    st7789_write_data(0x32); // 0.725v
+    // VCOM Setting (Reference: 0x35)
+    st7789_write_cmd(ST7789_CMD_VCOMS); // 0xBB
+    st7789_write_data(0x35);
 
-    // LCM Control (from STM32 driver)
-    st7789_write_cmd(ST7789_CMD_LCMCTRL);
-    st7789_write_data(0x01); // Default value
+    // Power setting (from reference) - some commands are not in standard datasheet but in ref driver
+    st7789_write_cmd(0xC0); 
+    st7789_write_data(0x2C);
+    
+    st7789_write_cmd(ST7789_CMD_LCMCTRL); // 0xC2
+    st7789_write_data(0x01);
 
-    // VDV and VRH Command Enable (from STM32 driver)
-    st7789_write_cmd(ST7789_CMD_VDVVRHEN);
-    st7789_write_data(0x01); // Enable
-    st7789_write_cmd(ST7789_CMD_VRHSET);
-    st7789_write_data(0x12);
+    st7789_write_cmd(ST7789_CMD_VDVVRHEN); // 0xC3, (Reference uses: 0x13)
+    st7789_write_data(0x13);
 
-    // VDV Set (from STM32 driver)
-    st7789_write_cmd(ST7789_CMD_VDVSET);
+    st7789_write_cmd(ST7789_CMD_VRHSET); // 0xC4, (Reference uses: 0x20)
     st7789_write_data(0x20);
 
-    // Power Control 1 (from STM32 driver)
-    st7789_write_cmd(ST7789_CMD_PWCTRL1);
-    st7789_write_data(0xA4);
-    st7789_write_data(0xA1);
+    st7789_write_cmd(ST7789_CMD_VDVSET); // 0xC6, (Reference uses: 0x0F)
+    st7789_write_data(0x0F);
 
-    // Positive Gamma Correction (from STM32 driver)
-    st7789_write_cmd(ST7789_CMD_GMCTRP1);
-    st7789_write_data_buf((const uint8_t[]){0xD0, 0x08, 0x0E, 0x09, 0x09, 0x05, 0x31, 0x33, 0x48, 0x17, 0x14, 0x15, 0x31, 0x34}, 14);
+    st7789_write_cmd(0xCA); // Unknown command from reference
+    st7789_write_data(0x0F);
 
-    // Negative Gamma Correction (from STM32 driver)
-    st7789_write_cmd(ST7789_CMD_GMCTRN1);
-    st7789_write_data_buf((const uint8_t[]){0xD0, 0x08, 0x0E, 0x09, 0x09, 0x05, 0x31, 0x33, 0x48, 0x17, 0x14, 0x15, 0x31, 0x34}, 14);
+    st7789_write_cmd(0xC8); // Unknown command from reference
+    st7789_write_data(0x08);
 
-    // 开启反色 (与STM32驱动保持一致)
-    st7789_write_cmd(ST7789_CMD_INVON);
+    st7789_write_cmd(0x55); // WRCTRLD / CABC Control? from reference
+    st7789_write_data(0x90);
+
+    st7789_write_cmd(ST7789_CMD_PWCTRL1); // 0xD0
+    st7789_write_data_buf((const uint8_t[]){0xA4, 0xA1}, 2);
+
+    // Positive Gamma Correction (from reference)
+    st7789_write_cmd(ST7789_CMD_GMCTRP1); // 0xE0
+    st7789_write_data_buf((const uint8_t[]){0xd0, 0x00, 0x06, 0x09, 0x0b, 0x2a, 0x3c, 0x55, 0x4b, 0x08, 0x16, 0x14, 0x19, 0x20}, 14);
+
+    // Negative Gamma Correction (from reference)
+    st7789_write_cmd(ST7789_CMD_GMCTRN1); // 0xE1
+    st7789_write_data_buf((const uint8_t[]){0xd0, 0x00, 0x06, 0x09, 0x0b, 0x29, 0x36, 0x54, 0x4b, 0x0d, 0x16, 0x14, 0x21, 0x20}, 14);
+
+    // The reference driver does NOT turn on color inversion. This is a likely cause of issues.
+    // st7789_write_cmd(ST7789_CMD_INVON);
     
-    // 正常显示模式
-    st7789_write_cmd(ST7789_CMD_NORON);
+    // The reference driver does not use NORON, it just calls DISPON.
+    // st7789_write_cmd(ST7789_CMD_NORON);
     
     // 开启显示
     st7789_write_cmd(ST7789_CMD_DISPON);
-    vTaskDelay(pdMS_TO_TICKS(120));
-    
-    ESP_LOGI(TAG, "ST7789 initialization sequence completed");
+    vTaskDelay(pdMS_TO_TICKS(10)); // A small delay after display on is good practice.
+
+    ESP_LOGI(TAG, "ST7789 initialization sequence updated based on manufacturer driver");
 }
 
 // ========================================
@@ -306,7 +315,7 @@ esp_err_t st7789_init(void)
     st7789_backlight_enable(true);
     
     // 清屏为绿色，测试显示是否存在问题
-    st7789_clear_screen(ST7789_BLACK);
+    st7789_clear_screen(ST7789_GREEN); // 使用绿色测试显示
     
     g_st7789_handle.is_initialized = true;
     ESP_LOGI(TAG, "ST7789 initialized successfully");

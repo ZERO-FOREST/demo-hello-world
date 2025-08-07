@@ -146,8 +146,4 @@ others/consultation/
 !README.md
 !Kconfig*
 !*.cmake 
-others/lcd/lcd_init.c
-.gitignore
-others/lcd/lcd_init.h
-others/lcd/lcd.h
-others/lcd/lcd.c
+
