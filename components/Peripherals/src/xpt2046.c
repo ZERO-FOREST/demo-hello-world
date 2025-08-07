@@ -334,8 +334,9 @@ void xpt2046_get_default_calibration(xpt2046_calibration_t *calibration)
         calibration->y_min = 200;
         calibration->y_max = 3900;
         calibration->swap_xy = false;
-        calibration->invert_x = false;
-        calibration->invert_y = false;
+        // For ST7789_ROTATION = 2 (180 degrees), we need to invert both X and Y
+        calibration->invert_x = true;
+        calibration->invert_y = true;
     }
 }
 
