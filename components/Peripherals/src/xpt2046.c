@@ -6,7 +6,6 @@
  */
 
 #include "xpt2046.h"
-#include "esp_log.h"
 #include "esp_err.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -17,14 +16,24 @@
 // ========================================
 // 私有变量和常量
 // ========================================
+/* disable logging to save resources */
+#ifndef XPT2046_DISABLE_LOG
+#define XPT2046_DISABLE_LOG 1
+#endif
+#if XPT2046_DISABLE_LOG
+#define ESP_LOGI(tag, fmt, ...) ((void)0)
+#define ESP_LOGW(tag, fmt, ...) ((void)0)
+#define ESP_LOGE(tag, fmt, ...) ((void)0)
+#endif
+
 static const char *TAG = "XPT2046";
 static xpt2046_handle_t g_xpt2046_handle = {0};
 
 // 基于厂商代码的优化参数
-#define READ_TIMES 5           // 读取次数
+#define READ_TIMES 3           // 读取次数（降采样以降低延迟）
 #define LOST_VAL 1            // 丢弃值数量
 #define ERR_RANGE 50          // 误差范围
-#define PRESSURE_THRESHOLD_MIN 100   // 压力阈值最小值
+#define PRESSURE_THRESHOLD_MIN 10    // 压力阈值最小值
 #define PRESSURE_THRESHOLD_MAX 4000  // 压力阈值最大值
 
 // ========================================
@@ -69,7 +78,7 @@ static esp_err_t xpt2046_spi_init(void)
         return ret;
     }
     
-    ESP_LOGI(TAG, "SPI device added to shared bus successfully");
+    /* added to shared bus */
     return ESP_OK;
 }
 
@@ -88,7 +97,7 @@ static esp_err_t xpt2046_gpio_init(void)
     };
     gpio_config(&io_conf);
     
-    ESP_LOGI(TAG, "GPIO initialized successfully");
+    /* gpio ready */
     return ESP_OK;
 }
 
@@ -109,7 +118,7 @@ static uint16_t xpt2046_read_channel(uint8_t command)
     
     ret = spi_device_polling_transmit(g_xpt2046_handle.spi_handle, &trans);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "SPI transmit failed");
+        /* spi transmit failed */
         return 0;
     }
     
@@ -131,7 +140,6 @@ static uint16_t xpt2046_read_xoy(uint8_t xy)
     // 多次读取
     for (i = 0; i < READ_TIMES; i++) {
         buf[i] = xpt2046_read_channel(xy);
-        vTaskDelay(1);  // 小延时
     }
     
     // 排序
@@ -262,7 +270,7 @@ esp_err_t xpt2046_init(uint16_t screen_width, uint16_t screen_height)
 {
     esp_err_t ret;
     
-    ESP_LOGI(TAG, "Initializing XPT2046 touch controller");
+    /* init touch controller */
     
     // 初始化句柄
     memset(&g_xpt2046_handle, 0, sizeof(xpt2046_handle_t));
@@ -285,7 +293,7 @@ esp_err_t xpt2046_init(uint16_t screen_width, uint16_t screen_height)
     }
     
     g_xpt2046_handle.is_initialized = true;
-    ESP_LOGI(TAG, "XPT2046 initialized successfully");
+    /* xpt2046 ready */
     
     return ESP_OK;
 }
@@ -304,7 +312,7 @@ esp_err_t xpt2046_deinit(void)
     // spi_bus_free(XPT2046_SPI_HOST); // 不释放总线，因为总线可能被其他设备共享
     
     g_xpt2046_handle.is_initialized = false;
-    ESP_LOGI(TAG, "XPT2046 deinitialized");
+    /* xpt2046 deinitialized */
     
     return ESP_OK;
 }
@@ -318,17 +326,12 @@ esp_err_t xpt2046_read_raw(xpt2046_data_t *data)
         return ESP_ERR_INVALID_ARG;
     }
     
-    // 检查是否有触摸
-    if (!xpt2046_is_touched()) {
-        data->pressed = false;
-        return ESP_OK;
-    }
-    
     // 使用优化的双次读取验证
     uint16_t x, y;
     if (!xpt2046_read_xy2(&x, &y)) {
-        data->pressed = false;
-        return ESP_OK;
+        // 若两次读取差异过大，仍返回最后一次读到的坐标，避免未初始化
+        x = xpt2046_read_xoy(XPT2046_CMD_X_POS);
+        y = xpt2046_read_xoy(XPT2046_CMD_Y_POS);
     }
     
     // 读取压力值
@@ -351,9 +354,8 @@ esp_err_t xpt2046_read_raw(xpt2046_data_t *data)
         data->z = 0;
     }
     
-    // 判断是否有有效触摸（压力阈值）
+    // 依据压力阈值判断是否按下（无需IRQ）
     data->pressed = (data->z > PRESSURE_THRESHOLD_MIN) && (data->z < PRESSURE_THRESHOLD_MAX);
-    
     if (data->pressed) {
         data->x = x;
         data->y = y;
@@ -381,9 +383,6 @@ esp_err_t xpt2046_read_touch(int16_t *x, int16_t *y, bool *pressed)
     
     if (raw_data.pressed) {
         xpt2046_apply_calibration(raw_data.x, raw_data.y, x, y);
-        // 显示原始触摸数据和校准后的数据
-        ESP_LOGI(TAG, "Raw touch: x=%d, y=%d -> Calibrated: x=%d, y=%d", 
-                 raw_data.x, raw_data.y, *x, *y);
     } else {
         *x = 0;
         *y = 0;
@@ -399,7 +398,6 @@ void xpt2046_set_calibration(const xpt2046_calibration_t *calibration)
 {
     if (calibration) {
         memcpy(&g_xpt2046_handle.calibration, calibration, sizeof(xpt2046_calibration_t));
-        ESP_LOGI(TAG, "Calibration parameters updated");
     }
 }
 
@@ -467,9 +465,7 @@ esp_err_t xpt2046_calibrate_four_point(int16_t raw_x1, int16_t raw_y1, int16_t s
     cal->invert_x = (screen_x1 > screen_x2);
     cal->invert_y = (screen_y1 > screen_y3);
     
-    ESP_LOGI(TAG, "Four-point calibration completed");
-    ESP_LOGI(TAG, "X: %d-%d, Y: %d-%d, invert_x=%d, invert_y=%d", 
-             cal->x_min, cal->x_max, cal->y_min, cal->y_max, cal->invert_x, cal->invert_y);
+    /* four-point calibration completed */
     
     return ESP_OK;
 }
@@ -501,8 +497,7 @@ void xpt2046_calibrate_two_point(int16_t raw_x1, int16_t raw_y1, int16_t screen_
         cal->invert_y = true;
     }
     
-    ESP_LOGI(TAG, "Two-point calibration completed");
-    ESP_LOGI(TAG, "X: %d-%d, Y: %d-%d", cal->x_min, cal->x_max, cal->y_min, cal->y_max);
+    /* two-point calibration completed */
 }
 
 /**
@@ -518,8 +513,7 @@ xpt2046_handle_t* xpt2046_get_handle(void)
  */
 void xpt2046_draw_calibration_point(int16_t x, int16_t y, uint16_t color)
 {
-    // 这里需要调用LCD绘制函数，暂时用日志代替
-    ESP_LOGI(TAG, "Draw calibration point at x:%d y:%d color:0x%04X", x, y, color);
+    (void)x; (void)y; (void)color; /* no-op to save resources */
     
     // TODO: 实现实际的LCD绘制
     // 可以调用ST7789的绘制函数来显示校准点
@@ -545,14 +539,14 @@ bool xpt2046_read_calibration_point(uint8_t point_num, int16_t *raw_x, int16_t *
     }
     
     if (timeout >= 10000) {
-        ESP_LOGE(TAG, "Calibration point %d timeout", point_num);
+        (void)point_num;
         return false;
     }
     
     // 读取原始坐标
     uint16_t x, y;
     if (!xpt2046_read_xy2(&x, &y)) {
-        ESP_LOGE(TAG, "Failed to read calibration point %d", point_num);
+        (void)point_num;
         return false;
     }
     
@@ -579,8 +573,7 @@ bool xpt2046_read_calibration_point(uint8_t point_num, int16_t *raw_x, int16_t *
             break;
     }
     
-    ESP_LOGI(TAG, "Calibration point %d: raw(%d,%d) screen(%d,%d)", 
-             point_num, *raw_x, *raw_y, *screen_x, *screen_y);
+    (void)point_num; (void)raw_x; (void)raw_y; (void)screen_x; (void)screen_y;
     
     return true;
 }
@@ -590,7 +583,7 @@ bool xpt2046_read_calibration_point(uint8_t point_num, int16_t *raw_x, int16_t *
  */
 esp_err_t xpt2046_run_calibration(uint16_t screen_width, uint16_t screen_height)
 {
-    ESP_LOGI(TAG, "Starting four-point calibration...");
+    /* start calibration */
     
     // 更新屏幕尺寸
     g_xpt2046_handle.screen_width = screen_width;
@@ -610,12 +603,12 @@ esp_err_t xpt2046_run_calibration(uint16_t screen_width, uint16_t screen_height)
         // 显示校准点
         xpt2046_draw_calibration_point(screen_x[i], screen_y[i], 0xF800); // 红色
         
-        ESP_LOGI(TAG, "Please touch point %d at (%d,%d)", i + 1, screen_x[i], screen_y[i]);
+        /* prompt user */
         
         // 读取校准点
         if (!xpt2046_read_calibration_point(i + 1, &raw_x[i], &raw_y[i], 
                                            &screen_x[i], &screen_y[i])) {
-            ESP_LOGE(TAG, "Calibration failed at point %d", i + 1);
+            /* calibration point failed */
             return ESP_FAIL;
         }
         
@@ -632,11 +625,7 @@ esp_err_t xpt2046_run_calibration(uint16_t screen_width, uint16_t screen_height)
         raw_x[3], raw_y[3], screen_x[3], screen_y[3]
     );
     
-    if (ret == ESP_OK) {
-        ESP_LOGI(TAG, "Four-point calibration completed successfully!");
-    } else {
-        ESP_LOGE(TAG, "Four-point calibration failed!");
-    }
+    (void)ret;
     
     return ret;
 } 
