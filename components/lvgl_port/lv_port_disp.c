@@ -34,9 +34,10 @@ static void disp_flush(lv_disp_drv_t * disp_drv, const lv_area_t * area, lv_colo
  **********************/
 static bool disp_flush_enabled = true;
 
-/* 针对ESP32-S3优化的显示缓冲区 */
-static lv_color_t disp_buf_1[MY_DISP_HOR_RES * 40];
-static lv_color_t disp_buf_2[MY_DISP_HOR_RES * 40];
+/* 将显示缓冲放入PSRAM，减小内置RAM占用，并加大块尺寸 */
+#include "esp_heap_caps.h"
+static lv_color_t *disp_buf_1 = NULL;
+static lv_color_t *disp_buf_2 = NULL;
 
 /**********************
  *      MACROS
@@ -57,7 +58,12 @@ void lv_port_disp_init(void)
      * Create a buffer for drawing
      *----------------------------*/
     static lv_disp_draw_buf_t draw_buf_dsc;
-    lv_disp_draw_buf_init(&draw_buf_dsc, disp_buf_1, disp_buf_2, MY_DISP_HOR_RES * 40);
+    /* 分配更大的双缓冲到PSRAM，例如每缓冲 120 行 */
+    size_t lines = MY_DISP_VER_RES; // 可根据内存情况调大/调小
+    size_t buf_pixels = MY_DISP_HOR_RES * lines;
+    disp_buf_1 = (lv_color_t*)heap_caps_malloc(buf_pixels * sizeof(lv_color_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    disp_buf_2 = (lv_color_t*)heap_caps_malloc(buf_pixels * sizeof(lv_color_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    lv_disp_draw_buf_init(&draw_buf_dsc, disp_buf_1, disp_buf_2, buf_pixels);
 
     /*-----------------------------------
      * Register the display in LVGL
@@ -74,7 +80,7 @@ void lv_port_disp_init(void)
     /*Finally register the driver*/
     lv_disp_drv_register(&disp_drv);
     
-    ESP_LOGI(TAG, "Display port initialized successfully");
+    ESP_LOGI(TAG, "Display port initialized successfully (buf lines=%d)", (int)lines);
 }
 
 void disp_enable_update(void)
