@@ -128,6 +128,31 @@ void xpt2046_get_default_calibration(xpt2046_calibration_t *calibration);
 bool xpt2046_is_touched(void);
 
 /**
+ * @brief 进行四点校准（基于厂商代码的校准算法）
+ * @param raw_x1 第一个点的原始X坐标
+ * @param raw_y1 第一个点的原始Y坐标  
+ * @param screen_x1 第一个点的屏幕X坐标
+ * @param screen_y1 第一个点的屏幕Y坐标
+ * @param raw_x2 第二个点的原始X坐标
+ * @param raw_y2 第二个点的原始Y坐标
+ * @param screen_x2 第二个点的屏幕X坐标
+ * @param screen_y2 第二个点的屏幕Y坐标
+ * @param raw_x3 第三个点的原始X坐标
+ * @param raw_y3 第三个点的原始Y坐标
+ * @param screen_x3 第三个点的屏幕X坐标
+ * @param screen_y3 第三个点的屏幕Y坐标
+ * @param raw_x4 第四个点的原始X坐标
+ * @param raw_y4 第四个点的原始Y坐标
+ * @param screen_x4 第四个点的屏幕X坐标
+ * @param screen_y4 第四个点的屏幕Y坐标
+ * @return ESP_OK 成功
+ */
+esp_err_t xpt2046_calibrate_four_point(int16_t raw_x1, int16_t raw_y1, int16_t screen_x1, int16_t screen_y1,
+                                       int16_t raw_x2, int16_t raw_y2, int16_t screen_x2, int16_t screen_y2,
+                                       int16_t raw_x3, int16_t raw_y3, int16_t screen_x3, int16_t screen_y3,
+                                       int16_t raw_x4, int16_t raw_y4, int16_t screen_x4, int16_t screen_y4);
+
+/**
  * @brief 进行简单的两点校准
  * @param raw_x1 第一个点的原始X坐标
  * @param raw_y1 第一个点的原始Y坐标  
@@ -147,8 +172,74 @@ void xpt2046_calibrate_two_point(int16_t raw_x1, int16_t raw_y1, int16_t screen_
  */
 xpt2046_handle_t* xpt2046_get_handle(void);
 
+/**
+ * @brief 触摸校准工具 - 显示校准点
+ * @param x 屏幕X坐标
+ * @param y 屏幕Y坐标
+ * @param color 显示颜色
+ */
+void xpt2046_draw_calibration_point(int16_t x, int16_t y, uint16_t color);
+
+/**
+ * @brief 触摸校准工具 - 读取校准点坐标
+ * @param point_num 校准点编号 (1-4)
+ * @param raw_x 输出原始X坐标
+ * @param raw_y 输出原始Y坐标
+ * @param screen_x 输出屏幕X坐标
+ * @param screen_y 输出屏幕Y坐标
+ * @return true 成功读取, false 失败
+ */
+bool xpt2046_read_calibration_point(uint8_t point_num, int16_t *raw_x, int16_t *raw_y, 
+                                   int16_t *screen_x, int16_t *screen_y);
+
+/**
+ * @brief 触摸校准工具 - 执行四点校准流程
+ * @param screen_width 屏幕宽度
+ * @param screen_height 屏幕高度
+ * @return ESP_OK 校准成功
+ */
+esp_err_t xpt2046_run_calibration(uint16_t screen_width, uint16_t screen_height);
+
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* XPT2046_H */ 
+#endif /* XPT2046_H */
+
+/*
+ * 使用示例：
+ * 
+ * 1. 初始化触摸屏：
+ *    esp_err_t ret = xpt2046_init(240, 320);
+ *    if (ret != ESP_OK) {
+ *        ESP_LOGE(TAG, "XPT2046 init failed");
+ *        return;
+ *    }
+ * 
+ * 2. 读取触摸坐标：
+ *    int16_t x, y;
+ *    bool pressed;
+ *    esp_err_t ret = xpt2046_read_touch(&x, &y, &pressed);
+ *    if (ret == ESP_OK && pressed) {
+ *        printf("Touch at x:%d y:%d\n", x, y);
+ *    }
+ * 
+ * 3. 四点校准：
+ *    esp_err_t ret = xpt2046_run_calibration(240, 320);
+ *    if (ret == ESP_OK) {
+ *        printf("Calibration completed\n");
+ *    }
+ * 
+ * 4. 手动设置校准参数：
+ *    xpt2046_calibration_t cal;
+ *    cal.x_min = 200; cal.x_max = 3900;
+ *    cal.y_min = 200; cal.y_max = 3900;
+ *    cal.swap_xy = false;
+ *    cal.invert_x = false;
+ *    cal.invert_y = false;
+ *    xpt2046_set_calibration(&cal);
+ * 
+ * 5. 在LVGL中使用：
+ *    // 在lv_port_indev.c中已经集成
+ *    // 只需要调用lv_port_indev_init()即可
+ */ 
