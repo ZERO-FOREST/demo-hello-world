@@ -57,30 +57,12 @@ void app_main(void) {
         ESP_LOGW(TAG, "WiFi init failed: %s", esp_err_to_name(ret));
     }
 
-    ESP_LOGI(TAG, "");
-    ESP_LOGI(TAG, "Available Demos:");
-    ESP_LOGI(TAG, "  1. LVGL + Power Management (default)");
-    ESP_LOGI(TAG, "  2. WS2812 LED Demo (compile with -DWS2812_DEMO_ONLY)");
-    ESP_LOGI(TAG, "  3. LSM6DS3 IMU Sensor Demo");
-    ESP_LOGI(TAG, "");
-
     // 使用任务初始化模块统一管理任务
     ret = init_all_tasks();
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize tasks: %s", esp_err_to_name(ret));
         return;
     }
-    
-    // 启动触摸测试（可选）
-    // touch_test_start();  // 取消注释以启用触摸测试
-
-    ESP_LOGI(TAG, "=== System Information ===");
-    ESP_LOGI(TAG, "Hardware: ESP32-S3 N16R8 (16MB Flash + 8MB PSRAM)");
-    ESP_LOGI(TAG, "Display: ST7789 320x240 TFT");
-    ESP_LOGI(TAG, "Touch: XPT2046 Resistive Touch");
-    ESP_LOGI(TAG, "WS2812: GPIO48, Up to 256 LEDs");
-    ESP_LOGI(TAG, "LSM6DS3: I2C/SPI 6-axis IMU Sensor");
-    ESP_LOGI(TAG, "========================");
 
     // 显示当前运行的任务
     vTaskDelay(pdMS_TO_TICKS(1000));  // 等待任务启动

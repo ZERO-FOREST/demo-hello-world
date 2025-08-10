@@ -17,6 +17,7 @@
 
 #include "wifi_image_transfer.h"
 #include "../UI/ui_image_transfer.h"
+#include "esp_heap_caps.h"
 
 static const char *TAG = "WIFI_IMG_TRANSFER";
 
@@ -41,7 +42,7 @@ static void tcp_server_task(void *pvParameters)
     struct sockaddr_in dest_addr;
 
     // Allocate JPEG frame buffer
-    s_jpeg_frame_buffer = (uint8_t *)malloc(MAX_JPEG_FRAME_SIZE);
+    s_jpeg_frame_buffer = (uint8_t*)heap_caps_malloc(MAX_JPEG_FRAME_SIZE, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (s_jpeg_frame_buffer == NULL) {
         ESP_LOGE(TAG, "Failed to allocate JPEG frame buffer");
         s_server_running = false;

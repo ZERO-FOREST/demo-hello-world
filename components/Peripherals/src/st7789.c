@@ -420,7 +420,7 @@ esp_err_t st7789_init(void)
     st7789_backlight_enable(true);
     
     // 清屏为绿色，测试显示是否存在问题
-    st7789_clear_screen(ST7789_GREEN); // 使用绿色测试显示
+    st7789_clear_screen(ST7789_BLACK); // 使用绿色测试显示
     
     g_st7789_handle.is_initialized = true;
     ESP_LOGI(TAG, "ST7789 initialized successfully");

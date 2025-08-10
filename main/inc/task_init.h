@@ -28,6 +28,7 @@ esp_err_t init_power_management_task(void);
 esp_err_t init_ws2812_demo_task(void);
 esp_err_t init_system_monitor_task(void);
 esp_err_t init_battery_monitor_task(void);
+esp_err_t init_joystick_adc_task(void);
 
 // 任务控制函数
 esp_err_t stop_all_tasks(void);
@@ -39,6 +40,7 @@ TaskHandle_t get_power_task_handle(void);
 TaskHandle_t get_ws2812_task_handle(void);
 TaskHandle_t get_monitor_task_handle(void);
 TaskHandle_t get_battery_task_handle(void);
+TaskHandle_t get_joystick_task_handle(void);
 
 #ifdef __cplusplus
 }

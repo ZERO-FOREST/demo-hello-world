@@ -238,7 +238,12 @@ esp_err_t joystick_load_calibration_from_nvs(void) {
     nvs_handle_t nvs_handle;
     esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READONLY, &nvs_handle);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Error (%s) opening NVS handle!", esp_err_to_name(err));
+        if (err == ESP_ERR_NVS_NOT_FOUND) {
+            // 首次运行时命名空间不存在是正常情况
+            ESP_LOGI(TAG, "Calibration namespace '%s' not found in NVS (first run).", NVS_NAMESPACE);
+        } else {
+            ESP_LOGE(TAG, "Error (%s) opening NVS handle!", esp_err_to_name(err));
+        }
         return err;
     }
 
@@ -248,7 +253,7 @@ esp_err_t joystick_load_calibration_from_nvs(void) {
         s_is_calibrated = true;
     } else {
         if (err == ESP_ERR_NVS_NOT_FOUND) {
-            ESP_LOGI(TAG, "Calibration data not found in NVS.");
+            ESP_LOGI(TAG, "Calibration data blob '%s' not found in namespace '%s'.", NVS_CAL_KEY, NVS_NAMESPACE);
         } else {
             ESP_LOGE(TAG, "Error (%s) reading NVS!", esp_err_to_name(err));
         }

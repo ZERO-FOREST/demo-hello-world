@@ -6,10 +6,12 @@
 
 // 引入各模块头文件
 #include "battery_monitor.h"
+#include "joystick_adc.h"
 #include "lvgl_main.h"
 #include "power_management.h"
 #include "ui.h"
 #include "ws2812.h"
+#include "i2s_tdm_demo.h"
 #include <stdint.h>
 
 static const char* TAG = "TASK_INIT";
@@ -20,6 +22,7 @@ static TaskHandle_t s_power_task_handle = NULL;
 static TaskHandle_t s_ws2812_task_handle = NULL;
 static TaskHandle_t s_monitor_task_handle = NULL;
 static TaskHandle_t s_battery_task_handle = NULL;
+static TaskHandle_t s_joystick_task_handle = NULL;
 
 // WS2812演示任务
 static void ws2812_demo_task(void* pvParameters) {
@@ -58,6 +61,36 @@ static void ws2812_demo_task(void* pvParameters) {
         //         vTaskDelay(pdMS_TO_TICKS(50));      // 延时
         //     }
         // }
+    }
+}
+
+// 摇杆ADC采样任务（200Hz）
+static void joystick_adc_task(void* pvParameters) {
+    ESP_LOGI(TAG, "Joystick ADC Task started on core %d", xPortGetCoreID());
+
+    if (joystick_adc_init() != ESP_OK) {
+        ESP_LOGE(TAG, "Joystick ADC init failed");
+        vTaskDelete(NULL);
+        return;
+    }
+
+    const TickType_t period_ticks = pdMS_TO_TICKS(20); // 50Hz = 20ms，降低频率避免看门狗超时
+    TickType_t last_wake = xTaskGetTickCount();
+
+    joystick_data_t data;
+    uint32_t log_counter = 0;
+
+    while (1) {
+        if (joystick_adc_read(&data) == ESP_OK) {
+            // 每1秒打印一次，避免刷屏
+            if ((++log_counter % (50U)) == 0U) {
+                ESP_LOGI(TAG, "JOY1 X:%d Y:%d | JOY2 X:%d Y:%d (norm)", 
+                         data.norm_joy1_x, data.norm_joy1_y, data.norm_joy2_x, data.norm_joy2_y);
+            }
+        }
+        
+        // 使用 vTaskDelay 而不是 vTaskDelayUntil 来避免定时问题
+        vTaskDelay(period_ticks);
     }
 }
 
@@ -155,6 +188,29 @@ esp_err_t init_lvgl_task(void) {
     }
 
     ESP_LOGI(TAG, "LVGL task created successfully on Core 1");
+    return ESP_OK;
+}
+
+esp_err_t init_joystick_adc_task(void) {
+    if (s_joystick_task_handle != NULL) {
+        ESP_LOGW(TAG, "Joystick ADC task already running");
+        return ESP_OK;
+    }
+
+    BaseType_t result = xTaskCreatePinnedToCore(joystick_adc_task,     // 任务函数
+                                                "Joystick_ADC",        // 任务名称
+                                                TASK_STACK_MEDIUM,      // 堆栈大小 (4KB，避免栈溢出)
+                                                NULL,                   // 参数
+                                                TASK_PRIORITY_NORMAL,   // 普通优先级
+                                                &s_joystick_task_handle,// 任务句柄
+                                                0);                     // 绑定到Core 0
+
+    if (result != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create Joystick ADC task");
+        return ESP_ERR_NO_MEM;
+    }
+
+    ESP_LOGI(TAG, "Joystick ADC task created successfully on Core 0");
     return ESP_OK;
 }
 
@@ -279,11 +335,24 @@ esp_err_t init_all_tasks(void) {
         return ret;
     }
 
+    // 初始化摇杆ADC采样任务（200Hz）
+    ret = init_joystick_adc_task();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to init Joystick ADC task");
+        return ret;
+    }
+
     // 初始化LVGL任务
     ret = init_lvgl_task();
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to init LVGL task");
         return ret;
+    }
+
+    // 启动 I2S TDM 演示（正弦波输出）
+    ret = i2s_tdm_demo_init();
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "I2S TDM demo init failed: %s", esp_err_to_name(ret));
     }
 
     ESP_LOGI(TAG, "All tasks initialized successfully");
@@ -317,11 +386,20 @@ esp_err_t stop_all_tasks(void) {
         ESP_LOGI(TAG, "System monitor task stopped");
     }
 
+    if (s_joystick_task_handle) {
+        vTaskDelete(s_joystick_task_handle);
+        s_joystick_task_handle = NULL;
+        ESP_LOGI(TAG, "Joystick ADC task stopped");
+    }
+
     if (s_battery_task_handle) {
         vTaskDelete(s_battery_task_handle);
         s_battery_task_handle = NULL;
         ESP_LOGI(TAG, "Battery monitor task stopped");
     }
+
+    // 停止 I2S TDM 演示
+    i2s_tdm_demo_deinit();
 
     ESP_LOGI(TAG, "All tasks stopped");
     return ESP_OK;
@@ -333,16 +411,15 @@ void list_running_tasks(void) {
     ESP_LOGI(TAG, "Power Task: %s", s_power_task_handle ? "Running" : "Stopped");
     ESP_LOGI(TAG, "WS2812 Task: %s", s_ws2812_task_handle ? "Running" : "Stopped");
     ESP_LOGI(TAG, "Monitor Task: %s", s_monitor_task_handle ? "Running" : "Stopped");
+    ESP_LOGI(TAG, "Joystick Task: %s", s_joystick_task_handle ? "Running" : "Stopped");
     ESP_LOGI(TAG, "Battery Task: %s", s_battery_task_handle ? "Running" : "Stopped");
     ESP_LOGI(TAG, "==================");
 }
 
 // 任务句柄获取函数
 TaskHandle_t get_lvgl_task_handle(void) { return s_lvgl_task_handle; }
-
 TaskHandle_t get_power_task_handle(void) { return s_power_task_handle; }
-
 TaskHandle_t get_ws2812_task_handle(void) { return s_ws2812_task_handle; }
-
 TaskHandle_t get_monitor_task_handle(void) { return s_monitor_task_handle; }
 TaskHandle_t get_battery_task_handle(void) { return s_battery_task_handle; }
+TaskHandle_t get_joystick_task_handle(void) { return s_joystick_task_handle; }

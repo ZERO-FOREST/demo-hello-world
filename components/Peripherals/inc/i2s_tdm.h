@@ -14,30 +14,25 @@ extern "C" {
 
 #include <stdint.h>
 #include <stdbool.h>
-#include "driver/i2s_tdm.h"
+#include "driver/i2s_std.h"
 #include "driver/gpio.h"
 #include "esp_err.h"
 
 // ========================================
 // 硬件连接配置
 // ========================================
-#define I2S_TDM_BCLK_PIN       23    // 位时钟
-#define I2S_TDM_LRCK_PIN       24    // 帧时钟/WS
-#define I2S_TDM_DATA_OUT_PIN   25    // 数据输出 (到MAX9357)
-#define I2S_TDM_DATA_IN_PIN    26    // 数据输入 (来自数字麦克风)
+#define I2S_TDM_BCLK_PIN       38    // 位时钟
+#define I2S_TDM_LRCK_PIN       39    // 帧时钟/WS
+#define I2S_TDM_DATA_OUT_PIN   40    // 数据输出 (到MAX9357)
+#define I2S_TDM_DATA_IN_PIN    41    // 数据输入 (来自数字麦克风)
 
 // ========================================
 // TDM配置参数
 // ========================================
 #define I2S_TDM_SAMPLE_RATE    48000     // 采样率 48kHz
 #define I2S_TDM_BITS_PER_SAMPLE 16       // 16位采样
-#define I2S_TDM_CHANNELS       8         // TDM通道数 (支持多通道)
-#define I2S_TDM_SLOT_BIT_WIDTH 16       // 每个时隙的位数
-#define I2S_TDM_SLOT_MASK      0xFF     // 时隙掩码 (8个时隙)
-
-// TDM时隙分配
-#define I2S_TDM_MIC_SLOT       0        // 麦克风使用时隙0
-#define I2S_TDM_SPEAKER_SLOT   1        // 扬声器使用时隙1
+#define I2S_TDM_CHANNELS       2         // 立体声 (蓝牙音频)
+#define I2S_TDM_SLOT_BIT_WIDTH 32       // 物理时隙宽度（为兼容 MAX98357 建议 32bit/声道）
 
 // ========================================
 // 数据结构
