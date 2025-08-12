@@ -1,6 +1,6 @@
 /**
  * @file i2s_tdm.h
- * @brief I2S TDM配置 - 数字麦克风 + MAX9357解码器
+ * @brief I2S TDM配置 - 单MAX98357 + 单麦克风输入
  * @author Your Name
  * @date 2024
  */
@@ -14,32 +14,37 @@ extern "C" {
 
 #include <stdint.h>
 #include <stdbool.h>
-#include "driver/i2s_std.h"
+#include "driver/i2s_tdm.h"
 #include "driver/gpio.h"
 #include "esp_err.h"
 
 // ========================================
 // 硬件连接配置
 // ========================================
-#define I2S_TDM_BCLK_PIN       38    // 位时钟
-#define I2S_TDM_LRCK_PIN       39    // 帧时钟/WS
-#define I2S_TDM_DATA_OUT_PIN   40    // 数据输出 (到MAX9357)
-#define I2S_TDM_DATA_IN_PIN    41    // 数据输入 (来自数字麦克风)
+#define I2S_TDM_BCLK_PIN       7    // 位时钟
+#define I2S_TDM_LRCK_PIN       8    // 帧时钟/WS
+#define I2S_TDM_DATA_OUT_PIN   15   // 数据输出 (到MAX98357)
+#define I2S_TDM_DATA_IN_PIN    17   // 数据输入 (来自麦克风)
 
 // ========================================
-// TDM配置参数
+// TDM配置参数 - 单MAX98357 + 单麦克风
 // ========================================
-#define I2S_TDM_SAMPLE_RATE    48000     // 采样率 48kHz
+#define I2S_TDM_SAMPLE_RATE    44100     // 采样率 44.1kHz
 #define I2S_TDM_BITS_PER_SAMPLE 16       // 16位采样
-#define I2S_TDM_CHANNELS       2         // 立体声 (蓝牙音频)
-#define I2S_TDM_SLOT_BIT_WIDTH 32       // 物理时隙宽度（为兼容 MAX98357 建议 32bit/声道）
+#define I2S_TDM_CHANNELS       2         // TDM通道数: 扬声器+麦克风
+#define I2S_TDM_SLOT_BIT_WIDTH 16       // 物理时隙宽度（为兼容 MAX98357 建议 32bit/声道）
+#define I2S_TDM_SLOT_NUM       2         // TDM时隙数量
+
+// TDM时隙分配
+#define I2S_TDM_SLOT_SPEAKER   0         // 扬声器 (MAX98357)
+#define I2S_TDM_SLOT_MIC       1         // 麦克风
 
 // ========================================
 // 数据结构
 // ========================================
 typedef struct {
-    i2s_chan_handle_t tx_handle;    // 发送通道句柄
-    i2s_chan_handle_t rx_handle;    // 接收通道句柄
+    i2s_chan_handle_t tx_handle;    // 发送通道句柄 (到MAX98357)
+    i2s_chan_handle_t rx_handle;    // 接收通道句柄 (来自麦克风)
     bool is_initialized;             // 初始化状态
     uint32_t sample_rate;           // 当前采样率
     uint16_t buffer_size;           // 缓冲区大小
@@ -50,7 +55,7 @@ typedef struct {
 // ========================================
 
 /**
- * @brief 初始化I2S TDM
+ * @brief 初始化I2S TDM - 单MAX98357 + 单麦克风
  * @return ESP_OK 成功, 其他值表示错误
  */
 esp_err_t i2s_tdm_init(void);
@@ -74,8 +79,8 @@ esp_err_t i2s_tdm_start(void);
 esp_err_t i2s_tdm_stop(void);
 
 /**
- * @brief 写入音频数据到扬声器
- * @param data 音频数据
+ * @brief 写入音频数据到MAX98357
+ * @param data 音频数据 (单声道)
  * @param size 数据大小
  * @param bytes_written 实际写入的字节数
  * @return ESP_OK 成功
