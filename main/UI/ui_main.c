@@ -7,6 +7,7 @@
 #include "ui_image_transfer.h"
 #include "ui_serial_display.h"
 #include "ui_calibration.h"
+#include "ui_test.h"
 
 // 全局变量保存时间标签和电池标签
 static lv_obj_t* g_time_label = NULL;
@@ -16,6 +17,13 @@ static lv_obj_t* g_battery_label = NULL;
 static void time_update_timer_cb(lv_timer_t* timer) {
     if (!g_time_label) {
         ESP_LOGW("UI_MAIN", "Time label is NULL!");
+        return;
+    }
+
+    // 检查标签是否仍然有效
+    if (!lv_obj_is_valid(g_time_label)) {
+        ESP_LOGW("UI_MAIN", "Time label is no longer valid!");
+        g_time_label = NULL;  // 重置为NULL
         return;
     }
 
@@ -32,6 +40,13 @@ static void time_update_timer_cb(lv_timer_t* timer) {
 void ui_main_update_battery_display(void) {
     if (!g_battery_label) {
         ESP_LOGW("UI_MAIN", "Battery label is NULL!");
+        return;
+    }
+
+    // 检查标签是否仍然有效
+    if (!lv_obj_is_valid(g_battery_label)) {
+        ESP_LOGW("UI_MAIN", "Battery label is no longer valid!");
+        g_battery_label = NULL;  // 重置为NULL
         return;
     }
 
@@ -82,6 +97,18 @@ static void wifi_settings_cb(void) {
 static void settings_cb(void) {
     lv_obj_t* screen = lv_scr_act();
     if (screen) {
+        // 先停止时间更新定时器，避免访问已删除的UI元素
+        static lv_timer_t* timer = NULL;
+        if (timer) {
+            lv_timer_del(timer);
+            timer = NULL;
+            ESP_LOGI("UI_MAIN", "Time update timer stopped");
+        }
+        
+        // 重置全局UI指针
+        g_time_label = NULL;
+        g_battery_label = NULL;
+        
         lv_obj_clean(screen);       // 清空当前屏幕
         ui_settings_create(screen); // 加载系统设置界面
     }
@@ -119,6 +146,26 @@ static void calibration_cb(void) {
     }
 }
 
+static void test_cb(void) {
+    lv_obj_t* screen = lv_scr_act();
+    if (screen) {
+        // 先停止时间更新定时器，避免访问已删除的UI元素
+        static lv_timer_t* timer = NULL;
+        if (timer) {
+            lv_timer_del(timer);
+            timer = NULL;
+            ESP_LOGI("UI_MAIN", "Time update timer stopped");
+        }
+        
+        // 重置全局UI指针
+        g_time_label = NULL;
+        g_battery_label = NULL;
+        
+        lv_obj_clean(screen);       // 清空当前屏幕
+        ui_test_create(screen);     // 加载测试界面
+    }
+}
+
 // 可扩展的菜单项结构
 typedef struct {
     const char* text;
@@ -134,6 +181,7 @@ static menu_item_t menu_items[] = {
     {"Image Transfer", image_transfer_cb},
     {"Serial Display", serial_display_cb},
     {"Calibration", calibration_cb},
+    {"Test", test_cb},
     // 添加更多项...
 };
 
