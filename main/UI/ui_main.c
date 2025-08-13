@@ -5,6 +5,8 @@
 #include "wifi_manager.h"
 #include "wifi_image_transfer.h"
 #include "ui_image_transfer.h"
+#include "ui_serial_display.h"
+#include "ui_calibration.h"
 
 // 全局变量保存时间标签和电池标签
 static lv_obj_t* g_time_label = NULL;
@@ -38,14 +40,14 @@ void ui_main_update_battery_display(void) {
         char battery_str[32];
         snprintf(battery_str, sizeof(battery_str), "%d%%", battery_info.percentage);
 
-        // 根据电量设置颜色
+        // 根据电量设置颜色 - 在深色背景下使用更亮的颜色
         lv_color_t text_color;
         if (battery_info.is_critical) {
-            text_color = lv_color_hex(0xFF0000); // 红色 - 严重低电量
+            text_color = lv_color_hex(0xFF6B6B); // 亮红色 - 严重低电量
         } else if (battery_info.is_low_battery) {
-            text_color = lv_color_hex(0xFF8000); // 橙色 - 低电量
+            text_color = lv_color_hex(0xFFB347); // 亮橙色 - 低电量
         } else {
-            text_color = lv_color_hex(0x00FF00); // 绿色 - 正常电量
+            text_color = lv_color_hex(0x7FFF00); // 亮绿色 - 正常电量
         }
 
         // 直接更新UI
@@ -101,15 +103,37 @@ static void image_transfer_cb(void) {
     }
 }
 
+static void serial_display_cb(void) {
+    lv_obj_t* screen = lv_scr_act();
+    if (screen) {
+        lv_obj_clean(screen);            // 清空当前屏幕
+        ui_serial_display_create(screen); // 加载串口显示界面
+    }
+}
+
+static void calibration_cb(void) {
+    lv_obj_t* screen = lv_scr_act();
+    if (screen) {
+        lv_obj_clean(screen);            // 清空当前屏幕
+        ui_calibration_create(screen);   // 加载校准界面
+    }
+}
+
 // 可扩展的菜单项结构
 typedef struct {
     const char* text;
     menu_item_cb_t callback;
 } menu_item_t;
 
-// 示例菜单项数组
+// 菜单项数组
 static menu_item_t menu_items[] = {
-    {"Demo", option1_cb}, {"WiFi Setup", wifi_settings_cb}, {"Settings", settings_cb}, {"Game", game_cb}, {"Image Transfer", image_transfer_cb},
+    {"Demo", option1_cb}, 
+    {"WiFi Setup", wifi_settings_cb}, 
+    {"Settings", settings_cb}, 
+    {"Game", game_cb}, 
+    {"Image Transfer", image_transfer_cb},
+    {"Serial Display", serial_display_cb},
+    {"Calibration", calibration_cb},
     // 添加更多项...
 };
 
@@ -120,58 +144,85 @@ static void btn_event_cb(lv_event_t* e) {
 }
 
 void ui_main_menu_create(lv_obj_t* parent) {
-    // 创建标题
-    lv_obj_t* title = lv_label_create(parent);
+    // 创建状态栏容器 - 固定在顶部
+    lv_obj_t* status_bar = lv_obj_create(parent);
+    lv_obj_set_size(status_bar, 320, 40);
+    lv_obj_align(status_bar, LV_ALIGN_TOP_MID, 0, 0);
+    lv_obj_set_style_bg_color(status_bar, lv_color_hex(0x2C3E50), 0);  // 深蓝色背景
+    lv_obj_set_style_bg_opa(status_bar, LV_OPA_90, 0);
+    lv_obj_set_style_radius(status_bar, 0, 0);
+    lv_obj_set_style_border_width(status_bar, 0, 0);
+    lv_obj_set_style_pad_all(status_bar, 5, 0);
+
+    // 创建标题 - 在状态栏内居中
+    lv_obj_t* title = lv_label_create(status_bar);
     lv_label_set_text(title, "MAIN MENU");
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 10);
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_24, 0);
+    lv_obj_align(title, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_color(title, lv_color_hex(0xFFFFFF), 0);
+
+    // 创建时间显示容器 - 在状态栏右侧
+    lv_obj_t* time_cont = lv_obj_create(status_bar);
+    lv_obj_set_size(time_cont, 120, 30);
+    lv_obj_align(time_cont, LV_ALIGN_RIGHT_MID, -5, 0);
+    lv_obj_set_style_bg_color(time_cont, lv_color_hex(0x34495E), 0);
+    lv_obj_set_style_bg_opa(time_cont, LV_OPA_80, 0);
+    lv_obj_set_style_radius(time_cont, 4, 0);
+    lv_obj_set_style_pad_all(time_cont, 3, 0);
+
+    // 创建时间显示标签
+    g_time_label = lv_label_create(time_cont);
+    lv_obj_set_style_text_font(g_time_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(g_time_label, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_center(g_time_label);
+    lv_label_set_text(g_time_label, "Syncing...");
+
+    // 创建电池电量显示容器 - 在状态栏左侧
+    lv_obj_t* battery_cont = lv_obj_create(status_bar);
+    lv_obj_set_size(battery_cont, 70, 30);
+    lv_obj_align(battery_cont, LV_ALIGN_LEFT_MID, 5, 0);
+    lv_obj_set_style_bg_color(battery_cont, lv_color_hex(0x34495E), 0);
+    lv_obj_set_style_bg_opa(battery_cont, LV_OPA_80, 0);
+    lv_obj_set_style_radius(battery_cont, 4, 0);
+    lv_obj_set_style_pad_all(battery_cont, 3, 0);
+
+    // 创建电池电量显示标签
+    g_battery_label = lv_label_create(battery_cont);
+    lv_obj_set_style_text_font(g_battery_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(g_battery_label, lv_color_hex(0x00FF00), 0);
+    lv_obj_center(g_battery_label);
+    lv_label_set_text(g_battery_label, "100%");
 
     // 计算按钮数量
     int num_items = sizeof(menu_items) / sizeof(menu_item_t);
 
-    // 创建按钮
+    // 创建菜单按钮容器 - 在状态栏下方
+    lv_obj_t* menu_container = lv_obj_create(parent);
+    lv_obj_set_size(menu_container, 300, 240);
+    lv_obj_align(menu_container, LV_ALIGN_CENTER, 0, 20);  // 向下偏移20像素，避开状态栏
+    lv_obj_set_style_bg_opa(menu_container, LV_OPA_0, 0);  // 透明背景
+    lv_obj_set_style_border_width(menu_container, 0, 0);
+    lv_obj_set_style_pad_all(menu_container, 0, 0);
+
+    // 创建按钮 - 在菜单容器内
     for (int i = 0; i < num_items; i++) {
-        lv_obj_t* btn = lv_btn_create(parent);
+        lv_obj_t* btn = lv_btn_create(menu_container);
         lv_obj_set_size(btn, 200, 40);
-        lv_obj_align(btn, LV_ALIGN_CENTER, 0, -50 + i * 50);
+        lv_obj_align(btn, LV_ALIGN_CENTER, 0, -80 + i * 45);  // 调整间距
         lv_obj_add_event_cb(btn, btn_event_cb, LV_EVENT_CLICKED, menu_items[i].callback);
+        
+        // 设置按钮样式
+        lv_obj_set_style_bg_color(btn, lv_color_hex(0x3498DB), 0);  // 蓝色按钮
+        lv_obj_set_style_bg_opa(btn, LV_OPA_80, 0);
+        lv_obj_set_style_radius(btn, 8, 0);
+        lv_obj_set_style_shadow_width(btn, 5, 0);
+        lv_obj_set_style_shadow_ofs_y(btn, 2, 0);
 
         lv_obj_t* label = lv_label_create(btn);
         lv_label_set_text(label, menu_items[i].text);
+        lv_obj_set_style_text_color(label, lv_color_hex(0xFFFFFF), 0);  // 白色文字
         lv_obj_center(label);
     }
-
-    // 创建时间显示容器
-    lv_obj_t* time_cont = lv_obj_create(parent);
-    lv_obj_set_size(time_cont, 150, 30);
-    lv_obj_align(time_cont, LV_ALIGN_BOTTOM_RIGHT, -5, -5);
-    lv_obj_set_style_bg_color(time_cont, lv_color_hex(0xFFFFFF), 0);
-    lv_obj_set_style_bg_opa(time_cont, LV_OPA_70, 0);
-    lv_obj_set_style_radius(time_cont, 4, 0);
-    lv_obj_set_style_pad_all(time_cont, 5, 0);
-
-    // 创建时间显示标签
-    g_time_label = lv_label_create(time_cont);
-    lv_obj_set_style_text_font(g_time_label, &lv_font_montserrat_16, 0);
-    lv_obj_set_style_text_color(g_time_label, lv_color_hex(0x000000), 0);
-    lv_obj_center(g_time_label);
-    lv_label_set_text(g_time_label, "Syncing...");
-
-    // 创建电池电量显示容器
-    lv_obj_t* battery_cont = lv_obj_create(parent);
-    lv_obj_set_size(battery_cont, 80, 30);
-    lv_obj_align(battery_cont, LV_ALIGN_BOTTOM_LEFT, 5, -5);
-    lv_obj_set_style_bg_color(battery_cont, lv_color_hex(0xFFFFFF), 0);
-    lv_obj_set_style_bg_opa(battery_cont, LV_OPA_70, 0);
-    lv_obj_set_style_radius(battery_cont, 4, 0);
-    lv_obj_set_style_pad_all(battery_cont, 5, 0);
-
-    // 创建电池电量显示标签
-    g_battery_label = lv_label_create(battery_cont);
-    lv_obj_set_style_text_font(g_battery_label, &lv_font_montserrat_16, 0);
-    lv_obj_set_style_text_color(g_battery_label, lv_color_hex(0x00FF00), 0);
-    lv_obj_center(g_battery_label);
-    lv_label_set_text(g_battery_label, "100%");
 
     // 创建时间更新定时器（每秒更新一次）
     static lv_timer_t* timer = NULL;

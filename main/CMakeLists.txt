@@ -5,15 +5,20 @@ set(MAIN_SRCS
     "task_init.c"
     "demo/lsm6ds3_demo.c"
     "demo/i2s_tdm_demo.c"
+    "demo/serial_display_demo.c"
     "UI/ui_start_animation.c"
     "UI/ui_main.c"
     "UI/ui_wifi_settings.c"
     "UI/ui_settings.c"
     "UI/ui_image_transfer.c"
+    "UI/ui_serial_display.c"
+    "UI/ui_calibration.c"
     "app/game/game_main.c"
     "app/game/game_tetris.c"
     "app/game/game_snake.c"
     "app/wifi_image_transfer.c"
+    "app/serial_display.c"
+    "app/calibration_manager.c"
 )
 
 if(NOT IDF_TARGET STREQUAL "esp32s3")

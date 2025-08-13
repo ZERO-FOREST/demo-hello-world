@@ -19,6 +19,7 @@
 #include "st7789.h"
 #include "wifi_manager.h"
 #include "battery_monitor.h"
+#include "calibration_manager.h"
 
 
 static const char *TAG = "MAIN";
@@ -34,6 +35,14 @@ void app_main(void) {
     
     ESP_LOGI(TAG, "ESP32-S3 Demo Application Starting...");
     ESP_LOGI(TAG, "App main running on core %d", xPortGetCoreID());
+
+    // 初始化校准管理器
+    ret = calibration_manager_init();
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "Calibration manager initialized");
+    } else {
+        ESP_LOGW(TAG, "Calibration manager init failed: %s", esp_err_to_name(ret));
+    }
 
     // 初始化电池监测模块
     ret = battery_monitor_init();

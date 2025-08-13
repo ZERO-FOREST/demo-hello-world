@@ -82,6 +82,16 @@ void ui_set_language(ui_language_t lang);
 //
 // ---
 
+// --- 串口显示界面 ---
+void ui_serial_display_create(lv_obj_t *parent);
+void ui_serial_display_destroy(void);
+void ui_serial_display_add_data(const char *data, size_t len);
+void ui_serial_display_add_text(const char *text);
+
+// --- 校准和测试界面 ---
+void ui_calibration_create(lv_obj_t *parent);
+void ui_calibration_destroy(void);
+
 
 #ifdef __cplusplus
 }
