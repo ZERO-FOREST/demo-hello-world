@@ -14,7 +14,7 @@
  *      DEFINES
  *********************/
 
-static const char *TAG = "lv_port_indev";
+static const char* TAG = "lv_port_indev";
 
 /**********************
  *      TYPEDEFS
@@ -24,14 +24,13 @@ static const char *TAG = "lv_port_indev";
  *  STATIC PROTOTYPES
  **********************/
 static void touchpad_init(void);
-static void touchpad_read(lv_indev_drv_t * indev_drv, lv_indev_data_t * data);
-static bool touchpad_is_pressed(void);
-static void touchpad_get_xy(lv_coord_t * x, lv_coord_t * y);
+static void touchpad_read(lv_indev_drv_t* indev_drv, lv_indev_data_t* data);
+static void touchpad_get_xy(lv_coord_t* x, lv_coord_t* y);
 
 /**********************
  *  STATIC VARIABLES
  **********************/
-static lv_indev_t * indev_touchpad;
+static lv_indev_t* indev_touchpad;
 
 /**********************
  *      MACROS
@@ -41,8 +40,7 @@ static lv_indev_t * indev_touchpad;
  *   GLOBAL FUNCTIONS
  **********************/
 
-void lv_port_indev_init(void)
-{
+void lv_port_indev_init(void) {
     /**
      * Here you will find example implementation of input devices supported by LittelvGL:
      *  - Touchpad
@@ -68,8 +66,8 @@ void lv_port_indev_init(void)
     indev_drv.type = LV_INDEV_TYPE_POINTER;
     indev_drv.read_cb = touchpad_read;
     indev_touchpad = lv_indev_drv_register(&indev_drv);
-    
-    ESP_LOGI(TAG, "Input device initialized successfully");
+
+    /* input device ready */
 }
 
 /**********************
@@ -81,78 +79,70 @@ void lv_port_indev_init(void)
  * -----------------*/
 
 /*Initialize your touchpad*/
-static void touchpad_init(void)
-{
-    /*Your code comes here*/
-    ESP_LOGI(TAG, "Touchpad hardware initialization");
-    
-    // 注意：XPT2046与ST7789共享SPI2总线
-    // 必须确保ST7789已经先初始化（即lv_port_disp_init()已被调用）
-    // 因为ST7789负责初始化SPI总线，XPT2046只是添加设备到已有总线
-    
-    // 初始化XPT2046触摸控制器
-    esp_err_t ret = xpt2046_init(280, 240);  // 假设屏幕分辨率为320x240
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "XPT2046 initialization failed: %s", esp_err_to_name(ret));
-    } else {
-        ESP_LOGI(TAG, "XPT2046 initialized successfully (sharing SPI2 with ST7789)");
-    }
+static void touchpad_init(void) {
+    /* XPT2046 shares SPI2 bus with ST7789; ensure display init ran earlier */
+    (void)xpt2046_init(240, 320);
+    /* Swap axes so that x is horizontal (right), y is vertical (down) */
+    xpt2046_handle_t* h = xpt2046_get_handle();
+    h->calibration.swap_xy = true;
+    h->calibration.invert_x = false;
+    h->calibration.invert_y = false;
 }
 
 /*Will be called by the library to read the touchpad*/
-static void touchpad_read(lv_indev_drv_t * indev_drv, lv_indev_data_t * data)
-{
+static void touchpad_read(lv_indev_drv_t* indev_drv, lv_indev_data_t* data) {
     static lv_coord_t last_x = 0;
     static lv_coord_t last_y = 0;
-    static bool last_pressed = false;
 
-    /*Save the pressed coordinates and the state*/
-    if(touchpad_is_pressed()) {
+    /* Use internal pressure-based pressed detection (IRQ may be broken) */
+    xpt2046_data_t raw;
+    (void)xpt2046_read_raw(&raw);
+    if (raw.pressed) {
         touchpad_get_xy(&last_x, &last_y);
         data->state = LV_INDEV_STATE_PR;
-        
-        // 实时显示触摸坐标
-        if (!last_pressed) {
-            ESP_LOGI(TAG, "Touch PRESSED at x:%d y:%d", last_x, last_y);
-        } else {
-            ESP_LOGI(TAG, "Touch MOVING at x:%d y:%d", last_x, last_y);
-        }
-        last_pressed = true;
+        ESP_LOGI(TAG, "Touchpad read: x=%d, y=%d", last_x, last_y);
     } else {
         data->state = LV_INDEV_STATE_REL;
-        
-        // 显示触摸释放
-        if (last_pressed) {
-            ESP_LOGI(TAG, "Touch RELEASED at x:%d y:%d", last_x, last_y);
-        }
-        last_pressed = false;
     }
 
-    /*Set the last pressed coordinates*/
     data->point.x = last_x;
     data->point.y = last_y;
 }
 
-/*Return true is the touchpad is pressed*/
-static bool touchpad_is_pressed(void)
-{
-    /*Your code comes here*/
-    return xpt2046_is_touched();
-}
-
 /*Get the x and y coordinates if the touchpad is pressed*/
-static void touchpad_get_xy(lv_coord_t * x, lv_coord_t * y)
-{
-    /*Your code comes here*/
-    int16_t touch_x, touch_y;
-    bool pressed;
-    
-    esp_err_t ret = xpt2046_read_touch(&touch_x, &touch_y, &pressed);
-    if (ret == ESP_OK && pressed) {
-        *x = touch_x;
-        *y = touch_y;
-    } else {
-        *x = 0;
-        *y = 0;
+static void touchpad_get_xy(lv_coord_t* x, lv_coord_t* y) {
+    xpt2046_data_t raw;
+    (void)xpt2046_read_raw(&raw);
+
+    int16_t rx = raw.x;
+    int16_t ry = raw.y;
+
+    xpt2046_handle_t* h = xpt2046_get_handle();
+    const xpt2046_calibration_t* cal = &h->calibration;
+
+    int16_t px = rx;
+    int16_t py = ry;
+
+    if (cal->swap_xy) {
+        int16_t tmp = px; px = py; py = tmp;
     }
+    if (cal->invert_x) px = 4095 - px;
+    if (cal->invert_y) py = 4095 - py;
+
+    int32_t sx = (int32_t)(px - cal->x_min) * (int32_t)h->screen_width / (int32_t)(cal->x_max - cal->x_min);
+    int32_t sy = (int32_t)(py - cal->y_min) * (int32_t)h->screen_height / (int32_t)(cal->y_max - cal->y_min);
+
+    if (sx < 0) {
+        sx = 0;
+    } else if (sx >= h->screen_width) {
+        sx = h->screen_width - 1;
+    }
+    if (sy < 0) {
+        sy = 0;
+    } else if (sy >= h->screen_height) {
+        sy = h->screen_height - 1;
+    }
+
+    *x = (lv_coord_t)sx;
+    *y = (lv_coord_t)sy;
 }

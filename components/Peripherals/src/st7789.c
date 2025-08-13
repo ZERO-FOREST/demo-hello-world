@@ -10,6 +10,7 @@
 #include "esp_err.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "esp_heap_caps.h"
 #include <string.h>
 
 // ========================================
@@ -28,6 +29,7 @@ static void st7789_write_data(uint8_t data);
 static void st7789_write_data_buf(const uint8_t *data, size_t length);
 static void st7789_hardware_reset(void);
 static void st7789_init_sequence(void);
+static void st7789_write_bytes_async(const uint8_t *data, size_t size);
 
 // ========================================
 // SPI传输相关函数
@@ -62,7 +64,7 @@ static esp_err_t st7789_spi_init(void)
         .clock_speed_hz = ST7789_SPI_CLOCK_HZ,
         .mode = 0,                              // SPI模式0
         .spics_io_num = ST7789_PIN_CS,
-        .queue_size = ST7789_SPI_QUEUE_SIZE,
+        .queue_size = ST7789_SPI_QUEUE_SIZE,   // 允许排队多个事务
         .pre_cb = NULL,
         .post_cb = NULL,
     };
@@ -169,6 +171,109 @@ static void st7789_write_data_buf(const uint8_t *data, size_t length)
     ret = spi_device_polling_transmit(g_st7789_handle.spi_handle, &trans);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "SPI data buffer write failed");
+    }
+}
+
+// ==========================
+// 异步DMA流水线发送实现
+// ==========================
+#define ST7789_DMA_CHUNK_BYTES 8192   // 8KB 分块
+#define ST7789_DMA_QUEUE_DEPTH 4      // 队列深度4（四缓冲流水线）
+static uint8_t *s_dma_buf[ST7789_DMA_QUEUE_DEPTH] = {0};
+
+static void st7789_write_bytes_async(const uint8_t *data, size_t size)
+{
+    if (size == 0) return;
+
+    // 确保DMA缓冲已分配
+    for (int i = 0; i < ST7789_DMA_QUEUE_DEPTH; i++) {
+        if (!s_dma_buf[i]) s_dma_buf[i] = (uint8_t*)heap_caps_malloc(ST7789_DMA_CHUNK_BYTES, MALLOC_CAP_DMA);
+    }
+
+    // 如果无法分配DMA缓冲，退化为阻塞发送
+    bool dma_ok = true;
+    for (int i = 0; i < ST7789_DMA_QUEUE_DEPTH; i++) if (!s_dma_buf[i]) dma_ok = false;
+    if (!dma_ok) {
+        st7789_write_data_buf(data, size);
+        return;
+    }
+
+    // 置DC为数据模式
+    gpio_set_level(ST7789_PIN_DC, 1);
+
+    spi_transaction_t trans[ST7789_DMA_QUEUE_DEPTH];
+    memset(trans, 0, sizeof(trans));
+    bool in_use[ST7789_DMA_QUEUE_DEPTH] = {0};
+
+    int queued = 0; // in-flight count
+    const uint8_t *src = data;
+    size_t bytes_left = size;
+
+    while (bytes_left > 0) {
+        // 若队列已满，取回一个事务并标记对应slot空闲
+        if (queued == ST7789_DMA_QUEUE_DEPTH) {
+            spi_transaction_t *ret_trans;
+            spi_device_get_trans_result(g_st7789_handle.spi_handle, &ret_trans, portMAX_DELAY);
+            int freed = (int)(uintptr_t)ret_trans->user;
+            if (freed >= 0 && freed < ST7789_DMA_QUEUE_DEPTH) in_use[freed] = false;
+            queued--;
+        }
+
+        // 找到一个空闲slot
+        int slot = -1;
+        for (int i = 0; i < ST7789_DMA_QUEUE_DEPTH; i++) {
+            if (!in_use[i]) { slot = i; break; }
+        }
+        if (slot < 0) {
+            // 理论上不会发生，保险等待一个完成
+            spi_transaction_t *ret_trans;
+            spi_device_get_trans_result(g_st7789_handle.spi_handle, &ret_trans, portMAX_DELAY);
+            int freed = (int)(uintptr_t)ret_trans->user;
+            if (freed >= 0 && freed < ST7789_DMA_QUEUE_DEPTH) in_use[freed] = false;
+            queued--;
+            continue;
+        }
+
+        // 准备一个事务
+        size_t chunk = bytes_left > ST7789_DMA_CHUNK_BYTES ? ST7789_DMA_CHUNK_BYTES : bytes_left;
+        uint8_t *buf = s_dma_buf[slot];
+
+        // 如果源缓冲区是DMA可达，直接引用；否则复制到DMA缓冲
+        const uint8_t *tx_ptr = NULL;
+        bool src_dma_ok = esp_ptr_dma_capable(src);
+        if (src_dma_ok) {
+            tx_ptr = src;
+        } else {
+            memcpy(buf, src, chunk);
+            tx_ptr = buf;
+        }
+
+        spi_transaction_t *t = &trans[slot];
+        memset(t, 0, sizeof(*t));
+        t->length = chunk * 8;
+        t->tx_buffer = tx_ptr;
+        t->user = (void*)(uintptr_t)slot;
+
+        esp_err_t ret = spi_device_queue_trans(g_st7789_handle.spi_handle, t, portMAX_DELAY);
+        if (ret != ESP_OK) {
+            // 退化为阻塞发送
+            st7789_write_data_buf(src, chunk);
+        } else {
+            in_use[slot] = true;
+            queued++;
+        }
+
+        src += chunk;
+        bytes_left -= chunk;
+    }
+
+    // 取回所有剩余事务
+    while (queued > 0) {
+        spi_transaction_t *ret_trans;
+        spi_device_get_trans_result(g_st7789_handle.spi_handle, &ret_trans, portMAX_DELAY);
+        int freed = (int)(uintptr_t)ret_trans->user;
+        if (freed >= 0 && freed < ST7789_DMA_QUEUE_DEPTH) in_use[freed] = false;
+        queued--;
     }
 }
 
@@ -384,23 +489,8 @@ void st7789_write_pixels(const uint16_t *data, size_t length)
     if (data == NULL || length == 0) {
         return;
     }
-    
-    // ST7789需要大端序(MSB first)，ESP32是小端序，需要交换字节
-    static uint8_t temp_buffer[64]; // 32个像素的缓冲区
-    
-    for (size_t i = 0; i < length; ) {
-        size_t chunk_size = (length - i > 32) ? 32 : (length - i);
-        
-        // 转换字节序：ESP32小端序 -> ST7789大端序
-        for (size_t j = 0; j < chunk_size; j++) {
-            uint16_t color = data[i + j];
-            temp_buffer[j * 2] = color >> 8;        // 高字节先发送
-            temp_buffer[j * 2 + 1] = color & 0xFF;  // 低字节后发送
-        }
-        
-        st7789_write_data_buf(temp_buffer, chunk_size * 2);
-        i += chunk_size;
-    }
+    // 零转换路径 + 异步DMA流水线
+    st7789_write_bytes_async((const uint8_t *)data, length * 2);
 }
 
 /**
