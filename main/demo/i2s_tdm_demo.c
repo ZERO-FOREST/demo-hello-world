@@ -175,11 +175,6 @@ static void i2s_tdm_mic_task(void *arg) {
         int16_t avg_level = (int16_t)(sum / samples);
         
         // 每100ms打印一次音频电平
-        static uint32_t print_counter = 0;
-        if (++print_counter >= 10) {
-            ESP_LOGI(TAG, "Microphone level: %d", avg_level);
-            print_counter = 0;
-        }
         
         vTaskDelay(pdMS_TO_TICKS(10)); // 10ms
     }
