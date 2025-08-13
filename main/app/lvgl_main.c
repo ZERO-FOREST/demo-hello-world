@@ -39,7 +39,7 @@ void lvgl_main_task(void *pvParameters) {
     };
     
     ESP_ERROR_CHECK(esp_timer_create(&periodic_timer_args, &periodic_timer));
-    ESP_ERROR_CHECK(esp_timer_start_periodic(periodic_timer, 10000));  // 10ms周期
+    ESP_ERROR_CHECK(esp_timer_start_periodic(periodic_timer, 16666));  // 16.666ms周期
     ESP_LOGI(TAG, "LVGL tick timer started (10ms period)");
 
     // 创建并启动开机动画，动画结束后调用 show_main_menu_cb
@@ -50,6 +50,6 @@ void lvgl_main_task(void *pvParameters) {
     // LVGL主循环 - 专用任务处理
     while (1) {
         lv_timer_handler();
-        vTaskDelay(pdMS_TO_TICKS(10));  // 100Hz刷新率
+        vTaskDelay(pdMS_TO_TICKS(16));  // 60Hz刷新率
     }
 }
