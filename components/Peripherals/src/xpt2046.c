@@ -30,7 +30,7 @@ static const char *TAG = "XPT2046";
 static xpt2046_handle_t g_xpt2046_handle = {0};
 
 // 基于厂商代码的优化参数
-#define READ_TIMES 3           // 读取次数（降采样以降低延迟）
+#define READ_TIMES 5           // 读取次数（降采样以降低延迟）
 #define LOST_VAL 1            // 丢弃值数量
 #define ERR_RANGE 50          // 误差范围
 #define PRESSURE_THRESHOLD_MIN 10    // 压力阈值最小值
@@ -122,8 +122,8 @@ static uint16_t xpt2046_read_channel(uint8_t command)
         return 0;
     }
     
-    // XPT2046返回12位数据，位于rx_data[1]的高4位和rx_data[2]的8位
-    uint16_t result = ((rx_data[1] & 0x7F) << 5) | (rx_data[2] >> 3);
+    // XPT2046返回12位数据：((rx1 << 8) | rx2) >> 3 获取D11..D0
+    uint16_t result = (((uint16_t)rx_data[1] << 8) | rx_data[2]) >> 3;
     return result;
 }
 
@@ -170,7 +170,6 @@ static bool xpt2046_read_xy2(uint16_t *x, uint16_t *y)
 {
     uint16_t x1, y1;
     uint16_t x2, y2;
-    bool flag;
     
     // 第一次读取
     x1 = xpt2046_read_xoy(XPT2046_CMD_X_POS);
@@ -326,12 +325,41 @@ esp_err_t xpt2046_read_raw(xpt2046_data_t *data)
         return ESP_ERR_INVALID_ARG;
     }
     
-    // 使用优化的双次读取验证
-    uint16_t x, y;
-    if (!xpt2046_read_xy2(&x, &y)) {
-        // 若两次读取差异过大，仍返回最后一次读到的坐标，避免未初始化
-        x = xpt2046_read_xoy(XPT2046_CMD_X_POS);
-        y = xpt2046_read_xoy(XPT2046_CMD_Y_POS);
+    // 使用PEN IRQ作为提示：低电平优先认为按下；若为高电平，则做一次轻量级Z检测作为兜底
+    bool pen_irq_low = xpt2046_is_touched();
+
+    uint16_t x = 0, y = 0;
+    bool coord_ok = false;
+    if (pen_irq_low) {
+        // 使用优化的双次读取验证
+        if (!xpt2046_read_xy2(&x, &y)) {
+            x = xpt2046_read_xoy(XPT2046_CMD_X_POS);
+            y = xpt2046_read_xoy(XPT2046_CMD_Y_POS);
+        }
+        coord_ok = true;
+    } else {
+        // 轻量级快速检测：读取一次X和压力Z1/Z2来判断是否按下
+        uint16_t x_quick = xpt2046_read_channel(XPT2046_CMD_X_POS);
+        uint16_t z1_quick = xpt2046_read_channel(XPT2046_CMD_Z1_POS);
+        uint16_t z2_quick = xpt2046_read_channel(XPT2046_CMD_Z2_POS);
+        int16_t z_quick = 0;
+        if (z1_quick > 0) {
+            z_quick = (int16_t)((x_quick * (int32_t)(z2_quick - z1_quick)) / z1_quick);
+        }
+        if (z_quick > PRESSURE_THRESHOLD_MIN && z_quick < PRESSURE_THRESHOLD_MAX) {
+            // 确认按下后，再进行稳定的坐标读取
+            if (!xpt2046_read_xy2(&x, &y)) {
+                x = xpt2046_read_xoy(XPT2046_CMD_X_POS);
+                y = xpt2046_read_xoy(XPT2046_CMD_Y_POS);
+            }
+            coord_ok = true;
+        } else {
+            data->x = 0;
+            data->y = 0;
+            data->z = 0;
+            data->pressed = false;
+            return ESP_OK;
+        }
     }
     
     // 读取压力值
@@ -354,11 +382,14 @@ esp_err_t xpt2046_read_raw(xpt2046_data_t *data)
         data->z = 0;
     }
     
-    // 依据压力阈值判断是否按下（无需IRQ）
+    // 依据压力阈值判断是否按下（PEN仅作提示，不作唯一依据）
     data->pressed = (data->z > PRESSURE_THRESHOLD_MIN) && (data->z < PRESSURE_THRESHOLD_MAX);
-    if (data->pressed) {
+    if (data->pressed && coord_ok) {
         data->x = x;
         data->y = y;
+    } else if (!data->pressed) {
+        data->x = 0;
+        data->y = 0;
     }
     
     return ESP_OK;
