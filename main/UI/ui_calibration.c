@@ -30,6 +30,12 @@ typedef enum {
     CALIBRATION_STATE_TOUCHSCREEN_TEST
 } calibration_state_t;
 
+// 前向声明
+static void create_main_menu(void);
+static void create_joystick_test(void);
+static void create_gyroscope_test(void);
+static void create_accelerometer_test(void);
+
 // 全局变量
 static lv_obj_t *g_calibration_screen = NULL;
 static lv_obj_t *g_status_bar = NULL;
@@ -357,4 +363,109 @@ void ui_calibration_destroy(void)
     g_test_btn = NULL;
     
     ESP_LOGI(TAG, "Calibration UI destroyed");
+}
+
+// 创建摇杆测试界面
+static void create_joystick_test(void)
+{
+    if (!g_content_area) return;
+    
+    lv_obj_clean(g_content_area);
+    
+    // 创建摇杆显示区域
+    lv_obj_t *joystick_area = lv_obj_create(g_content_area);
+    lv_obj_set_size(joystick_area, 200, 200);
+    lv_obj_align(joystick_area, LV_ALIGN_CENTER, 0, -20);
+    lv_obj_set_style_bg_color(joystick_area, lv_color_hex(0x34495E), 0);
+    lv_obj_set_style_bg_opa(joystick_area, LV_OPA_50, 0);
+    lv_obj_set_style_radius(joystick_area, 100, 0);
+    lv_obj_set_style_border_width(joystick_area, 2, 0);
+    lv_obj_set_style_border_color(joystick_area, lv_color_hex(0x95A5A6), 0);
+    
+    // 创建摇杆指示器
+    lv_obj_t *joystick_indicator = lv_obj_create(joystick_area);
+    lv_obj_set_size(joystick_indicator, 20, 20);
+    lv_obj_align(joystick_indicator, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_set_style_bg_color(joystick_indicator, lv_color_hex(0xE74C3C), 0);
+    lv_obj_set_style_radius(joystick_indicator, 10, 0);
+    lv_obj_set_user_data(joystick_area, joystick_indicator);
+    
+    // 创建数值显示标签
+    lv_obj_t *value_label = lv_label_create(g_content_area);
+    lv_label_set_text(value_label, "X: 0, Y: 0");
+    lv_obj_align(value_label, LV_ALIGN_BOTTOM_MID, 0, -60);
+    lv_obj_set_style_text_font(value_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_user_data(g_content_area, value_label);
+    
+    ESP_LOGI(TAG, "Joystick test interface created");
+}
+
+// 创建陀螺仪测试界面
+static void create_gyroscope_test(void)
+{
+    if (!g_content_area) return;
+    
+    lv_obj_clean(g_content_area);
+    
+    // 创建3D立方体显示区域
+    lv_obj_t *cube_area = lv_obj_create(g_content_area);
+    lv_obj_set_size(cube_area, 200, 200);
+    lv_obj_align(cube_area, LV_ALIGN_CENTER, 0, -20);
+    lv_obj_set_style_bg_color(cube_area, lv_color_hex(0x34495E), 0);
+    lv_obj_set_style_bg_opa(cube_area, LV_OPA_50, 0);
+    lv_obj_set_style_radius(cube_area, 8, 0);
+    lv_obj_set_style_border_width(cube_area, 2, 0);
+    lv_obj_set_style_border_color(cube_area, lv_color_hex(0x95A5A6), 0);
+    
+    // 创建立方体指示器
+    lv_obj_t *cube_indicator = lv_obj_create(cube_area);
+    lv_obj_set_size(cube_indicator, 40, 40);
+    lv_obj_align(cube_indicator, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_set_style_bg_color(cube_indicator, lv_color_hex(0x9B59B6), 0);
+    lv_obj_set_style_radius(cube_indicator, 4, 0);
+    lv_obj_set_user_data(cube_area, cube_indicator);
+    
+    // 创建数值显示标签
+    lv_obj_t *value_label = lv_label_create(g_content_area);
+    lv_label_set_text(value_label, "X: 0.00, Y: 0.00, Z: 0.00");
+    lv_obj_align(value_label, LV_ALIGN_BOTTOM_MID, 0, -60);
+    lv_obj_set_style_text_font(value_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_user_data(g_content_area, value_label);
+    
+    ESP_LOGI(TAG, "Gyroscope test interface created");
+}
+
+// 创建加速度计测试界面
+static void create_accelerometer_test(void)
+{
+    if (!g_content_area) return;
+    
+    lv_obj_clean(g_content_area);
+    
+    // 创建重力指示器
+    lv_obj_t *gravity_area = lv_obj_create(g_content_area);
+    lv_obj_set_size(gravity_area, 200, 200);
+    lv_obj_align(gravity_area, LV_ALIGN_CENTER, 0, -20);
+    lv_obj_set_style_bg_color(gravity_area, lv_color_hex(0x34495E), 0);
+    lv_obj_set_style_bg_opa(gravity_area, LV_OPA_50, 0);
+    lv_obj_set_style_radius(gravity_area, 100, 0);
+    lv_obj_set_style_border_width(gravity_area, 2, 0);
+    lv_obj_set_style_border_color(gravity_area, lv_color_hex(0x95A5A6), 0);
+    
+    // 创建重力指示器
+    lv_obj_t *gravity_indicator = lv_obj_create(gravity_area);
+    lv_obj_set_size(gravity_indicator, 30, 30);
+    lv_obj_align(gravity_indicator, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_set_style_bg_color(gravity_indicator, lv_color_hex(0xF39C12), 0);
+    lv_obj_set_style_radius(gravity_indicator, 15, 0);
+    lv_obj_set_user_data(gravity_area, gravity_indicator);
+    
+    // 创建数值显示标签
+    lv_obj_t *value_label = lv_label_create(g_content_area);
+    lv_label_set_text(value_label, "X: 0.00, Y: 0.00, Z: 0.00");
+    lv_obj_align(value_label, LV_ALIGN_BOTTOM_MID, 0, -60);
+    lv_obj_set_style_text_font(value_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_user_data(g_content_area, value_label);
+    
+    ESP_LOGI(TAG, "Accelerometer test interface created");
 }

@@ -238,14 +238,14 @@ esp_err_t calibrate_joystick(void)
     }
     
     // 设置中心点
-    g_calibration_data->joystick.center_x = joystick_data.x;
-    g_calibration_data->joystick.center_y = joystick_data.y;
+    g_calibration_data->joystick.center_x = joystick_data.norm_joy1_x;
+    g_calibration_data->joystick.center_y = joystick_data.norm_joy1_y;
     
     // 初始化范围值
-    g_calibration_data->joystick.min_x = joystick_data.x;
-    g_calibration_data->joystick.max_x = joystick_data.x;
-    g_calibration_data->joystick.min_y = joystick_data.y;
-    g_calibration_data->joystick.max_y = joystick_data.y;
+    g_calibration_data->joystick.min_x = joystick_data.norm_joy1_x;
+    g_calibration_data->joystick.max_x = joystick_data.norm_joy1_x;
+    g_calibration_data->joystick.min_y = joystick_data.norm_joy1_y;
+    g_calibration_data->joystick.max_y = joystick_data.norm_joy1_y;
     
     // 设置死区
     g_calibration_data->joystick.deadzone = 0.1f; // 10%死区
@@ -275,7 +275,7 @@ esp_err_t calibrate_gyroscope(void)
     
     for (int i = 0; i < samples; i++) {
         lsm6ds3_data_t imu_data;
-        if (lsm6ds3_read(&imu_data) == ESP_OK) {
+        if (lsm6ds3_read_all(&imu_data) == ESP_OK) {
             sum_x += imu_data.gyro.x;
             sum_y += imu_data.gyro.y;
             sum_z += imu_data.gyro.z;
@@ -320,10 +320,10 @@ esp_err_t calibrate_accelerometer(void)
     
     for (int i = 0; i < samples; i++) {
         lsm6ds3_data_t imu_data;
-        if (lsm6ds3_read(&imu_data) == ESP_OK) {
-            sum_x += imu_data.accel_x;
-            sum_y += imu_data.accel_y;
-            sum_z += imu_data.accel_z;
+        if (lsm6ds3_read_all(&imu_data) == ESP_OK) {
+            sum_x += imu_data.accel.x;
+            sum_y += imu_data.accel.y;
+            sum_z += imu_data.accel.z;
         }
         vTaskDelay(pdMS_TO_TICKS(10)); // 10ms延迟
     }
@@ -426,8 +426,8 @@ esp_err_t apply_joystick_calibration(joystick_data_t *data)
     }
     
     // 应用中心点偏移
-    int16_t calibrated_x = data->x - g_calibration_data->joystick.center_x;
-    int16_t calibrated_y = data->y - g_calibration_data->joystick.center_y;
+    int16_t calibrated_x = data->norm_joy1_x - g_calibration_data->joystick.center_x;
+    int16_t calibrated_y = data->norm_joy1_y - g_calibration_data->joystick.center_y;
     
     // 应用死区
     float deadzone = g_calibration_data->joystick.deadzone;
@@ -441,8 +441,8 @@ esp_err_t apply_joystick_calibration(joystick_data_t *data)
         calibrated_y = 0;
     }
     
-    data->x = calibrated_x;
-    data->y = calibrated_y;
+    data->norm_joy1_x = calibrated_x;
+    data->norm_joy1_y = calibrated_y;
     
     return ESP_OK;
 }
