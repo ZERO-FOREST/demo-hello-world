@@ -1,7 +1,8 @@
-/*
- * SPDX-FileCopyrightText: 2010-2022 Espressif Systems (Shanghai) CO LTD
- *
- * SPDX-License-Identifier: CC0-1.0
+/**
+ * @file hello_world_main.c
+ * @brief 主函数
+ * @author TidyCraze
+ * @date 2025-08-14
  */
 
 #include "battery_monitor.h"
