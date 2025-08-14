@@ -146,7 +146,7 @@
 /*==================
  * PERFORMANCE MONITOR
  *==================*/
-#define LV_USE_PERF_MONITOR 1  // 启用性能监控
+#define LV_USE_PERF_MONITOR 0  // 启用性能监控
 #if LV_USE_PERF_MONITOR
     #define LV_USE_MEM_MONITOR 1   // 内存监控
     #define LV_USE_OBSERVER 1      // 观察器

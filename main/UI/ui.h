@@ -12,6 +12,7 @@ extern "C" {
 #endif
 
 #include "lvgl.h"
+#include "theme_manager.h"
 
 // --- LVGL 主任务 ---
 // 这个任务初始化并运行LVGL的主循环

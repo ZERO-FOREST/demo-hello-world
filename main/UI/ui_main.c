@@ -9,6 +9,7 @@
 #include "battery_monitor.h"
 #include "color.h"
 #include "esp_log.h"
+#include "theme_manager.h"
 #include "ui.h"
 #include "ui_calibration.h"
 #include "ui_image_transfer.h"
@@ -232,11 +233,8 @@ static void btn_event_cb(lv_event_t* e) {
 }
 
 void ui_main_menu_create(lv_obj_t* parent) {
-    // 设置背景色为指定的莫兰迪色
-    lv_obj_set_style_bg_color(parent, lv_color_hex(0xF6E9DB), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(parent, LV_OPA_COVER, LV_PART_MAIN);
-    // 强制刷新背景
-    lv_obj_invalidate(parent);
+    // 应用当前主题到屏幕
+    theme_apply_to_screen(parent);
 
     // 创建顶部状态栏
     lv_obj_t* status_bar = lv_obj_create(parent);
@@ -299,10 +297,9 @@ void ui_main_menu_create(lv_obj_t* parent) {
     // 创建主标题 - 靠左显示，字体放大加粗，禁止滚动
     lv_obj_t* title = lv_label_create(title_container);
     lv_label_set_text(title, "Browse");
-    lv_obj_align(title, LV_ALIGN_LEFT_MID, 10, 0);                 // 靠左显示，左边距10像素
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_28, 0);  // 字体放大到24
-    lv_obj_set_style_text_color(title, lv_color_hex(0x2C2C2C), 0); // 深灰色文字
-    lv_obj_clear_flag(title, LV_OBJ_FLAG_SCROLLABLE);              // 禁止滚动
+    lv_obj_align(title, LV_ALIGN_LEFT_MID, 10, 0);    // 靠左显示，左边距10像素
+    theme_apply_to_label(title, true);                // 应用主题到标题
+    lv_obj_clear_flag(title, LV_OBJ_FLAG_SCROLLABLE); // 禁止滚动
 
     // 计算按钮数量
     int num_items = sizeof(menu_items) / sizeof(menu_item_t);
@@ -317,36 +314,27 @@ void ui_main_menu_create(lv_obj_t* parent) {
     lv_obj_set_style_width(menu_container, 0, LV_PART_SCROLLBAR);
     lv_obj_set_style_opa(menu_container, LV_OPA_0, LV_PART_SCROLLBAR);
 
-    // 创建按钮 - 使用莫兰迪色系，调整高度以显示3个按钮
+    // 创建按钮 - 使用莫兰迪色系
     for (int i = 0; i < num_items; i++) {
         lv_obj_t* btn = lv_obj_create(menu_container);
         lv_obj_set_size(btn, 200, 54);                       // 增加按钮高度到60像素
         lv_obj_align(btn, LV_ALIGN_CENTER, 0, -80 + i * 70); // 调整间距，每个按钮间隔70像素
         lv_obj_add_event_cb(btn, btn_event_cb, LV_EVENT_CLICKED, menu_items[i].callback);
 
-        // 使用不同的莫兰迪色系
-        int color_index = i % 4; // 循环使用前4个颜色
-        lv_color_t btn_color = get_morandi_color(color_index);
-        lv_obj_set_style_bg_color(btn, btn_color, LV_PART_MAIN);
-        lv_obj_set_style_bg_opa(btn, LV_OPA_90, LV_PART_MAIN);
-        lv_obj_set_style_radius(btn, 15, 0); // 增大圆角
-        lv_obj_set_style_border_width(btn, 0, 0);
-        lv_obj_set_style_pad_all(btn, 12, 0); // 增大内边距
+        // 设置按钮样式（圆角、阴影等）
+        lv_obj_set_style_radius(btn, 15, LV_PART_MAIN);
+        lv_obj_set_style_shadow_width(btn, 6, LV_PART_MAIN);
+        lv_obj_set_style_shadow_ofs_y(btn, 3, LV_PART_MAIN);
+        lv_obj_set_style_shadow_opa(btn, LV_OPA_40, LV_PART_MAIN);
+        lv_obj_set_style_shadow_color(btn, lv_color_hex(0x000000), LV_PART_MAIN);
+        lv_obj_set_style_pad_all(btn, 12, LV_PART_MAIN);
 
-        // 添加阴影效果
-        lv_obj_set_style_shadow_width(btn, 6, 0);
-        lv_obj_set_style_shadow_ofs_y(btn, 3, 0);
-        lv_obj_set_style_shadow_opa(btn, LV_OPA_40, 0);
-        lv_obj_set_style_shadow_color(btn, lv_color_hex(0x000000), 0);
-
-        // 添加按下效果
-        lv_obj_set_style_bg_color(btn, lv_color_darken(btn_color, 20), LV_STATE_PRESSED);
-        lv_obj_set_style_shadow_ofs_y(btn, 1, LV_STATE_PRESSED);
+        // 应用主题到按钮（只改变颜色）
+        theme_apply_to_button(btn, true);
 
         lv_obj_t* label = lv_label_create(btn);
         lv_label_set_text(label, menu_items[i].text);
-        lv_obj_set_style_text_font(label, &lv_font_montserrat_18, 0);  // 增大字体到18
-        lv_obj_set_style_text_color(label, lv_color_hex(0x2C2C2C), 0); // 深灰色文字
+        theme_apply_to_label(label, false); // 应用主题到标签
         lv_obj_center(label);
     }
 

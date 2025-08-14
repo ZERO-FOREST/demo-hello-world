@@ -11,6 +11,7 @@
 #include "lv_port_disp.h"
 #include "lv_port_indev.h"
 #include "ui.h"
+#include "theme_manager.h"
 
 // 动画完成后的回调函数
 static void show_main_menu_cb(void) { ui_main_menu_create(lv_scr_act()); }
@@ -30,9 +31,11 @@ void lvgl_main_task(void* pvParameters) {
     lv_port_disp_init();
     lv_port_indev_init();
 
-    // 设置默认屏幕背景为莫兰迪色系
-    lv_obj_set_style_bg_color(lv_scr_act(), lv_color_hex(0xF6E9DB), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(lv_scr_act(), LV_OPA_COVER, LV_PART_MAIN);
+    // 初始化主题管理器
+    theme_manager_init();
+
+    // 应用当前主题到默认屏幕
+    theme_apply_to_screen(lv_scr_act());
 
     esp_timer_handle_t periodic_timer;
     const esp_timer_create_args_t periodic_timer_args = {.callback = &lv_tick_task, .name = "lv_tick"};

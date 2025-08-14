@@ -5,6 +5,7 @@
  * @date 2024
  */
 #include "ui.h"
+#include "theme_manager.h"
 
 // 全局变量来存储回调函数和需要清理的UI元素
 static ui_start_anim_finished_cb_t g_finished_cb = NULL;
@@ -58,11 +59,8 @@ static void all_anims_finished_cb(lv_anim_t* a) {
     lv_obj_t* screen = (lv_obj_t*)a->user_data;
     if (screen) {
         lv_obj_clean(screen);
-        // 重置背景为莫兰迪色系背景色
-        lv_obj_set_style_bg_color(screen, lv_color_hex(0xF6E9DB), LV_PART_MAIN);
-        lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, LV_PART_MAIN);
-        // 强制刷新屏幕
-        lv_obj_invalidate(screen);
+        // 应用当前主题到屏幕
+        theme_apply_to_screen(screen);
     }
 
     // 调用外部回调函数
@@ -77,9 +75,8 @@ void ui_start_animation_create(lv_obj_t* parent, ui_start_anim_finished_cb_t fin
     g_anim_arc = NULL;
     g_status_timer = NULL;
 
-    // 设置莫兰迪色系背景 - 保持与主菜单一致
-    lv_obj_set_style_bg_color(parent, lv_color_hex(0xF6E9DB), LV_PART_MAIN); // 莫兰迪米白色
-    lv_obj_set_style_bg_opa(parent, LV_OPA_COVER, LV_PART_MAIN);
+    // 应用当前主题到屏幕
+    theme_apply_to_screen(parent);
 
     // 1. 创建更炫酷的Logo
     lv_obj_t* logo = lv_label_create(parent);

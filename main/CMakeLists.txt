@@ -14,6 +14,7 @@ set(MAIN_SRCS
     "UI/ui_serial_display.c"
     "UI/ui_calibration.c"
     "UI/ui_test.c"
+    "UI/theme_manager.c"
     "app/game/game_main.c"
     "app/game/game_tetris.c"
     "app/game/game_snake.c"
