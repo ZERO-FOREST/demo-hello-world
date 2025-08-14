@@ -9,6 +9,7 @@
 #include "battery_monitor.h"
 #include "color.h"
 #include "esp_log.h"
+#include "font/lv_font.h"
 #include "theme_manager.h"
 #include "ui.h"
 #include "ui_calibration.h"
@@ -243,47 +244,43 @@ void ui_main_menu_create(lv_obj_t* parent) {
     lv_obj_set_style_bg_opa(status_bar, LV_OPA_0, 0); // 透明背景
     lv_obj_set_style_border_width(status_bar, 0, 0);
     lv_obj_set_style_pad_all(status_bar, 0, 0);
+    lv_obj_clear_flag(status_bar, LV_OBJ_FLAG_SCROLLABLE); // 禁止滚动
 
     // 创建时间显示标签 - 在最左边
     g_time_label = lv_label_create(status_bar);
-    lv_obj_set_style_text_font(g_time_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(g_time_label, &lv_font_montserrat_16, 0);
     lv_obj_set_style_text_color(g_time_label, lv_color_hex(0x000000), 0); // 黑色
     lv_obj_align(g_time_label, LV_ALIGN_LEFT_MID, 6, 0);
     lv_label_set_text(g_time_label, "00:00");
 
-    // 创建电池图标容器 - 在最右边
-    lv_obj_t* battery_container = lv_obj_create(status_bar);
-    lv_obj_set_size(battery_container, 45, 20);
-    lv_obj_align(battery_container, LV_ALIGN_RIGHT_MID, -6, 0);
-    lv_obj_set_style_bg_opa(battery_container, LV_OPA_0, 0);
-    lv_obj_set_style_border_width(battery_container, 0, 0);
-    lv_obj_set_style_pad_all(battery_container, 0, 0);
-
-    // 创建电池电量显示标签 - 在电池图标左边
-    g_battery_label = lv_label_create(battery_container);
-    lv_obj_set_style_text_font(g_battery_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(g_battery_label, lv_color_hex(0x000000), 0); // 黑色
-    lv_obj_align(g_battery_label, LV_ALIGN_LEFT_MID, 0, 0);
-    lv_label_set_text(g_battery_label, "100%");
-
-    // 创建电池图标
-    lv_obj_t* battery_icon = lv_obj_create(battery_container);
-    lv_obj_set_size(battery_icon, 20, 12);
-    lv_obj_align(battery_icon, LV_ALIGN_RIGHT_MID, 0, 0);
+    // ==== 电池图标（外壳 + 小凸起 + 电量文字） ====
+    // 电池外壳
+    lv_obj_t* battery_icon = lv_obj_create(status_bar);
+    lv_obj_set_size(battery_icon, 28, 16);
+    lv_obj_align(battery_icon, LV_ALIGN_RIGHT_MID, -8, 0);
     lv_obj_set_style_bg_color(battery_icon, lv_color_hex(0x000000), 0); // 黑色边框
     lv_obj_set_style_bg_opa(battery_icon, LV_OPA_0, 0);                 // 透明填充
     lv_obj_set_style_border_width(battery_icon, 2, 0);
     lv_obj_set_style_border_color(battery_icon, lv_color_hex(0x000000), 0);
     lv_obj_set_style_radius(battery_icon, 2, 0);
+    lv_obj_clear_flag(battery_icon, LV_OBJ_FLAG_SCROLLABLE);
 
-    // 创建电池正极（小凸起）
-    lv_obj_t* battery_positive = lv_obj_create(battery_container);
+    // 电池正极（小凸起），直接以电池外壳为参考对齐
+    lv_obj_t* battery_positive = lv_obj_create(status_bar);
     lv_obj_set_size(battery_positive, 4, 8);
-    lv_obj_align(battery_positive, LV_ALIGN_RIGHT_MID, 3, 0);
+    lv_obj_align_to(battery_positive, battery_icon, LV_ALIGN_OUT_RIGHT_MID, 1, 0);
     lv_obj_set_style_bg_color(battery_positive, lv_color_hex(0x000000), 0);
     lv_obj_set_style_bg_opa(battery_positive, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(battery_positive, 2, 0);
     lv_obj_set_style_border_width(battery_positive, 0, 0);
+    lv_obj_clear_flag(battery_positive, LV_OBJ_FLAG_SCROLLABLE);
+
+    // 电池电量显示标签 - 在电池外壳中间
+    g_battery_label = lv_label_create(battery_icon);
+    lv_obj_set_style_text_font(g_battery_label, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(g_battery_label, lv_color_hex(0x000000), 0); // 黑色
+    lv_obj_align(g_battery_label, LV_ALIGN_CENTER, 0, 0);
+    lv_label_set_text(g_battery_label, "100");
 
     // 创建标题区域 - 在状态栏下方，透明背景
     lv_obj_t* title_container = lv_obj_create(parent);
