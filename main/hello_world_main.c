@@ -4,25 +4,24 @@
  * SPDX-License-Identifier: CC0-1.0
  */
 
-#include <stdio.h>
-#include <inttypes.h>
-#include "sdkconfig.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "esp_chip_info.h"
-#include "esp_system.h"
-#include "esp_log.h"
-#include "nvs_flash.h"
-#include "power_management.h"
-#include "task_init.h"         
-#include "lsm6ds3_demo.h"
-#include "st7789.h"
-#include "wifi_manager.h"
 #include "battery_monitor.h"
 #include "calibration_manager.h"
+#include "esp_chip_info.h"
+#include "esp_log.h"
+#include "esp_system.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "lsm6ds3_demo.h"
+#include "nvs_flash.h"
+#include "power_management.h"
+#include "sdkconfig.h"
+#include "st7789.h"
+#include "task_init.h"
+#include "wifi_manager.h"
+#include <inttypes.h>
+#include <stdio.h>
 
-
-static const char *TAG = "MAIN";
+static const char* TAG = "MAIN";
 
 void app_main(void) {
     // 初始化NVS (Non-Volatile Storage)
@@ -32,7 +31,7 @@ void app_main(void) {
         ret = nvs_flash_init();
     }
     ESP_ERROR_CHECK(ret);
-    
+
     ESP_LOGI(TAG, "ESP32-S3 Demo Application Starting...");
     ESP_LOGI(TAG, "App main running on core %d", xPortGetCoreID());
 
@@ -74,13 +73,13 @@ void app_main(void) {
     }
 
     // 显示当前运行的任务
-    vTaskDelay(pdMS_TO_TICKS(1000));  // 等待任务启动
+    vTaskDelay(pdMS_TO_TICKS(1000)); // 等待任务启动
     list_running_tasks();
 
     // 主任务进入轻量级监控循环
     while (1) {
-        ESP_LOGI(TAG, "Main loop: System running normally, free heap: %lu bytes", 
-                (unsigned long)esp_get_free_heap_size());
-        vTaskDelay(pdMS_TO_TICKS(30000));  // 30秒打印一次状态
+        ESP_LOGI(TAG, "Main loop: System running normally, free heap: %lu bytes",
+                 (unsigned long)esp_get_free_heap_size());
+        vTaskDelay(pdMS_TO_TICKS(30000)); // 30秒打印一次状态
     }
 }
