@@ -34,6 +34,6 @@ endif()
 
 idf_component_register(
     SRCS ${MAIN_SRCS}
-    INCLUDE_DIRS "inc" "UI" "demo" "app" "app/game"
+    INCLUDE_DIRS "inc" "UI/inc" "demo" "app" "app/game"
     REQUIRES lvgl esp_timer lvgl_port Peripherals driver
 )
