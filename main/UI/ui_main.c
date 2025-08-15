@@ -6,7 +6,7 @@
  */
 
 #include "../app/game/game.h"
-#include "battery_monitor.h"
+#include "background_manager.h"
 #include "color.h"
 #include "esp_log.h"
 #include "font/lv_font.h"
@@ -31,11 +31,6 @@ static lv_color_t get_morandi_color(int index) {
 static lv_obj_t* g_time_label = NULL;
 static lv_obj_t* g_battery_label = NULL;
 
-// 本地时间变量
-static uint8_t g_local_hour = 0;
-static uint8_t g_local_minute = 0;
-static bool g_time_initialized = false;
-
 // 时间更新定时器回调函数
 static void time_update_timer_cb(lv_timer_t* timer) {
     if (!g_time_label) {
@@ -50,43 +45,18 @@ static void time_update_timer_cb(lv_timer_t* timer) {
         return;
     }
 
-    char time_str[32];
-
-    // 首先尝试从网络获取时间
-    if (wifi_manager_get_time_str(time_str, sizeof(time_str))) {
-        // 如果网络时间可用，解析并更新本地时间
-        int hour, minute;
-        if (sscanf(time_str, "%d:%d", &hour, &minute) == 2) {
-            g_local_hour = hour;
-            g_local_minute = minute;
-            g_time_initialized = true;
+    // 检查后台时间是否有更新
+    if (background_manager_is_time_changed()) {
+        char time_str[32];
+        if (background_manager_get_time_str(time_str, sizeof(time_str)) == ESP_OK) {
+            // 更新UI显示
+            lv_label_set_text(g_time_label, time_str);
+            lv_obj_invalidate(g_time_label);
+            // 标记已显示
+            background_manager_mark_time_displayed();
+            ESP_LOGD("UI_MAIN", "Time updated: %s", time_str);
         }
-    } else {
-        // 如果网络时间不可用，使用本地时间
-        if (!g_time_initialized) {
-            // 首次初始化，从00:00开始
-            g_local_hour = 0;
-            g_local_minute = 0;
-            g_time_initialized = true;
-        } else {
-            // 每分钟更新一次
-            g_local_minute++;
-            if (g_local_minute >= 60) {
-                g_local_minute = 0;
-                g_local_hour++;
-                if (g_local_hour >= 24) {
-                    g_local_hour = 0;
-                }
-            }
-        }
-
-        // 格式化本地时间
-        snprintf(time_str, sizeof(time_str), "%02d:%02d", g_local_hour, g_local_minute);
     }
-
-    // 更新UI显示
-    lv_label_set_text(g_time_label, time_str);
-    lv_obj_invalidate(g_time_label);
 }
 
 // 电池电量更新函数（由任务调用）
@@ -103,17 +73,31 @@ void ui_main_update_battery_display(void) {
         return;
     }
 
-    battery_info_t battery_info;
-    if (battery_monitor_read(&battery_info) == ESP_OK) {
+    // 检查后台电池信息是否有更新
+    if (background_manager_is_battery_changed()) {
         char battery_str[32];
-        snprintf(battery_str, sizeof(battery_str), "%d%%", battery_info.percentage);
-
-        // 直接更新UI - 保持黑色文字
-        lv_label_set_text(g_battery_label, battery_str);
-
-        ESP_LOGI("UI_MAIN", "Updated battery display: %s", battery_str);
-    } else {
-        ESP_LOGW("UI_MAIN", "Failed to read battery info");
+        background_battery_info_t battery_info;
+        
+        if (background_manager_get_battery_str(battery_str, sizeof(battery_str)) == ESP_OK &&
+            background_manager_get_battery(&battery_info) == ESP_OK) {
+            
+            // 更新文字
+            lv_label_set_text(g_battery_label, battery_str);
+            
+            // 根据电量设置颜色
+            if (battery_info.percentage <= 30) {
+                // 30%以下显示红色
+                lv_obj_set_style_text_color(g_battery_label, lv_color_hex(0xFF0000), 0);
+            } else {
+                // 30%以上显示黑色
+                lv_obj_set_style_text_color(g_battery_label, lv_color_hex(0x000000), 0);
+            }
+            
+            // 标记已显示
+            background_manager_mark_battery_displayed();
+            ESP_LOGD("UI_MAIN", "Battery updated: %s, color: %s", 
+                     battery_str, battery_info.percentage <= 30 ? "red" : "black");
+        }
     }
 }
 
@@ -359,20 +343,39 @@ void ui_main_menu_create(lv_obj_t* parent) {
         lv_obj_center(label);
     }
 
-    // 创建时间更新定时器（每分钟更新一次）
+    // 创建时间更新定时器（每分钟检查一次后台更新）
     static lv_timer_t* timer = NULL;
     if (timer == NULL) {
-        timer = lv_timer_create(time_update_timer_cb, 60000, NULL); // 60秒 = 1分钟
-        ESP_LOGI("UI_MAIN", "Time update timer created (60s interval)");
+        timer = lv_timer_create(time_update_timer_cb, 60000, NULL); // 1分钟检查一次
+        ESP_LOGI("UI_MAIN", "Time update timer created (1min interval)");
     } else {
         // 如果定时器已存在，先删除再创建新的
         lv_timer_del(timer);
         timer = lv_timer_create(time_update_timer_cb, 60000, NULL);
-        ESP_LOGI("UI_MAIN", "Time update timer recreated (60s interval)");
+        ESP_LOGI("UI_MAIN", "Time update timer recreated (1min interval)");
     }
 
-    // 电池电量显示将由任务更新，每5分钟更新一次
-    ESP_LOGI("UI_MAIN", "Battery display ready for task updates");
+    // 初始化显示
+    char time_str[32];
+    char battery_str[32];
+    background_battery_info_t battery_info;
+    
+    if (background_manager_get_time_str(time_str, sizeof(time_str)) == ESP_OK) {
+        lv_label_set_text(g_time_label, time_str);
+    }
+    if (background_manager_get_battery_str(battery_str, sizeof(battery_str)) == ESP_OK &&
+        background_manager_get_battery(&battery_info) == ESP_OK) {
+        lv_label_set_text(g_battery_label, battery_str);
+        
+        // 根据电量设置初始颜色
+        if (battery_info.percentage <= 30) {
+            lv_obj_set_style_text_color(g_battery_label, lv_color_hex(0xFF0000), 0);
+        } else {
+            lv_obj_set_style_text_color(g_battery_label, lv_color_hex(0x000000), 0);
+        }
+    }
+
+    ESP_LOGI("UI_MAIN", "Main menu created with background manager support");
 
     // 扩展提示：要添加新选项，在 menu_items 数组中添加新项，并实现对应的回调函数
 }

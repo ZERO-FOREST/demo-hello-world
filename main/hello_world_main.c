@@ -5,6 +5,7 @@
  * @date 2025-08-14
  */
 
+#include "background_manager.h"
 #include "battery_monitor.h"
 #include "calibration_manager.h"
 #include "esp_chip_info.h"

@@ -1,7 +1,5 @@
 set(MAIN_SRCS
     "hello_world_main.c"
-    "app/lvgl_main.c"
-    "app/power_management.c"
     "task_init.c"
     "demo/lsm6ds3_demo.c"
     "demo/i2s_tdm_demo.c"
@@ -22,6 +20,9 @@ set(MAIN_SRCS
     "app/wifi_image_transfer.c"
     "app/serial_display.c"
     "app/calibration_manager.c"
+    "app/lvgl_main.c"
+    "app/power_management.c"
+    "background_manager.c"
 )
 
 if(NOT IDF_TARGET STREQUAL "esp32s3")
@@ -34,6 +35,6 @@ endif()
 
 idf_component_register(
     SRCS ${MAIN_SRCS}
-    INCLUDE_DIRS "inc" "UI/inc" "demo" "app" "app/game"
+    INCLUDE_DIRS "inc" "UI/inc" "demo" "app/inc" "app/game"
     REQUIRES lvgl esp_timer lvgl_port Peripherals driver
 )

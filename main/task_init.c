@@ -5,6 +5,7 @@
 #include "freertos/task.h"
 
 // 引入各模块头文件
+#include "background_manager.h"
 #include "battery_monitor.h"
 #include "i2s_tdm_demo.h"
 #include "joystick_adc.h"
@@ -124,7 +125,7 @@ static void system_monitor_task(void* pvParameters) {
     }
 }
 
-// 电池监测任务
+// 电池监测任务（现在由后台管理模块处理，此任务主要用于日志记录）
 static void battery_monitor_task(void* pvParameters) {
     ESP_LOGI(TAG, "Battery Monitor Task started on core %d", xPortGetCoreID());
 
@@ -132,13 +133,14 @@ static void battery_monitor_task(void* pvParameters) {
     vTaskDelay(pdMS_TO_TICKS(5000)); // 增加等待时间，确保UI完全初始化
 
     while (1) {
-        // 读取电池信息
-        battery_info_t battery_info;
-        esp_err_t ret = battery_monitor_read(&battery_info);
+        // 获取后台电池信息用于日志记录
+        background_battery_info_t battery_info;
+        esp_err_t ret = background_manager_get_battery(&battery_info);
 
-        if (ret == ESP_OK) {
-            ESP_LOGI(TAG, "Battery: %dmV, %d%%, Status: %d", battery_info.voltage_mv, battery_info.percentage,
-                     battery_info.status);
+        if (ret == ESP_OK && battery_info.is_valid) {
+            ESP_LOGI(TAG, "Battery: %dmV, %d%%, Low: %d, Critical: %d", 
+                     battery_info.voltage_mv, battery_info.percentage,
+                     battery_info.is_low_battery, battery_info.is_critical);
 
             // 检查低电量警告
             if (battery_info.is_critical) {
@@ -146,15 +148,12 @@ static void battery_monitor_task(void* pvParameters) {
             } else if (battery_info.is_low_battery) {
                 ESP_LOGW(TAG, "LOW BATTERY LEVEL: %d%%", battery_info.percentage);
             }
-
-            // 更新主菜单的电池显示
-            ui_main_update_battery_display();
         } else {
-            ESP_LOGW(TAG, "Failed to read battery info: %s", esp_err_to_name(ret));
+            ESP_LOGW(TAG, "Failed to get battery info from background manager");
         }
 
-        // 每5秒更新一次
-        vTaskDelay(pdMS_TO_TICKS(5000)); // 5秒
+        // 每10秒记录一次日志
+        vTaskDelay(pdMS_TO_TICKS(10000)); // 10秒
     }
 }
 
@@ -306,6 +305,21 @@ esp_err_t init_all_tasks(void) {
     ESP_LOGI(TAG, "Initializing all tasks...");
 
     esp_err_t ret;
+    
+    // 初始化后台管理模块
+    ret = background_manager_init();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to init background manager");
+        return ret;
+    }
+    
+    // 启动后台管理任务
+    ret = background_manager_start();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to start background manager task");
+        return ret;
+    }
+
     // 初始化WS2812演示任务
     ret = init_ws2812_demo_task();
     if (ret != ESP_OK) {
@@ -353,6 +367,11 @@ esp_err_t init_all_tasks(void) {
 
 esp_err_t stop_all_tasks(void) {
     ESP_LOGI(TAG, "Stopping all tasks...");
+
+    // 停止后台管理任务
+    background_manager_stop();
+    background_manager_deinit();
+    ESP_LOGI(TAG, "Background manager stopped");
 
     if (s_lvgl_task_handle) {
         vTaskDelete(s_lvgl_task_handle);
