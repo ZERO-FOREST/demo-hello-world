@@ -98,56 +98,83 @@ void ui_wifi_settings_create(lv_obj_t* parent) {
     // 初始化WiFi管理器并注册回调
     wifi_manager_init(update_wifi_info);
 
-    // --- 统一标题 ---
-    ui_create_page_title(parent, "WiFi Settings");
+    // 应用当前主题到屏幕
+    theme_apply_to_screen(parent);
 
-    // --- 返回按钮 ---
-    ui_create_back_button(parent, "Back");
+    // 1. 创建页面父级容器（统一管理整个页面）
+    lv_obj_t* page_parent_container;
+    ui_create_page_parent_container(parent, &page_parent_container);
 
-    // --- 创建一个容器来组织所有控件 ---
-    lv_obj_t* cont = lv_obj_create(parent);
-    lv_obj_set_size(cont, lv_pct(95), lv_pct(80));
-    lv_obj_align(cont, LV_ALIGN_BOTTOM_MID, 0, -5);
+    // 2. 创建顶部栏容器（包含返回按钮和标题）
+    lv_obj_t* top_bar_container;
+    lv_obj_t* title_container;
+    ui_create_top_bar(page_parent_container, "WiFi Settings", &top_bar_container, &title_container);
+
+    // 替换顶部栏的返回按钮回调为自定义回调
+    lv_obj_t* back_btn = lv_obj_get_child(top_bar_container, 0); // 获取返回按钮
+    if (back_btn) {
+        lv_obj_remove_event_cb(back_btn, NULL); // 移除默认回调
+        lv_obj_add_event_cb(back_btn, back_btn_event_cb, LV_EVENT_CLICKED, parent);
+    }
+
+    // 3. 创建页面内容容器
+    lv_obj_t* content_container;
+    ui_create_page_content_area(page_parent_container, &content_container);
+
+    // 4. 在content_container中添加页面内容
+    // 创建一个容器来组织所有控件
+    lv_obj_t* cont = lv_obj_create(content_container);
+    lv_obj_set_size(cont, 220, 200);
+    lv_obj_align(cont, LV_ALIGN_CENTER, 0, 0);
     lv_obj_set_flex_flow(cont, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(cont, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_row(cont, 10, 0); // 设置行间距
 
     // --- 1. WiFi开关 ---
     lv_obj_t* switch_cont = lv_obj_create(cont);
-    lv_obj_set_size(switch_cont, lv_pct(100), LV_SIZE_CONTENT);
+    lv_obj_set_size(switch_cont, 200, LV_SIZE_CONTENT);
     lv_obj_set_layout(switch_cont, LV_LAYOUT_FLEX);
     lv_obj_set_flex_flow(switch_cont, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(switch_cont, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
     lv_obj_t* wifi_label = lv_label_create(switch_cont);
     lv_label_set_text(wifi_label, "Enable WiFi");
+    theme_apply_to_label(wifi_label, false);
+    
     lv_obj_t* wifi_switch = lv_switch_create(switch_cont);
+    theme_apply_to_switch(wifi_switch);
 
     // --- 2. WiFi功率控制 ---
     lv_obj_t* slider_cont = lv_obj_create(cont);
-    lv_obj_set_size(slider_cont, lv_pct(100), LV_SIZE_CONTENT);
+    lv_obj_set_size(slider_cont, 200, LV_SIZE_CONTENT);
     lv_obj_set_layout(slider_cont, LV_LAYOUT_FLEX);
     lv_obj_set_flex_flow(slider_cont, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(slider_cont, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
 
     lv_obj_t* power_val_label = lv_label_create(slider_cont);
     lv_label_set_text(power_val_label, "Tx Power: 20 dBm");
+    theme_apply_to_label(power_val_label, false);
 
     lv_obj_t* power_slider = lv_slider_create(slider_cont);
-    lv_obj_set_width(power_slider, lv_pct(100));
+    lv_obj_set_width(power_slider, 180);
     lv_slider_set_range(power_slider, 2, 20);           // ESP32功率范围
     lv_slider_set_value(power_slider, 20, LV_ANIM_OFF); // 默认最大功率
 
     // --- 3. WiFi信息显示 ---
     lv_obj_t* info_cont = lv_obj_create(cont);
-    lv_obj_set_size(info_cont, lv_pct(100), LV_SIZE_CONTENT);
+    lv_obj_set_size(info_cont, 200, LV_SIZE_CONTENT);
     lv_obj_set_flex_flow(info_cont, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(info_cont, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
     lv_obj_set_style_pad_top(info_cont, 10, 0);
 
     g_status_label = lv_label_create(info_cont);
+    theme_apply_to_label(g_status_label, false);
+    
     g_ip_label = lv_label_create(info_cont);
+    theme_apply_to_label(g_ip_label, false);
+    
     g_mac_label = lv_label_create(info_cont);
+    theme_apply_to_label(g_mac_label, false);
 
     // --- 绑定事件 ---
     lv_obj_add_event_cb(wifi_switch, wifi_switch_event_cb, LV_EVENT_VALUE_CHANGED, NULL);

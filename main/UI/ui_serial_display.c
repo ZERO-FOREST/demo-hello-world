@@ -296,8 +296,6 @@ void ui_serial_display_add_text(const char* text) {
 
 // 创建串口显示界面
 void ui_serial_display_create(lv_obj_t* parent) {
-    g_serial_display_screen = parent;
-
     // 初始化PSRAM缓冲区
     esp_err_t ret = init_psram_buffer();
     if (ret != ESP_OK) {
@@ -305,33 +303,54 @@ void ui_serial_display_create(lv_obj_t* parent) {
         return;
     }
 
-    // 创建统一标题
-    ui_create_page_title(parent, "Serial Display");
+    // 应用当前主题到屏幕
+    theme_apply_to_screen(parent);
 
-    // 创建状态标签 - 在标题下方
-    g_status_label = lv_label_create(parent);
-    lv_obj_align(g_status_label, LV_ALIGN_TOP_RIGHT, -10, 50);
+    // 1. 创建页面父级容器（统一管理整个页面）
+    lv_obj_t* page_parent_container;
+    ui_create_page_parent_container(parent, &page_parent_container);
+
+    // 2. 创建顶部栏容器（包含返回按钮和标题）
+    lv_obj_t* top_bar_container;
+    lv_obj_t* title_container;
+    ui_create_top_bar(page_parent_container, "Serial Display", &top_bar_container, &title_container);
+
+    // 替换顶部栏的返回按钮回调为自定义回调
+    lv_obj_t* back_btn = lv_obj_get_child(top_bar_container, 0); // 获取返回按钮
+    if (back_btn) {
+        lv_obj_remove_event_cb(back_btn, NULL); // 移除默认回调
+        lv_obj_add_event_cb(back_btn, back_btn_event_cb, LV_EVENT_CLICKED, NULL);
+    }
+
+    // 3. 创建页面内容容器
+    lv_obj_t* content_container;
+    ui_create_page_content_area(page_parent_container, &content_container);
+
+    // 4. 在content_container中添加页面内容
+    // 创建状态标签
+    g_status_label = lv_label_create(content_container);
+    lv_obj_align(g_status_label, LV_ALIGN_TOP_RIGHT, -10, 10);
     lv_obj_set_style_text_font(g_status_label, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(g_status_label, theme_get_color(theme_get_current_theme()->colors.text_secondary), 0);
     lv_label_set_text(g_status_label, "Lines: 0/1024 | Auto: ON");
 
-    // 创建滚动区域 - 在标题下方
-    g_scroll_area = lv_obj_create(parent);
-    lv_obj_set_size(g_scroll_area, 300, 200);
-    lv_obj_align(g_scroll_area, LV_ALIGN_CENTER, 0, 20); // 向下偏移避开标题
+    // 创建滚动区域
+    g_scroll_area = lv_obj_create(content_container);
+    lv_obj_set_size(g_scroll_area, 220, 180);
+    lv_obj_align(g_scroll_area, LV_ALIGN_CENTER, 0, 0);
     lv_obj_set_style_border_width(g_scroll_area, 2, 0);
-    lv_obj_set_style_border_color(g_scroll_area, lv_color_hex(0x3498DB), 0); // 蓝色边框
+    lv_obj_set_style_border_color(g_scroll_area, theme_get_color(theme_get_current_theme()->colors.border), 0);
     lv_obj_set_style_radius(g_scroll_area, 8, 0);
     lv_obj_set_style_pad_all(g_scroll_area, 5, 0);
-    lv_obj_set_style_bg_color(g_scroll_area, lv_color_hex(0xF8F9FA), 0); // 浅灰色背景
+    lv_obj_set_style_bg_color(g_scroll_area, theme_get_color(theme_get_current_theme()->colors.background), 0);
 
     // 创建文本区域
     g_text_area = lv_textarea_create(g_scroll_area);
-    lv_obj_set_size(g_text_area, 290, 190);
+    lv_obj_set_size(g_text_area, 210, 170);
     lv_obj_align(g_text_area, LV_ALIGN_CENTER, 0, 0);
     lv_obj_set_style_text_font(g_text_area, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(g_text_area, lv_color_hex(0x000000), 0);
-    lv_obj_set_style_bg_color(g_text_area, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_text_color(g_text_area, theme_get_color(theme_get_current_theme()->colors.text_primary), 0);
+    lv_obj_set_style_bg_color(g_text_area, theme_get_color(theme_get_current_theme()->colors.surface), 0);
     lv_textarea_set_placeholder_text(g_text_area, "Waiting for data...");
     lv_textarea_set_text(g_text_area, "");
 
@@ -343,50 +362,23 @@ void ui_serial_display_create(lv_obj_t* parent) {
     // 添加滚动事件
     lv_obj_add_event_cb(g_text_area, scroll_event_cb, LV_EVENT_SCROLL, NULL);
 
-    // 创建按钮容器 - 在底部
-    lv_obj_t* btn_cont = lv_obj_create(parent);
-    lv_obj_set_size(btn_cont, 300, 50);
+    // 5. 创建底部按钮容器
+    lv_obj_t* btn_cont = lv_obj_create(page_parent_container);
+    lv_obj_set_size(btn_cont, 240, 50);
     lv_obj_align(btn_cont, LV_ALIGN_BOTTOM_MID, 0, -5);
     lv_obj_set_style_bg_opa(btn_cont, LV_OPA_0, 0);
     lv_obj_set_style_border_width(btn_cont, 0, 0);
     lv_obj_set_style_pad_all(btn_cont, 0, 0);
 
-    // 创建返回按钮 - 使用统一的back按钮函数
-    g_back_btn = lv_btn_create(btn_cont);
-    lv_obj_set_size(g_back_btn, 60, 30);
-    lv_obj_align(g_back_btn, LV_ALIGN_LEFT_MID, 0, 0);
-    lv_obj_add_event_cb(g_back_btn, back_btn_event_cb, LV_EVENT_CLICKED, NULL);
-
-    // 设置返回按钮样式
-    lv_obj_set_style_bg_color(g_back_btn, lv_color_hex(0xE74C3C), 0); // 红色
-    lv_obj_set_style_bg_opa(g_back_btn, LV_OPA_80, 0);
-    lv_obj_set_style_radius(g_back_btn, 6, 0);
-    lv_obj_set_style_shadow_width(g_back_btn, 2, 0);
-    lv_obj_set_style_shadow_ofs_y(g_back_btn, 1, 0);
-    lv_obj_set_style_shadow_opa(g_back_btn, LV_OPA_30, 0);
-
-    lv_obj_t* back_label = lv_label_create(g_back_btn);
-    lv_label_set_text(back_label, "Back");
-    lv_obj_set_style_text_font(back_label, &lv_font_montserrat_12, 0);
-    lv_obj_set_style_text_color(back_label, lv_color_hex(0xFFFFFF), 0);
-    lv_obj_center(back_label);
-
     // 创建清空按钮
     g_clear_btn = lv_btn_create(btn_cont);
     lv_obj_set_size(g_clear_btn, 100, 40);
-    lv_obj_align(g_clear_btn, LV_ALIGN_RIGHT_MID, 0, 0);
+    lv_obj_align(g_clear_btn, LV_ALIGN_CENTER, 0, 0);
+    theme_apply_to_button(g_clear_btn, true);
     lv_obj_add_event_cb(g_clear_btn, clear_btn_event_cb, LV_EVENT_CLICKED, NULL);
-
-    // 设置清空按钮样式
-    lv_obj_set_style_bg_color(g_clear_btn, lv_color_hex(0xF39C12), 0); // 橙色
-    lv_obj_set_style_bg_opa(g_clear_btn, LV_OPA_80, 0);
-    lv_obj_set_style_radius(g_clear_btn, 8, 0);
-    lv_obj_set_style_shadow_width(g_clear_btn, 3, 0);
-    lv_obj_set_style_shadow_ofs_y(g_clear_btn, 1, 0);
 
     lv_obj_t* clear_label = lv_label_create(g_clear_btn);
     lv_label_set_text(clear_label, "Clear");
-    lv_obj_set_style_text_color(clear_label, lv_color_hex(0xFFFFFF), 0);
     lv_obj_center(clear_label);
 
     // 初始化数据

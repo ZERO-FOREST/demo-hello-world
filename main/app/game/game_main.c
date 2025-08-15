@@ -1,5 +1,6 @@
 #include "../../UI/ui.h" // For ui_main_menu_create
 #include "game.h"
+#include "theme_manager.h"
 
 // --- 回调函数 ---
 
@@ -33,13 +34,34 @@ static void snake_game_cb(lv_event_t* e) {
 // --- 游戏菜单创建 ---
 
 void ui_game_menu_create(lv_obj_t* parent) {
-    // 创建统一标题
-    ui_create_page_title(parent, "Game Menu");
+    // 应用当前主题到屏幕
+    theme_apply_to_screen(parent);
 
+    // 1. 创建页面父级容器（统一管理整个页面）
+    lv_obj_t* page_parent_container;
+    ui_create_page_parent_container(parent, &page_parent_container);
+
+    // 2. 创建顶部栏容器（包含返回按钮和标题）
+    lv_obj_t* top_bar_container;
+    lv_obj_t* title_container;
+    ui_create_top_bar(page_parent_container, "Game Menu", &top_bar_container, &title_container);
+
+    // 替换顶部栏的返回按钮回调为自定义回调
+    lv_obj_t* back_btn = lv_obj_get_child(top_bar_container, 0); // 获取返回按钮
+    if (back_btn) {
+        lv_obj_remove_event_cb(back_btn, NULL); // 移除默认回调
+        lv_obj_add_event_cb(back_btn, back_to_main_menu_cb, LV_EVENT_CLICKED, NULL);
+    }
+
+    // 3. 创建页面内容容器
+    lv_obj_t* content_container;
+    ui_create_page_content_area(page_parent_container, &content_container);
+
+    // 4. 在content_container中添加页面内容
     // 创建游戏列表
-    lv_obj_t* list = lv_list_create(parent);
-    lv_obj_set_size(list, 240, 200);
-    lv_obj_center(list);
+    lv_obj_t* list = lv_list_create(content_container);
+    lv_obj_set_size(list, 220, 180);
+    lv_obj_align(list, LV_ALIGN_CENTER, 0, 0);
 
     // 添加俄罗斯方块按钮
     lv_obj_t* tetris_btn = lv_list_add_btn(list, LV_SYMBOL_PLAY, "Tetris");
@@ -48,7 +70,4 @@ void ui_game_menu_create(lv_obj_t* parent) {
     // 添加贪吃蛇按钮
     lv_obj_t* snake_btn = lv_list_add_btn(list, LV_SYMBOL_PLAY, "Snake");
     lv_obj_add_event_cb(snake_btn, snake_game_cb, LV_EVENT_CLICKED, NULL);
-
-    // 创建返回按钮 - 使用普通的back按钮函数（返回到主菜单）
-    ui_create_back_button(parent, "Back");
 }

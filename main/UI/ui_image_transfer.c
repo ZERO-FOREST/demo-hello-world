@@ -6,15 +6,18 @@
  */
 #include "ui_image_transfer.h"
 #include "esp_log.h"
+#include "theme_manager.h"
 #include "ui.h"
 #include "wifi_image_transfer.h"
+
 
 static const char* TAG = "UI_IMG_TRANSFER";
 
 static lv_obj_t* s_img_obj = NULL;
 static lv_img_dsc_t s_img_dsc;
 
-static void back_button_event_handler(lv_event_t* e) {
+// 自定义返回按钮回调 - 处理图片传输界面的特殊逻辑
+static void image_transfer_back_btn_callback(lv_event_t* e) {
     lv_event_code_t code = lv_event_get_code(e);
     if (code == LV_EVENT_CLICKED) {
         ESP_LOGI(TAG, "Back button clicked, stopping image transfer.");
@@ -25,24 +28,47 @@ static void back_button_event_handler(lv_event_t* e) {
 }
 
 void ui_image_transfer_create(lv_obj_t* parent) {
-    lv_obj_t* screen = lv_obj_create(parent);
-    lv_obj_set_size(screen, LV_HOR_RES, LV_VER_RES);
-    lv_obj_set_style_bg_color(screen, lv_color_hex(0xF6E9DB), LV_PART_MAIN); // 使用莫兰迪色系背景
-    lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
+    // 应用当前主题到屏幕
+    theme_apply_to_screen(parent);
 
-    // 创建统一标题
-    ui_create_page_title(screen, "Image Transfer");
+    // 1. 创建页面父级容器（统一管理整个页面）
+    lv_obj_t* page_parent_container;
+    ui_create_page_parent_container(parent, &page_parent_container);
 
-    // Create an image object to display the received image
-    s_img_obj = lv_img_create(screen);
-    lv_obj_align(s_img_obj, LV_ALIGN_CENTER, 0, 20);
+    // 2. 创建顶部栏容器（包含返回按钮和标题）
+    lv_obj_t* top_bar_container;
+    lv_obj_t* title_container;
+    ui_create_top_bar(page_parent_container, "Image Transfer", &top_bar_container, &title_container);
+
+    // 替换顶部栏的返回按钮回调为自定义回调
+    lv_obj_t* back_btn = lv_obj_get_child(top_bar_container, 0); // 获取返回按钮
+    if (back_btn) {
+        lv_obj_remove_event_cb(back_btn, NULL); // 移除默认回调
+        lv_obj_add_event_cb(back_btn, image_transfer_back_btn_callback, LV_EVENT_CLICKED, NULL);
+    }
+
+    // 3. 创建页面内容容器
+    lv_obj_t* content_container;
+    ui_create_page_content_area(page_parent_container, &content_container);
+
+    // 4. 在content_container中添加页面内容
+    // 创建图片显示对象
+    s_img_obj = lv_img_create(content_container);
+    lv_obj_align(s_img_obj, LV_ALIGN_CENTER, 0, 0);
     lv_obj_set_size(s_img_obj, 240, 240); // Placeholder size, will be updated by image data
     lv_img_set_src(s_img_obj, &s_img_dsc);
-    lv_obj_set_style_outline_width(s_img_obj, 2, 0);
-    lv_obj_set_style_outline_color(s_img_obj, lv_color_hex(0xFFFFFF), 0);
 
-    // Create a back button - 使用统一的back按钮函数
-    ui_create_back_button(screen, "Back");
+    // 应用主题样式到图片对象
+    lv_obj_set_style_outline_width(s_img_obj, 2, 0);
+    lv_obj_set_style_outline_color(s_img_obj, theme_get_color(theme_get_current_theme()->colors.border), 0);
+    lv_obj_set_style_radius(s_img_obj, 8, 0);
+
+    // 创建状态标签
+    lv_obj_t* status_label = lv_label_create(content_container);
+    lv_label_set_text(status_label, "Waiting for image data...");
+    theme_apply_to_label(status_label, false);
+    lv_obj_align(status_label, LV_ALIGN_BOTTOM_MID, 0, -10);
+    lv_obj_set_style_text_font(status_label, &lv_font_montserrat_14, 0);
 
     // Start the TCP server task when the screen is created
     ESP_LOGI(TAG, "Starting image transfer server...");

@@ -1,4 +1,5 @@
 #include "../../UI/ui.h"
+#include "../../UI/theme_manager.h"
 #include "esp_log.h"
 #include "esp_random.h"
 #include "game.h"
@@ -552,9 +553,33 @@ static void ui_tetris_menu_create(lv_obj_t* parent) {
     // 首次进入时，从NVS加载一次最高分
     read_high_scores();
 
+    // 应用当前主题到屏幕
+    theme_apply_to_screen(parent);
+
+    // 1. 创建页面父级容器（统一管理整个页面）
+    lv_obj_t* page_parent_container;
+    ui_create_page_parent_container(parent, &page_parent_container);
+
+    // 2. 创建顶部栏容器（包含返回按钮和标题）
+    lv_obj_t* top_bar_container;
+    lv_obj_t* title_container;
+    ui_create_top_bar(page_parent_container, "Tetris", &top_bar_container, &title_container);
+
+    // 替换顶部栏的返回按钮回调为自定义回调
+    lv_obj_t* back_btn = lv_obj_get_child(top_bar_container, 0); // 获取返回按钮
+    if (back_btn) {
+        lv_obj_remove_event_cb(back_btn, NULL); // 移除默认回调
+        lv_obj_add_event_cb(back_btn, back_to_app_menu, LV_EVENT_CLICKED, parent);
+    }
+
+    // 3. 创建页面内容容器
+    lv_obj_t* content_container;
+    ui_create_page_content_area(page_parent_container, &content_container);
+
+    // 4. 在content_container中添加页面内容
     // 容器和布局
-    lv_obj_t* cont = lv_obj_create(parent);
-    lv_obj_center(cont);
+    lv_obj_t* cont = lv_obj_create(content_container);
+    lv_obj_align(cont, LV_ALIGN_CENTER, 0, 0);
     lv_obj_set_flex_flow(cont, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(cont, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
@@ -562,6 +587,7 @@ static void ui_tetris_menu_create(lv_obj_t* parent) {
     lv_obj_t* title = lv_label_create(cont);
     lv_label_set_text(title, "Tetris");
     lv_obj_set_style_text_font(title, &lv_font_montserrat_24, 0); // 保持24号字体
+    theme_apply_to_label(title, true);
 
     // 菜单按钮
     lv_obj_t* btn;
@@ -570,6 +596,7 @@ static void ui_tetris_menu_create(lv_obj_t* parent) {
     // 开始游戏
     btn = lv_btn_create(cont);
     lv_obj_add_event_cb(btn, start_game_cb, LV_EVENT_CLICKED, parent);
+    theme_apply_to_button(btn, true);
     label = lv_label_create(btn);
     lv_label_set_text(label, "Start Game");
     lv_obj_center(label);
@@ -577,12 +604,14 @@ static void ui_tetris_menu_create(lv_obj_t* parent) {
     // 积分榜
     btn = lv_btn_create(cont);
     lv_obj_add_event_cb(btn, show_scoreboard_cb, LV_EVENT_CLICKED, parent);
+    theme_apply_to_button(btn, true);
     label = lv_label_create(btn);
     lv_label_set_text(label, "Scoreboard");
     lv_obj_center(label);
 
     // 帮助 (占位)
     btn = lv_btn_create(cont);
+    theme_apply_to_button(btn, true);
     label = lv_label_create(btn);
     lv_label_set_text(label, "Help");
     lv_obj_center(label);
@@ -590,6 +619,7 @@ static void ui_tetris_menu_create(lv_obj_t* parent) {
 
     // 设置 (占位)
     btn = lv_btn_create(cont);
+    theme_apply_to_button(btn, true);
     label = lv_label_create(btn);
     lv_label_set_text(label, "Settings");
     lv_obj_center(label);
@@ -598,6 +628,7 @@ static void ui_tetris_menu_create(lv_obj_t* parent) {
     // 退出 (返回到 APP 菜单)
     btn = lv_btn_create(cont);
     lv_obj_add_event_cb(btn, back_to_app_menu, LV_EVENT_CLICKED, parent);
+    theme_apply_to_button(btn, true);
     label = lv_label_create(btn);
     lv_label_set_text(label, "Exit");
     lv_obj_center(label);

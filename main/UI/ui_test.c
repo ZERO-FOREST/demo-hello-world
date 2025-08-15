@@ -6,11 +6,12 @@
  */
 #include "esp_log.h"
 #include "ui.h"
+#include "theme_manager.h"
 
 static const char* TAG = "UI_TEST";
 
-// 返回按钮回调
-static void back_btn_cb(lv_event_t* e) {
+// 自定义返回按钮回调 - 处理测试界面的特殊逻辑
+static void test_back_btn_callback(lv_event_t* e) {
     lv_obj_t* screen = lv_scr_act();
     if (screen) {
         lv_obj_clean(screen);
@@ -29,25 +30,42 @@ static void test_switch_cb(lv_event_t* e) {
 void ui_test_create(lv_obj_t* parent) {
     ESP_LOGI(TAG, "Creating Test UI");
 
-    // 设置背景
-    lv_obj_set_style_bg_color(parent, lv_color_hex(0xF6E9DB), LV_PART_MAIN); // 使用莫兰迪色系
+    // 应用当前主题到屏幕
+    theme_apply_to_screen(parent);
 
-    // 创建统一标题
-    ui_create_page_title(parent, "TEST PAGE");
+    // 1. 创建页面父级容器（统一管理整个页面）
+    lv_obj_t* page_parent_container;
+    ui_create_page_parent_container(parent, &page_parent_container);
 
+    // 2. 创建顶部栏容器（包含返回按钮和标题）
+    lv_obj_t* top_bar_container;
+    lv_obj_t* title_container;
+    ui_create_top_bar(page_parent_container, "TEST PAGE", &top_bar_container, &title_container);
+
+    // 替换顶部栏的返回按钮回调为自定义回调
+    lv_obj_t* back_btn = lv_obj_get_child(top_bar_container, 0); // 获取返回按钮
+    if (back_btn) {
+        lv_obj_remove_event_cb(back_btn, NULL); // 移除默认回调
+        lv_obj_add_event_cb(back_btn, test_back_btn_callback, LV_EVENT_CLICKED, NULL);
+    }
+
+    // 3. 创建页面内容容器
+    lv_obj_t* content_container;
+    ui_create_page_content_area(page_parent_container, &content_container);
+
+    // 4. 在content_container中添加页面内容
     // 创建测试开关
-    lv_obj_t* test_switch = lv_switch_create(parent);
+    lv_obj_t* test_switch = lv_switch_create(content_container);
     lv_obj_align(test_switch, LV_ALIGN_CENTER, 0, 0);
+    theme_apply_to_switch(test_switch);
     lv_obj_add_event_cb(test_switch, test_switch_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
     // 创建开关标签
-    lv_obj_t* switch_label = lv_label_create(parent);
+    lv_obj_t* switch_label = lv_label_create(content_container);
     lv_label_set_text(switch_label, "Test Switch");
+    theme_apply_to_label(switch_label, false);
     lv_obj_set_style_text_font(switch_label, &lv_font_montserrat_16, 0);
     lv_obj_align_to(switch_label, test_switch, LV_ALIGN_OUT_BOTTOM_MID, 0, 10);
-
-    // 创建返回按钮 - 使用统一的back按钮函数
-    ui_create_back_button(parent, "Back");
 
     ESP_LOGI(TAG, "Test UI created successfully");
 }
