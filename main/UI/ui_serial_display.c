@@ -132,7 +132,7 @@ static void add_line(const char* text, time_t timestamp) {
 
 // 更新显示内容
 static void update_display(void) {
-    if (!g_text_area || !g_buffer_initialized || g_lines == NULL)
+    if (!g_text_area || !g_buffer_initialized || g_lines == NULL || !lv_obj_is_valid(g_text_area))
         return;
 
     // 构建显示文本
@@ -162,7 +162,7 @@ static void update_display(void) {
     lv_textarea_set_text(g_text_area, display_text);
 
     // 更新状态信息
-    if (g_status_label) {
+    if (g_status_label && lv_obj_is_valid(g_status_label)) {
         char status_text[128];
         snprintf(status_text, sizeof(status_text), "Lines: %d/%d | Auto: %s", g_line_count, MAX_LINES,
                  g_auto_scroll ? "ON" : "OFF");
@@ -178,7 +178,11 @@ static void clear_display(void) {
     g_line_count = 0;
     g_current_index = 0;
     memset(g_lines, 0, MAX_LINES * sizeof(display_line_t));
-    update_display();
+    
+    // 只有在UI元素有效时才更新显示
+    if (g_text_area && lv_obj_is_valid(g_text_area)) {
+        update_display();
+    }
 }
 
 // 显示任务 - 处理消息队列
@@ -187,16 +191,20 @@ static void display_task(void* pvParameters) {
 
     ESP_LOGI(TAG, "Display task started");
 
-    while (g_display_running) {
+    while (g_display_running && g_display_queue) {
         if (xQueueReceive(g_display_queue, &msg, pdMS_TO_TICKS(100)) == pdTRUE) {
             switch (msg.type) {
             case MSG_NEW_DATA:
-                add_line(msg.data, msg.timestamp);
-                update_display();
+                if (g_buffer_initialized) {
+                    add_line(msg.data, msg.timestamp);
+                    update_display();
+                }
                 break;
 
             case MSG_CLEAR_DISPLAY:
-                clear_display();
+                if (g_buffer_initialized) {
+                    clear_display();
+                }
                 break;
 
             case MSG_UPDATE_STATUS:
@@ -217,14 +225,40 @@ static void display_task(void* pvParameters) {
 static void back_btn_event_cb(lv_event_t* e) {
     lv_obj_t* screen = lv_scr_act();
     if (screen) {
+        // 先停止显示任务
+        g_display_running = false;
+        if (g_display_task_handle) {
+            vTaskDelay(pdMS_TO_TICKS(100));
+            g_display_task_handle = NULL;
+        }
+
+        // 删除消息队列
+        if (g_display_queue) {
+            vQueueDelete(g_display_queue);
+            g_display_queue = NULL;
+        }
+
+        // 清理PSRAM缓冲区
+        cleanup_psram_buffer();
+
+        // 清空全局变量
+        g_serial_display_screen = NULL;
+        g_text_area = NULL;
+        g_status_label = NULL;
+        g_back_btn = NULL;
+        g_clear_btn = NULL;
+        g_scroll_area = NULL;
+
         lv_obj_clean(screen);
         ui_main_menu_create(screen);
     }
 }
 
 static void clear_btn_event_cb(lv_event_t* e) {
-    display_msg_t msg = {.type = MSG_CLEAR_DISPLAY};
-    xQueueSend(g_display_queue, &msg, pdMS_TO_TICKS(100));
+    if (g_display_queue && g_display_running) {
+        display_msg_t msg = {.type = MSG_CLEAR_DISPLAY};
+        xQueueSend(g_display_queue, &msg, pdMS_TO_TICKS(100));
+    }
 }
 
 // 滚动事件回调
@@ -255,7 +289,7 @@ static void scroll_event_cb(lv_event_t* e) {
 
 // 公共API：添加新数据
 void ui_serial_display_add_data(const char* data, size_t len) {
-    if (!g_display_running || !data || len == 0) {
+    if (!g_display_running || !data || len == 0 || !g_display_queue) {
         return;
     }
 
@@ -388,6 +422,7 @@ void ui_serial_display_create(lv_obj_t* parent) {
     g_display_queue = xQueueCreate(50, sizeof(display_msg_t));
     if (!g_display_queue) {
         ESP_LOGE(TAG, "Failed to create display queue");
+        cleanup_psram_buffer();
         return;
     }
 
@@ -398,6 +433,7 @@ void ui_serial_display_create(lv_obj_t* parent) {
         g_display_running = false;
         vQueueDelete(g_display_queue);
         g_display_queue = NULL;
+        cleanup_psram_buffer();
         return;
     }
 

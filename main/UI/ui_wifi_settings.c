@@ -10,11 +10,16 @@ static lv_obj_t* g_status_label;
 static lv_obj_t* g_ip_label;
 static lv_obj_t* g_mac_label;
 static lv_timer_t* g_update_timer;
+static bool g_wifi_ui_initialized = false;
 
 /**
  * @brief 更新WiFi信息显示
  */
 static void update_wifi_info(void) {
+    if (!g_wifi_ui_initialized) {
+        return;
+    }
+
     wifi_manager_info_t info = wifi_manager_get_info();
 
     switch (info.state) {
@@ -44,7 +49,11 @@ static void update_wifi_info(void) {
  * @brief UI更新定时器的回调
  * @param timer
  */
-static void ui_update_timer_cb(lv_timer_t* timer) { update_wifi_info(); }
+static void ui_update_timer_cb(lv_timer_t* timer) {
+    if (g_wifi_ui_initialized) {
+        update_wifi_info();
+    }
+}
 
 /**
  * @brief 返回按钮的事件回调
@@ -53,10 +62,15 @@ static void ui_update_timer_cb(lv_timer_t* timer) { update_wifi_info(); }
 static void back_btn_event_cb(lv_event_t* e) {
     lv_obj_t* screen = (lv_obj_t*)lv_event_get_user_data(e);
     if (screen) {
+        // 停止定时器
         if (g_update_timer) {
             lv_timer_del(g_update_timer);
             g_update_timer = NULL;
         }
+
+        // 标记界面已销毁
+        g_wifi_ui_initialized = false;
+
         lv_obj_clean(screen);        // 清空当前屏幕的所有内容
         ui_main_menu_create(screen); // 重新创建主菜单
     }
@@ -95,8 +109,8 @@ static void power_slider_event_cb(lv_event_t* e) {
  * @param parent 父对象, 通常是 lv_scr_act()
  */
 void ui_wifi_settings_create(lv_obj_t* parent) {
-    // 初始化WiFi管理器并注册回调
-    wifi_manager_init(update_wifi_info);
+    // 标记界面已初始化
+    g_wifi_ui_initialized = true;
 
     // 应用当前主题到屏幕
     theme_apply_to_screen(parent);
@@ -140,7 +154,7 @@ void ui_wifi_settings_create(lv_obj_t* parent) {
     lv_obj_t* wifi_label = lv_label_create(switch_cont);
     lv_label_set_text(wifi_label, "Enable WiFi");
     theme_apply_to_label(wifi_label, false);
-    
+
     lv_obj_t* wifi_switch = lv_switch_create(switch_cont);
     theme_apply_to_switch(wifi_switch);
 
@@ -169,10 +183,10 @@ void ui_wifi_settings_create(lv_obj_t* parent) {
 
     g_status_label = lv_label_create(info_cont);
     theme_apply_to_label(g_status_label, false);
-    
+
     g_ip_label = lv_label_create(info_cont);
     theme_apply_to_label(g_ip_label, false);
-    
+
     g_mac_label = lv_label_create(info_cont);
     theme_apply_to_label(g_mac_label, false);
 

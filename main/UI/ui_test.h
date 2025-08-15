@@ -18,7 +18,7 @@ extern "C" {
  * @brief 创建测试界面
  * @param parent 父容器
  */
-void ui_test_create(lv_obj_t *parent);
+void ui_test_create(lv_obj_t* parent);
 
 #ifdef __cplusplus
 }

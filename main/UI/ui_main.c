@@ -131,6 +131,18 @@ static void option1_cb(void) {
 static void wifi_settings_cb(void) {
     lv_obj_t* screen = lv_scr_act();
     if (screen) {
+        // 先停止时间更新定时器，避免访问已删除的UI元素
+        static lv_timer_t* timer = NULL;
+        if (timer) {
+            lv_timer_del(timer);
+            timer = NULL;
+            ESP_LOGI("UI_MAIN", "Time update timer stopped");
+        }
+
+        // 重置全局UI指针
+        g_time_label = NULL;
+        g_battery_label = NULL;
+
         lv_obj_clean(screen);            // 清空当前屏幕
         ui_wifi_settings_create(screen); // 加载WiFi设置界面
     }
@@ -175,6 +187,18 @@ static void image_transfer_cb(void) {
 static void serial_display_cb(void) {
     lv_obj_t* screen = lv_scr_act();
     if (screen) {
+        // 先停止时间更新定时器，避免访问已删除的UI元素
+        static lv_timer_t* timer = NULL;
+        if (timer) {
+            lv_timer_del(timer);
+            timer = NULL;
+            ESP_LOGI("UI_MAIN", "Time update timer stopped");
+        }
+
+        // 重置全局UI指针
+        g_time_label = NULL;
+        g_battery_label = NULL;
+
         lv_obj_clean(screen);             // 清空当前屏幕
         ui_serial_display_create(screen); // 加载串口显示界面
     }
@@ -340,6 +364,11 @@ void ui_main_menu_create(lv_obj_t* parent) {
     if (timer == NULL) {
         timer = lv_timer_create(time_update_timer_cb, 60000, NULL); // 60秒 = 1分钟
         ESP_LOGI("UI_MAIN", "Time update timer created (60s interval)");
+    } else {
+        // 如果定时器已存在，先删除再创建新的
+        lv_timer_del(timer);
+        timer = lv_timer_create(time_update_timer_cb, 60000, NULL);
+        ESP_LOGI("UI_MAIN", "Time update timer recreated (60s interval)");
     }
 
     // 电池电量显示将由任务更新，每5分钟更新一次
