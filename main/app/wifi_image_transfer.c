@@ -107,7 +107,7 @@ static void tcp_server_task(void* pvParameters) {
         int output_len = 0;
 
         jpeg_dec_config_t config = DEFAULT_JPEG_DEC_CONFIG();
-        config.output_type = JPEG_PIXEL_FORMAT_RGB565_LE; // Set output to RGB565 for LVGL
+        config.output_type = JPEG_PIXEL_FORMAT_RGB565_BE; // Set output to RGB565 Big Endian for LVGL
 
         jpeg_error_t dec_ret = jpeg_dec_open(&config, &jpeg_dec);
         if (dec_ret != JPEG_ERR_OK) {
@@ -123,8 +123,8 @@ static void tcp_server_task(void* pvParameters) {
             goto DECODE_CLEAN_UP;
         }
 
-        bool header_parsed = false;
-
+        // Receive complete JPEG data first
+        bool frame_complete = false;
         do {
             len = recv(sock, rx_buffer, sizeof(rx_buffer), 0);
             if (len < 0) {
@@ -137,61 +137,72 @@ static void tcp_server_task(void* pvParameters) {
                 // Append received data to JPEG frame buffer
                 if (s_jpeg_frame_pos + len > MAX_JPEG_FRAME_SIZE) {
                     ESP_LOGE(TAG, "JPEG frame buffer overflow!");
-                    break; // Error or incomplete frame
+                    break;
                 }
                 memcpy(s_jpeg_frame_buffer + s_jpeg_frame_pos, rx_buffer, len);
                 s_jpeg_frame_pos += len;
-
-                if (!header_parsed) {
-                    jpeg_io->inbuf = s_jpeg_frame_buffer;
-                    jpeg_io->inbuf_len = s_jpeg_frame_pos;
-                    dec_ret = jpeg_dec_parse_header(jpeg_dec, jpeg_io, out_info);
-                    if (dec_ret == JPEG_ERR_OK) {
-                        header_parsed = true;
-                        ESP_LOGI(TAG, "JPEG Header parsed: Width=%d, Height=%d", out_info->width, out_info->height);
-
-                        // Calculate output buffer size
-                        if (config.output_type == JPEG_PIXEL_FORMAT_RGB565_LE ||
-                            config.output_type == JPEG_PIXEL_FORMAT_RGB565_BE ||
-                            config.output_type == JPEG_PIXEL_FORMAT_CbYCrY) {
-                            output_len = out_info->width * out_info->height * 2;
-                        } else if (config.output_type == JPEG_PIXEL_FORMAT_RGB888) {
-                            output_len = out_info->width * out_info->height * 3;
-                        } else {
-                            ESP_LOGE(TAG, "Unsupported output format");
-                            dec_ret = JPEG_ERR_UNSUPPORT_FMT;
+                
+                // Check if we have received a complete JPEG frame
+                // Look for JPEG end marker (0xFF 0xD9)
+                if (s_jpeg_frame_pos >= 2) {
+                    for (int i = s_jpeg_frame_pos - 2; i >= 0; i--) {
+                        if (s_jpeg_frame_buffer[i] == 0xFF && s_jpeg_frame_buffer[i + 1] == 0xD9) {
+                            frame_complete = true;
+                            ESP_LOGI(TAG, "Complete JPEG frame received, size: %d bytes", s_jpeg_frame_pos);
                             break;
                         }
-
-                        output_buffer = jpeg_calloc_align(output_len, 16);
-                        if (output_buffer == NULL) {
-                            ESP_LOGE(TAG, "Failed to allocate output buffer");
-                            dec_ret = JPEG_ERR_NO_MEM;
-                            break;
-                        }
-                        jpeg_io->outbuf = output_buffer;
-
-                    } else if (dec_ret != JPEG_ERR_NO_MORE_DATA) {
-                        ESP_LOGE(TAG, "Failed to parse JPEG header: %d", dec_ret);
-                        break;
-                    }
-                }
-
-                if (header_parsed) {
-                    jpeg_io->inbuf = s_jpeg_frame_buffer;
-                    jpeg_io->inbuf_len = s_jpeg_frame_pos;
-                    dec_ret = jpeg_dec_process(jpeg_dec, jpeg_io);
-                    if (dec_ret == JPEG_ERR_OK) {
-                        ESP_LOGI(TAG, "JPEG Decoded successfully!");
-                        handle_decoded_image(output_buffer, out_info->width, out_info->height, config.output_type);
-                        s_jpeg_frame_pos = 0; // Reset for next frame
-                    } else if (dec_ret != JPEG_ERR_NO_MORE_DATA) {
-                        ESP_LOGE(TAG, "Failed to decode JPEG data: %d", dec_ret);
-                        break;
                     }
                 }
             }
-        } while (s_server_running);
+        } while (!frame_complete && s_server_running);
+
+        // Now decode the complete JPEG frame
+        if (frame_complete && s_jpeg_frame_pos > 0) {
+            // Set input buffer for complete frame
+            jpeg_io->inbuf = s_jpeg_frame_buffer;
+            jpeg_io->inbuf_len = s_jpeg_frame_pos;
+            
+            // Parse JPEG header
+            dec_ret = jpeg_dec_parse_header(jpeg_dec, jpeg_io, out_info);
+            if (dec_ret == JPEG_ERR_OK) {
+                ESP_LOGI(TAG, "JPEG Header parsed: Width=%d, Height=%d", out_info->width, out_info->height);
+
+                // Calculate output buffer size
+                if (config.output_type == JPEG_PIXEL_FORMAT_RGB565_LE ||
+                    config.output_type == JPEG_PIXEL_FORMAT_RGB565_BE ||
+                    config.output_type == JPEG_PIXEL_FORMAT_CbYCrY) {
+                    output_len = out_info->width * out_info->height * 2;
+                } else if (config.output_type == JPEG_PIXEL_FORMAT_RGB888) {
+                    output_len = out_info->width * out_info->height * 3;
+                } else {
+                    ESP_LOGE(TAG, "Unsupported output format");
+                    dec_ret = JPEG_ERR_UNSUPPORT_FMT;
+                    goto DECODE_CLEAN_UP;
+                }
+
+                output_buffer = jpeg_calloc_align(output_len, 16);
+                if (output_buffer == NULL) {
+                    ESP_LOGE(TAG, "Failed to allocate output buffer");
+                    dec_ret = JPEG_ERR_NO_MEM;
+                    goto DECODE_CLEAN_UP;
+                }
+                jpeg_io->outbuf = output_buffer;
+
+                // Decode the complete JPEG frame
+                dec_ret = jpeg_dec_process(jpeg_dec, jpeg_io);
+                if (dec_ret == JPEG_ERR_OK) {
+                    ESP_LOGI(TAG, "JPEG Decoded successfully!");
+                    handle_decoded_image(output_buffer, out_info->width, out_info->height, config.output_type);
+                } else {
+                    ESP_LOGE(TAG, "Failed to decode JPEG data: %d", dec_ret);
+                }
+            } else {
+                ESP_LOGE(TAG, "Failed to parse JPEG header: %d", dec_ret);
+            }
+            
+            // Reset buffer for next frame
+            s_jpeg_frame_pos = 0;
+        }
 
     DECODE_CLEAN_UP:
         jpeg_dec_close(jpeg_dec);

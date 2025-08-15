@@ -55,8 +55,16 @@ void ui_image_transfer_create(lv_obj_t* parent) {
     // 创建图片显示对象
     s_img_obj = lv_img_create(content_container);
     lv_obj_align(s_img_obj, LV_ALIGN_CENTER, 0, 0);
-    lv_obj_set_size(s_img_obj, 240, 240); // Placeholder size, will be updated by image data
+    
+    // Initialize image descriptor with default values
+    s_img_dsc.header.w = 0;
+    s_img_dsc.header.h = 0;
+    s_img_dsc.data_size = 0;
+    s_img_dsc.header.cf = LV_IMG_CF_TRUE_COLOR;
+    s_img_dsc.data = NULL;
+    
     lv_img_set_src(s_img_obj, &s_img_dsc);
+    lv_obj_set_size(s_img_obj, 320, 240); // Set to expected image size
 
     // 应用主题样式到图片对象
     lv_obj_set_style_outline_width(s_img_obj, 2, 0);
@@ -81,16 +89,38 @@ void ui_image_transfer_set_image_data(uint8_t* img_buf, int width, int height, j
         return;
     }
 
-    // Assuming RGB888 for now, convert if necessary for your display
-    // LVGL expects LV_IMG_CF_TRUE_COLOR for RGB888
+    // Check if the format matches what we expect
+    if (format != JPEG_PIXEL_FORMAT_RGB565_BE) {
+        ESP_LOGW(TAG, "Unexpected format: %d, expected: %d", format, JPEG_PIXEL_FORMAT_RGB565_BE);
+        return;
+    }
+
+    // Set up the image descriptor for RGB565 format
     s_img_dsc.header.w = width;
     s_img_dsc.header.h = height;
-    s_img_dsc.data_size = width * height * 2; // For RGB565
-    s_img_dsc.header.cf = LV_IMG_CF_RGB565;   // Set to RGB565
+    s_img_dsc.data_size = width * height * 2; // 2 bytes per pixel for RGB565
+    s_img_dsc.header.cf = LV_IMG_CF_TRUE_COLOR; // Use TRUE_COLOR for RGB565
     s_img_dsc.data = img_buf;
 
+    // Update the image object
     lv_img_set_src(s_img_obj, &s_img_dsc);
     lv_obj_set_size(s_img_obj, width, height); // Adjust size to image
     lv_obj_invalidate(s_img_obj);              // Redraw the image object
+    
+    // Debug: Check if image object is valid
+    if (lv_obj_is_valid(s_img_obj)) {
+        ESP_LOGI(TAG, "Image object is valid, size: %dx%d", width, height);
+    } else {
+        ESP_LOGE(TAG, "Image object is invalid!");
+    }
+    
+    // Debug: Check image source
+    const void* src = lv_img_get_src(s_img_obj);
+    if (src == &s_img_dsc) {
+        ESP_LOGI(TAG, "Image source set correctly");
+    } else {
+        ESP_LOGE(TAG, "Image source not set correctly");
+    }
+    
     ESP_LOGI(TAG, "Image data updated: %dx%d, format %d", width, height, format);
 }

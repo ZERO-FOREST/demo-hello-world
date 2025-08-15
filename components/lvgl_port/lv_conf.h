@@ -128,6 +128,8 @@
 #define LV_USE_LABEL      1
 #define LV_USE_SWITCH     1
 #define LV_USE_MSGBOX     1
+#define LV_USE_IMG        1
+#define LV_USE_CANVAS     1
 
 
 /*==================
