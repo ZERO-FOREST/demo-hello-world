@@ -52,11 +52,6 @@ void ui_game_menu_create(lv_obj_t* parent) {
     lv_obj_t* snake_btn = lv_list_add_btn(list, LV_SYMBOL_PLAY, "Snake");
     lv_obj_add_event_cb(snake_btn, snake_game_cb, LV_EVENT_CLICKED, NULL);
 
-    // 创建返回按钮
-    lv_obj_t* back_btn = lv_btn_create(parent);
-    lv_obj_align(back_btn, LV_ALIGN_BOTTOM_LEFT, 10, -10);
-    lv_obj_add_event_cb(back_btn, back_to_main_menu_cb, LV_EVENT_CLICKED, NULL);
-    lv_obj_t* label = lv_label_create(back_btn);
-    lv_label_set_text(label, LV_SYMBOL_LEFT " Back");
-    lv_obj_center(label);
+    // 创建返回按钮 - 使用普通的back按钮函数（返回到主菜单）
+    ui_create_back_button(parent, "Back");
 }

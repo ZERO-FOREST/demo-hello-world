@@ -1,12 +1,12 @@
-#include <stdlib.h>
-#include <string.h>
+#include "../../UI/ui.h"
 #include "esp_log.h"
 #include "esp_random.h"
-#include "nvs_flash.h"
-#include "nvs.h"
-#include "../../UI/ui.h"
 #include "game.h"
 #include "key.h"
+#include "nvs.h"
+#include "nvs_flash.h"
+#include <stdlib.h>
+#include <string.h>
 
 // --- NVS 常量 ---
 #define NVS_NAMESPACE "tetris_hs"
@@ -16,8 +16,8 @@
 // --- 游戏常量 ---
 #define BOARD_WIDTH 10
 #define BOARD_HEIGHT 20
-#define BLOCK_SIZE 11       // 方块像素大小
-#define BORDER_WIDTH 1      // 方块边框宽度
+#define BLOCK_SIZE 11  // 方块像素大小
+#define BORDER_WIDTH 1 // 方块边框宽度
 
 // --- LVGL 对象 ---
 static lv_obj_t* canvas;
@@ -95,16 +95,22 @@ static void update_high_scores(int current_score) {
     }
 }
 
-
 // 7种俄罗斯方块 (I, O, T, L, J, S, Z)
 static const Tetromino tetrominos[] = {
-    {{{{0,0,0,0}, {1,1,1,1}, {0,0,0,0}, {0,0,0,0}}}, .color = LV_COLOR_MAKE(0x00, 0xFF, 0xFF)}, // I (青色)
-    {{{{0,1,1,0}, {0,1,1,0}, {0,0,0,0}, {0,0,0,0}}}, .color = LV_COLOR_MAKE(0xFF, 0xFF, 0x00)}, // O (黄色)
-    {{{{0,1,0,0}, {1,1,1,0}, {0,0,0,0}, {0,0,0,0}}}, .color = LV_COLOR_MAKE(0x80, 0x00, 0x80)}, // T (紫色)
-    {{{{1,0,0,0}, {1,1,1,0}, {0,0,0,0}, {0,0,0,0}}}, .color = LV_COLOR_MAKE(0xFF, 0xA5, 0x00)}, // L (橙色)
-    {{{{0,0,1,0}, {1,1,1,0}, {0,0,0,0}, {0,0,0,0}}}, .color = LV_COLOR_MAKE(0x00, 0x00, 0xFF)}, // J (蓝色)
-    {{{{1,1,0,0}, {0,1,1,0}, {0,0,0,0}, {0,0,0,0}}}, .color = LV_COLOR_MAKE(0x00, 0xFF, 0x00)}, // S (绿色)
-    {{{{0,1,1,0}, {1,1,0,0}, {0,0,0,0}, {0,0,0,0}}}, .color = LV_COLOR_MAKE(0xFF, 0x00, 0x00)}, // Z (红色)
+    {.shape = {{0, 0, 0, 0}, {1, 1, 1, 1}, {0, 0, 0, 0}, {0, 0, 0, 0}},
+     .color = LV_COLOR_MAKE(0x00, 0xFF, 0xFF)}, // I (青色)
+    {.shape = {{0, 1, 1, 0}, {0, 1, 1, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}},
+     .color = LV_COLOR_MAKE(0xFF, 0xFF, 0x00)}, // O (黄色)
+    {.shape = {{0, 1, 0, 0}, {1, 1, 1, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}},
+     .color = LV_COLOR_MAKE(0x80, 0x00, 0x80)}, // T (紫色)
+    {.shape = {{1, 0, 0, 0}, {1, 1, 1, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}},
+     .color = LV_COLOR_MAKE(0xFF, 0xA5, 0x00)}, // L (橙色)
+    {.shape = {{0, 0, 1, 0}, {1, 1, 1, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}},
+     .color = LV_COLOR_MAKE(0x00, 0x00, 0xFF)}, // J (蓝色)
+    {.shape = {{1, 1, 0, 0}, {0, 1, 1, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}},
+     .color = LV_COLOR_MAKE(0x00, 0xFF, 0x00)}, // S (绿色)
+    {.shape = {{0, 1, 1, 0}, {1, 1, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}},
+     .color = LV_COLOR_MAKE(0xFF, 0x00, 0x00)}, // Z (红色)
 };
 
 // 当前下落的方块
@@ -114,13 +120,11 @@ static struct {
     uint8_t shape[4][4];
 } current_piece;
 
-
 // --- 函数声明 ---
 static void game_init(void);
 static void draw_board(void);
 static void game_tick(lv_timer_t* timer);
 static void input_handler_cb(lv_timer_t* timer);
-
 
 // --- 核心游戏逻辑 ---
 
@@ -134,12 +138,12 @@ static bool check_collision(int new_x, int new_y, uint8_t piece_shape[4][4]) {
 
                 // 撞墙或落地
                 if (board_x < 0 || board_x >= BOARD_WIDTH || board_y >= BOARD_HEIGHT) {
-            return true;
-        }
+                    return true;
+                }
 
                 // 撞到其他方块
                 if (board_y >= 0 && board[board_y][board_x]) {
-            return true;
+                    return true;
                 }
             }
         }
@@ -149,7 +153,7 @@ static bool check_collision(int new_x, int new_y, uint8_t piece_shape[4][4]) {
 
 // 生成新方块
 static void spawn_new_piece() {
-    current_piece.p_tetromino = &tetrominos[esp_random() % (sizeof(tetrominos)/sizeof(Tetromino))];
+    current_piece.p_tetromino = &tetrominos[esp_random() % (sizeof(tetrominos) / sizeof(Tetromino))];
     memcpy(current_piece.shape, current_piece.p_tetromino->shape, 16); // 4x4=16
     current_piece.x = BOARD_WIDTH / 2 - 2;
     current_piece.y = 0;
@@ -200,7 +204,7 @@ static void clear_lines() {
 
     if (lines_cleared_this_turn > 0) {
         // 更新分数
-        score += lines_cleared_this_turn * 100 * lines_cleared_this_turn; 
+        score += lines_cleared_this_turn * 100 * lines_cleared_this_turn;
         lv_label_set_text_fmt(score_label, "Score:\n%d", score);
 
         // 更新总消行数并检查是否升级
@@ -216,7 +220,6 @@ static void clear_lines() {
         lv_timer_set_period(game_tick_timer, new_period);
     }
 }
-
 
 // --- 绘图函数 ---
 
@@ -236,7 +239,7 @@ static void draw_block(int x, int y, lv_color_t color) {
 static void draw_board() {
     // 用背景色清空画布
     lv_canvas_fill_bg(canvas, lv_color_hex(0xcccccc), LV_OPA_COVER);
-    
+
     // 绘制已经固定的方块
     for (int y = 0; y < BOARD_HEIGHT; y++) {
         for (int x = 0; x < BOARD_WIDTH; x++) {
@@ -258,17 +261,17 @@ static void draw_board() {
     }
 }
 
-
 // --- 玩家动作 ---
 
 static void tetris_rotate(void) {
-    if (game_over) return;
+    if (game_over)
+        return;
     uint8_t temp[4][4] = {0};
-    
+
     // 顺时针旋转矩阵
     for (int y = 0; y < 4; y++) {
         for (int x = 0; x < 4; x++) {
-            temp[x][3-y] = current_piece.shape[y][x];
+            temp[x][3 - y] = current_piece.shape[y][x];
         }
     }
 
@@ -279,7 +282,8 @@ static void tetris_rotate(void) {
 }
 
 static void tetris_move_left(void) {
-    if (game_over) return;
+    if (game_over)
+        return;
     if (!check_collision(current_piece.x - 1, current_piece.y, current_piece.shape)) {
         current_piece.x--;
         draw_board();
@@ -287,7 +291,8 @@ static void tetris_move_left(void) {
 }
 
 static void tetris_move_right(void) {
-    if (game_over) return;
+    if (game_over)
+        return;
     if (!check_collision(current_piece.x + 1, current_piece.y, current_piece.shape)) {
         current_piece.x++;
         draw_board();
@@ -295,8 +300,9 @@ static void tetris_move_right(void) {
 }
 
 static void tetris_soft_drop(void) {
-    if (game_over) return;
-     if (!check_collision(current_piece.x, current_piece.y + 1, current_piece.shape)) {
+    if (game_over)
+        return;
+    if (!check_collision(current_piece.x, current_piece.y + 1, current_piece.shape)) {
         current_piece.y++;
         draw_board();
     } else {
@@ -308,7 +314,8 @@ static void tetris_soft_drop(void) {
 }
 
 static void tetris_hard_drop(void) {
-    if (game_over) return;
+    if (game_over)
+        return;
     while (!check_collision(current_piece.x, current_piece.y + 1, current_piece.shape)) {
         current_piece.y++;
     }
@@ -318,7 +325,6 @@ static void tetris_hard_drop(void) {
     draw_board();
 }
 
-
 // --- 定时器和回调 ---
 
 // 游戏主循环，由定时器驱动
@@ -326,7 +332,7 @@ static void game_tick(lv_timer_t* timer) {
     if (game_over) {
         // 更新并保存最高分
         update_high_scores(score);
-        
+
         lv_obj_t* label = lv_label_create(canvas);
         lv_label_set_text(label, "GAME OVER");
         lv_obj_set_style_text_color(label, lv_color_white(), 0);
@@ -334,7 +340,7 @@ static void game_tick(lv_timer_t* timer) {
         lv_obj_set_style_bg_opa(label, LV_OPA_50, 0);
         lv_obj_set_style_text_font(label, &lv_font_montserrat_16, 0);
         lv_obj_center(label);
-        
+
         // 游戏结束，删除定时器
         if (game_tick_timer) {
             lv_timer_del(game_tick_timer);
@@ -351,7 +357,7 @@ static void input_handler_cb(lv_timer_t* timer) {
     static bool is_down_pressed = false;
     static uint32_t down_press_start_time = 0;
     static bool hard_drop_triggered = false;
-    
+
     key_dir_t keys = key_scan();
 
     // --- 处理上、左、右键 ---
@@ -397,13 +403,13 @@ static void game_init(void) {
     score = 0;
     total_lines_cleared = 0;
 
-    if(score_label) {
+    if (score_label) {
         lv_label_set_text_fmt(score_label, "Score:\n%d", score);
     }
-    if(level_label) {
+    if (level_label) {
         lv_label_set_text_fmt(level_label, "Level:\n%d", 1);
     }
-    if(game_tick_timer) {
+    if (game_tick_timer) {
         lv_timer_set_period(game_tick_timer, 500); // 重置为初始速度
     }
 
@@ -473,7 +479,7 @@ static void back_to_tetris_menu(lv_event_t* e) {
         lv_timer_del(input_timer);
         input_timer = NULL;
     }
-    
+
     lv_obj_t* parent = lv_event_get_user_data(e);
     if (parent) {
         lv_obj_clean(parent);
@@ -504,7 +510,7 @@ static void start_game_cb(lv_event_t* e) {
     // 标题
     lv_obj_t* title = lv_label_create(panel);
     lv_label_set_text(title, "Tetris");
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_24, 0); // 统一使用24号字体
 
     // 分数标签
     score_label = lv_label_create(panel);
@@ -526,9 +532,9 @@ static void start_game_cb(lv_event_t* e) {
     // --- 启动游戏 ---
     game_init();
     draw_board();
-    
+
     // 创建游戏定时器
-    game_tick_timer = lv_timer_create(game_tick, 500, NULL); // 方块下落定时器
+    game_tick_timer = lv_timer_create(game_tick, 500, NULL);   // 方块下落定时器
     input_timer = lv_timer_create(input_handler_cb, 50, NULL); // 按键扫描定时器
 }
 
@@ -598,7 +604,4 @@ static void ui_tetris_menu_create(lv_obj_t* parent) {
 }
 
 // 总入口: 当从APP菜单选择俄罗斯方块时调用此函数
-void ui_tetris_create(lv_obj_t* parent) {
-    ui_tetris_menu_create(parent);
-}
-
+void ui_tetris_create(lv_obj_t* parent) { ui_tetris_menu_create(parent); }

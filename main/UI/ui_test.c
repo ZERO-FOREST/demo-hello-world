@@ -50,18 +50,8 @@ void ui_test_create(lv_obj_t* parent) {
     lv_obj_set_style_text_font(switch_label, &lv_font_montserrat_16, 0);
     lv_obj_align_to(switch_label, test_switch, LV_ALIGN_OUT_BOTTOM_MID, 0, 10);
 
-    // 创建返回按钮
-    lv_obj_t* back_btn = lv_btn_create(parent);
-    lv_obj_set_size(back_btn, 100, 40);
-    lv_obj_align(back_btn, LV_ALIGN_BOTTOM_LEFT, 20, -20);
-    lv_obj_set_style_bg_color(back_btn, lv_color_hex(0x666666), 0);
-    lv_obj_add_event_cb(back_btn, back_btn_cb, LV_EVENT_CLICKED, NULL);
-
-    lv_obj_t* back_label = lv_label_create(back_btn);
-    lv_label_set_text(back_label, "Back");
-    lv_obj_set_style_text_font(back_label, &lv_font_montserrat_16, 0);
-    lv_obj_set_style_text_color(back_label, lv_color_white(), 0);
-    lv_obj_center(back_label);
+    // 创建返回按钮 - 使用统一的back按钮函数
+    ui_create_back_button(parent, "Back");
 
     ESP_LOGI(TAG, "Test UI created successfully");
 }

@@ -44,15 +44,8 @@ void ui_image_transfer_create(lv_obj_t* parent) {
     lv_obj_set_style_outline_width(s_img_obj, 2, 0);
     lv_obj_set_style_outline_color(s_img_obj, lv_color_hex(0xFFFFFF), 0);
 
-    // Create a back button
-    lv_obj_t* back_btn = lv_btn_create(screen);
-    lv_obj_set_size(back_btn, 80, 40);
-    lv_obj_align(back_btn, LV_ALIGN_BOTTOM_LEFT, 10, -10);
-    lv_obj_add_event_cb(back_btn, back_button_event_handler, LV_EVENT_CLICKED, NULL);
-
-    lv_obj_t* back_label = lv_label_create(back_btn);
-    lv_label_set_text(back_label, "Back");
-    lv_obj_center(back_label);
+    // Create a back button - 使用统一的back按钮函数
+    ui_create_back_button(screen, "Back");
 
     // Start the TCP server task when the screen is created
     ESP_LOGI(TAG, "Starting image transfer server...");

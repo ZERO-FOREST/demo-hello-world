@@ -300,23 +300,8 @@ void ui_settings_create(lv_obj_t* parent) {
     theme_apply_to_label(about_label, false); // 应用主题到标签
     lv_obj_center(about_label);
 
-    // 返回按钮
-    lv_obj_t* back_btn = lv_btn_create(parent);
-    lv_obj_set_size(back_btn, 100, 40);
-    lv_obj_align(back_btn, LV_ALIGN_BOTTOM_LEFT, 20, -20);
-
-    // 设置返回按钮样式
-    lv_obj_set_style_radius(back_btn, 6, LV_PART_MAIN);
-    lv_obj_set_style_shadow_width(back_btn, 3, LV_PART_MAIN);
-    lv_obj_set_style_shadow_opa(back_btn, LV_OPA_30, LV_PART_MAIN);
-
-    theme_apply_to_button(back_btn, false); // 应用主题到按钮（只改变颜色）
-    lv_obj_add_event_cb(back_btn, back_btn_cb, LV_EVENT_CLICKED, NULL);
-
-    lv_obj_t* back_label = lv_label_create(back_btn);
-    lv_label_set_text(back_label, text->back_button);
-    theme_apply_to_label(back_label, false); // 应用主题到标签
-    lv_obj_center(back_label);
+    // 返回按钮 - 使用统一的back按钮函数
+    ui_create_back_button(parent, text->back_button);
 
     // 版本信息
     lv_obj_t* version = lv_label_create(parent);

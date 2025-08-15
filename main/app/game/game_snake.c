@@ -22,11 +22,6 @@ void ui_snake_create(lv_obj_t* parent) {
     lv_label_set_text(label, "Snake Placeholder");
     lv_obj_center(label);
 
-    // 返回按钮
-    lv_obj_t* btn = lv_btn_create(parent);
-    lv_obj_align(btn, LV_ALIGN_BOTTOM_LEFT, 10, -10);
-    lv_obj_add_event_cb(btn, back_to_game_menu, LV_EVENT_CLICKED, NULL);
-    lv_obj_t* btn_label = lv_label_create(btn);
-    lv_label_set_text(btn_label, LV_SYMBOL_LEFT " Back");
-    lv_obj_center(btn_label);
+    // 返回按钮 - 使用统一的back按钮函数
+    ui_create_game_back_button(parent, "Back");
 }
