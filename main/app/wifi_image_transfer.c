@@ -1,25 +1,25 @@
-#include <string.h>
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "freertos/event_groups.h"
-#include "esp_system.h"
-#include "esp_wifi.h"
 #include "esp_event.h"
 #include "esp_log.h"
-#include "nvs_flash.h"
+#include "esp_system.h"
+#include "esp_wifi.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/event_groups.h"
+#include "freertos/task.h"
 #include "lwip/err.h"
 #include "lwip/sockets.h"
 #include "lwip/sys.h"
+#include "nvs_flash.h"
 #include <lwip/netdb.h>
+#include <string.h>
 
-#include "esp_jpeg_dec.h"
 #include "esp_jpeg_common.h"
+#include "esp_jpeg_dec.h"
 
-#include "wifi_image_transfer.h"
-#include "../UI/ui_image_transfer.h"
 #include "esp_heap_caps.h"
+#include "ui_image_transfer.h"
+#include "wifi_image_transfer.h"
 
-static const char *TAG = "WIFI_IMG_TRANSFER";
+static const char* TAG = "WIFI_IMG_TRANSFER";
 
 #define LISTEN_SOCKET_NUM 1
 #define TCP_RECV_BUF_SIZE 4096
@@ -27,15 +27,14 @@ static const char *TAG = "WIFI_IMG_TRANSFER";
 
 static TaskHandle_t s_tcp_server_task_handle = NULL;
 static bool s_server_running = false;
-static uint8_t *s_jpeg_frame_buffer = NULL;
+static uint8_t* s_jpeg_frame_buffer = NULL;
 static int s_jpeg_frame_pos = 0;
 
 // Forward declaration for the function that will handle decoded image
-static void handle_decoded_image(uint8_t *img_buf, int width, int height, jpeg_pixel_format_t format);
+static void handle_decoded_image(uint8_t* img_buf, int width, int height, jpeg_pixel_format_t format);
 
-static void tcp_server_task(void *pvParameters)
-{
-    uint16_t port = *(uint16_t *)pvParameters;
+static void tcp_server_task(void* pvParameters) {
+    uint16_t port = *(uint16_t*)pvParameters;
     char addr_str[128];
     int addr_family = AF_INET;
     int ip_protocol = IPPROTO_IP;
@@ -66,7 +65,7 @@ static void tcp_server_task(void *pvParameters)
     }
     ESP_LOGI(TAG, "Socket created");
 
-    int err = bind(listen_sock, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
+    int err = bind(listen_sock, (struct sockaddr*)&dest_addr, sizeof(dest_addr));
     if (err != 0) {
         ESP_LOGE(TAG, "Socket unable to bind: errno %d", errno);
         goto CLEAN_UP;
@@ -85,7 +84,7 @@ static void tcp_server_task(void *pvParameters)
     while (s_server_running) {
         struct sockaddr_in source_addr;
         socklen_t addr_len = sizeof(source_addr);
-        int sock = accept(listen_sock, (struct sockaddr *)&source_addr, &addr_len);
+        int sock = accept(listen_sock, (struct sockaddr*)&source_addr, &addr_len);
         if (sock < 0) {
             ESP_LOGE(TAG, "Unable to accept connection: errno %d", errno);
             continue;
@@ -102,9 +101,9 @@ static void tcp_server_task(void *pvParameters)
         s_jpeg_frame_pos = 0; // Reset buffer for new frame
 
         jpeg_dec_handle_t jpeg_dec = NULL;
-        jpeg_dec_io_t *jpeg_io = NULL;
-        jpeg_dec_header_info_t *out_info = NULL;
-        uint8_t *output_buffer = NULL;
+        jpeg_dec_io_t* jpeg_io = NULL;
+        jpeg_dec_header_info_t* out_info = NULL;
+        uint8_t* output_buffer = NULL;
         int output_len = 0;
 
         jpeg_dec_config_t config = DEFAULT_JPEG_DEC_CONFIG();
@@ -152,9 +151,9 @@ static void tcp_server_task(void *pvParameters)
                         ESP_LOGI(TAG, "JPEG Header parsed: Width=%d, Height=%d", out_info->width, out_info->height);
 
                         // Calculate output buffer size
-                        if (config.output_type == JPEG_PIXEL_FORMAT_RGB565_LE
-                            || config.output_type == JPEG_PIXEL_FORMAT_RGB565_BE
-                            || config.output_type == JPEG_PIXEL_FORMAT_CbYCrY) {
+                        if (config.output_type == JPEG_PIXEL_FORMAT_RGB565_LE ||
+                            config.output_type == JPEG_PIXEL_FORMAT_RGB565_BE ||
+                            config.output_type == JPEG_PIXEL_FORMAT_CbYCrY) {
                             output_len = out_info->width * out_info->height * 2;
                         } else if (config.output_type == JPEG_PIXEL_FORMAT_RGB888) {
                             output_len = out_info->width * out_info->height * 3;
@@ -194,13 +193,16 @@ static void tcp_server_task(void *pvParameters)
             }
         } while (s_server_running);
 
-DECODE_CLEAN_UP:
+    DECODE_CLEAN_UP:
         jpeg_dec_close(jpeg_dec);
-        if (jpeg_io) free(jpeg_io);
-        if (out_info) free(out_info);
-        if (output_buffer) jpeg_free_align(output_buffer);
+        if (jpeg_io)
+            free(jpeg_io);
+        if (out_info)
+            free(out_info);
+        if (output_buffer)
+            jpeg_free_align(output_buffer);
 
-CLOSE_SOCKET:
+    CLOSE_SOCKET:
         shutdown(sock, 0);
         close(sock);
     }
@@ -215,8 +217,7 @@ CLEAN_UP:
     vTaskDelete(NULL);
 }
 
-static void handle_decoded_image(uint8_t *img_buf, int width, int height, jpeg_pixel_format_t format)
-{
+static void handle_decoded_image(uint8_t* img_buf, int width, int height, jpeg_pixel_format_t format) {
     // This function would typically display the image on a screen
     // For now, we just log the information.
     ESP_LOGI(TAG, "Decoded Image: Width=%d, Height=%d, Format=%d", width, height, format);
@@ -224,13 +225,12 @@ static void handle_decoded_image(uint8_t *img_buf, int width, int height, jpeg_p
     ui_image_transfer_set_image_data(img_buf, width, height, format);
 }
 
-bool wifi_image_transfer_start(uint16_t port)
-{
+bool wifi_image_transfer_start(uint16_t port) {
     if (s_server_running) {
         ESP_LOGW(TAG, "TCP server already running.");
         return true;
     }
-    
+
     // Start the TCP server task
     // Task stack size might need adjustment based on image size and processing
     if (xTaskCreate(tcp_server_task, "tcp_server", 8192, &port, 5, &s_tcp_server_task_handle) != pdPASS) {
@@ -240,8 +240,7 @@ bool wifi_image_transfer_start(uint16_t port)
     return true;
 }
 
-void wifi_image_transfer_stop(void)
-{
+void wifi_image_transfer_stop(void) {
     if (s_server_running) {
         s_server_running = false;
         // Give some time for the task to finish gracefully

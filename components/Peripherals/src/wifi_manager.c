@@ -141,8 +141,8 @@ esp_err_t wifi_manager_start(void) {
         .sta =
             {
                 // 连接到用户指定的WiFi
-                .ssid = "Sysware-AP",
-                .password = "syswareonline.com",
+                .ssid = "tidy",
+                .password = "22989822",
                 /* 设置最低安全等级为WPA/WPA2 PSK */
                 .threshold.authmode = WIFI_AUTH_WPA_WPA2_PSK,
             },

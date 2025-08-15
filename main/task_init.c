@@ -6,12 +6,12 @@
 
 // 引入各模块头文件
 #include "battery_monitor.h"
+#include "i2s_tdm_demo.h"
 #include "joystick_adc.h"
 #include "lvgl_main.h"
 #include "power_management.h"
 #include "ui.h"
 #include "ws2812.h"
-#include "i2s_tdm_demo.h"
 #include <stdint.h>
 
 static const char* TAG = "TASK_INIT";
@@ -81,15 +81,7 @@ static void joystick_adc_task(void* pvParameters) {
     uint32_t log_counter = 0;
 
     while (1) {
-        if (joystick_adc_read(&data) == ESP_OK) {
-            // 每1秒打印一次，避免刷屏
-            if ((++log_counter % (50U)) == 0U) {
-                ESP_LOGI(TAG, "JOY1 X:%d Y:%d | JOY2 X:%d Y:%d (norm)", 
-                         data.norm_joy1_x, data.norm_joy1_y, data.norm_joy2_x, data.norm_joy2_y);
-            }
-        }
-        
-        // 使用 vTaskDelay 而不是 vTaskDelayUntil 来避免定时问题
+        joystick_adc_read(&data);
         vTaskDelay(period_ticks);
     }
 }
@@ -197,13 +189,13 @@ esp_err_t init_joystick_adc_task(void) {
         return ESP_OK;
     }
 
-    BaseType_t result = xTaskCreatePinnedToCore(joystick_adc_task,     // 任务函数
-                                                "Joystick_ADC",        // 任务名称
-                                                TASK_STACK_MEDIUM,      // 堆栈大小 (4KB，避免栈溢出)
-                                                NULL,                   // 参数
-                                                TASK_PRIORITY_NORMAL,   // 普通优先级
-                                                &s_joystick_task_handle,// 任务句柄
-                                                0);                     // 绑定到Core 0
+    BaseType_t result = xTaskCreatePinnedToCore(joystick_adc_task,       // 任务函数
+                                                "Joystick_ADC",          // 任务名称
+                                                TASK_STACK_MEDIUM,       // 堆栈大小 (4KB，避免栈溢出)
+                                                NULL,                    // 参数
+                                                TASK_PRIORITY_NORMAL,    // 普通优先级
+                                                &s_joystick_task_handle, // 任务句柄
+                                                0);                      // 绑定到Core 0
 
     if (result != pdPASS) {
         ESP_LOGE(TAG, "Failed to create Joystick ADC task");

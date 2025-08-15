@@ -1,6 +1,6 @@
-#include "../../UI/ui.h"
 #include "game.h"
 #include "theme_manager.h"
+#include "ui.h"
 
 // 返回游戏菜单回调
 static void back_to_game_menu(lv_event_t* e) {

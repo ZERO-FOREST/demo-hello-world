@@ -1,11 +1,11 @@
-#include "../../UI/ui.h"
-#include "../../UI/theme_manager.h"
 #include "esp_log.h"
 #include "esp_random.h"
 #include "game.h"
 #include "key.h"
 #include "nvs.h"
 #include "nvs_flash.h"
+#include "theme_manager.h"
+#include "ui.h"
 #include <stdlib.h>
 #include <string.h>
 
