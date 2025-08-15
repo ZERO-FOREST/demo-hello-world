@@ -30,11 +30,8 @@ void ui_image_transfer_create(lv_obj_t* parent) {
     lv_obj_set_style_bg_color(screen, lv_color_hex(0xF6E9DB), LV_PART_MAIN); // 使用莫兰迪色系背景
     lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
 
-    lv_obj_t* title = lv_label_create(screen);
-    lv_label_set_text(title, "Image Transfer");
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 10);
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_24, 0);
-    lv_obj_set_style_text_color(title, lv_color_hex(0xFFFFFF), 0);
+    // 创建统一标题
+    ui_create_page_title(screen, "Image Transfer");
 
     // Create an image object to display the received image
     s_img_obj = lv_img_create(screen);

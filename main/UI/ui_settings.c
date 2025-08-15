@@ -164,10 +164,33 @@ static void theme_switch_cb(lv_event_t* e) {
     ESP_LOGI(TAG, "Theme switched to: %s", theme->name);
 }
 
-// 主题选择回调
-static void theme_select_cb(lv_event_t* e) {
-    lv_obj_t* btn = lv_event_get_target(e);
-    theme_type_t theme_type = (theme_type_t)lv_event_get_user_data(e);
+// 主题下拉列表回调
+static void theme_dropdown_cb(lv_event_t* e) {
+    lv_obj_t* dropdown = lv_event_get_target(e);
+    uint16_t selected = lv_dropdown_get_selected(dropdown);
+
+    // 根据选择的索引确定主题类型
+    theme_type_t theme_type;
+    switch (selected) {
+    case 0:
+        theme_type = THEME_MORANDI;
+        break;
+    case 1:
+        theme_type = THEME_DARK;
+        break;
+    case 2:
+        theme_type = THEME_LIGHT;
+        break;
+    case 3:
+        theme_type = THEME_BLUE;
+        break;
+    case 4:
+        theme_type = THEME_GREEN;
+        break;
+    default:
+        theme_type = THEME_MORANDI;
+        break;
+    }
 
     // 设置新主题
     theme_set_current(theme_type);
@@ -194,31 +217,27 @@ void ui_settings_create(lv_obj_t* parent) {
     // 应用当前主题到屏幕
     theme_apply_to_screen(parent);
 
-    // 创建标题
-    lv_obj_t* title = lv_label_create(parent);
-    lv_label_set_text(title, text->settings_title);
-    theme_apply_to_label(title, true); // 应用主题到标题
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 10);
+    // 创建页面父级容器（统一管理整个页面）
+    lv_obj_t* page_parent_container;
+    ui_create_page_parent_container(parent, &page_parent_container);
 
-    // 创建设置容器
-    lv_obj_t* cont = lv_obj_create(parent);
-    lv_obj_set_size(cont, 260, 220); // 增加高度以容纳主题选择按钮
-    lv_obj_align(cont, LV_ALIGN_CENTER, 0, -10);
+    // 创建顶部栏容器（包含返回按钮和标题）
+    lv_obj_t* top_bar_container;
+    lv_obj_t* title_container;
+    ui_create_top_bar(page_parent_container, text->settings_title, &top_bar_container, &title_container);
 
-    // 设置容器样式（边框、圆角等）
-    lv_obj_set_style_border_width(cont, 1, LV_PART_MAIN);
-    lv_obj_set_style_radius(cont, 8, LV_PART_MAIN);
-
-    theme_apply_to_container(cont); // 应用主题到容器（只改变颜色）
+    // 创建页面内容容器
+    lv_obj_t* content_container;
+    ui_create_page_content_area(page_parent_container, &content_container);
 
     // 语言设置
-    lv_obj_t* lang_label = lv_label_create(cont);
+    lv_obj_t* lang_label = lv_label_create(content_container);
     lv_label_set_text(lang_label, text->language_label);
     theme_apply_to_label(lang_label, false); // 应用主题到标签
-    lv_obj_align(lang_label, LV_ALIGN_TOP_LEFT, 15, 15);
+    lv_obj_align(lang_label, LV_ALIGN_TOP_LEFT, 10, 10);
 
-    lv_obj_t* lang_switch = lv_switch_create(cont);
-    lv_obj_align(lang_switch, LV_ALIGN_TOP_RIGHT, -15, 10);
+    lv_obj_t* lang_switch = lv_switch_create(content_container);
+    lv_obj_align(lang_switch, LV_ALIGN_TOP_RIGHT, -10, 10);
     theme_apply_to_switch(lang_switch); // 应用主题到开关
     if (g_current_language == LANG_CHINESE) {
         lv_obj_add_state(lang_switch, LV_STATE_CHECKED);
@@ -226,66 +245,75 @@ void ui_settings_create(lv_obj_t* parent) {
     lv_obj_add_event_cb(lang_switch, language_switch_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
     // 语言状态标签
-    lv_obj_t* lang_status = lv_label_create(cont);
+    lv_obj_t* lang_status = lv_label_create(content_container);
     lv_label_set_text(lang_status, g_current_language == LANG_CHINESE ? text->chinese_text : text->english_text);
     theme_apply_to_label(lang_status, false); // 应用主题到标签
     lv_obj_align_to(lang_status, lang_label, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 5);
 
     // 主题设置
-    lv_obj_t* theme_label = lv_label_create(cont);
+    lv_obj_t* theme_label = lv_label_create(content_container);
     lv_label_set_text(theme_label, text->theme_label);
     theme_apply_to_label(theme_label, false); // 应用主题到标签
     lv_obj_align_to(theme_label, lang_status, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 20);
 
-    // 创建主题选择按钮容器
-    lv_obj_t* theme_btn_cont = lv_obj_create(cont);
-    lv_obj_set_size(theme_btn_cont, 200, 80);
-    lv_obj_align_to(theme_btn_cont, theme_label, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 5);
+    // 创建主题下拉列表容器
+    lv_obj_t* theme_dropdown_cont = lv_obj_create(content_container);
+    lv_obj_set_size(theme_dropdown_cont, 200, 40);
+    lv_obj_align_to(theme_dropdown_cont, theme_label, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 5);
+    lv_obj_set_style_bg_opa(theme_dropdown_cont, LV_OPA_0, 0);
+    lv_obj_set_style_border_width(theme_dropdown_cont, 0, 0);
+    lv_obj_set_style_pad_all(theme_dropdown_cont, 0, 0);
 
-    // 设置主题按钮容器样式
-    lv_obj_set_style_border_width(theme_btn_cont, 1, LV_PART_MAIN);
-    lv_obj_set_style_radius(theme_btn_cont, 8, LV_PART_MAIN);
+    // 创建主题下拉列表
+    lv_obj_t* theme_dropdown = lv_dropdown_create(theme_dropdown_cont);
+    lv_obj_set_size(theme_dropdown, 200, 35);
+    lv_obj_align(theme_dropdown, LV_ALIGN_CENTER, 0, 0);
 
-    theme_apply_to_container(theme_btn_cont); // 应用主题到容器（只改变颜色）
+    // 设置下拉列表样式
+    lv_obj_set_style_radius(theme_dropdown, 8, LV_PART_MAIN);
+    lv_obj_set_style_border_width(theme_dropdown, 2, LV_PART_MAIN);
+    lv_obj_set_style_border_color(theme_dropdown, theme_get_color(theme_get_current_theme()->colors.border),
+                                  LV_PART_MAIN);
+    lv_obj_set_style_bg_color(theme_dropdown, theme_get_color(theme_get_current_theme()->colors.surface), LV_PART_MAIN);
+    lv_obj_set_style_text_color(theme_dropdown, theme_get_color(theme_get_current_theme()->colors.text_primary),
+                                LV_PART_MAIN);
+    lv_obj_set_style_text_font(theme_dropdown, &lv_font_montserrat_14, LV_PART_MAIN);
 
-    // 创建主题选择按钮
-    const char* theme_names[] = {"Morandi", "Dark", "Light", "Blue", "Green"};
-    theme_type_t theme_types[] = {THEME_MORANDI, THEME_DARK, THEME_LIGHT, THEME_BLUE, THEME_GREEN};
+    // 设置下拉列表选项
+    lv_dropdown_set_options(theme_dropdown, "Morandi\nDark\nLight\nBlue\nGreen");
 
-    for (int i = 0; i < 5; i++) {
-        lv_obj_t* theme_btn = lv_btn_create(theme_btn_cont);
-        lv_obj_set_size(theme_btn, 35, 25);
-        lv_obj_align(theme_btn, LV_ALIGN_TOP_LEFT, 5 + i * 40, 5);
-
-        // 设置主题按钮样式
-        lv_obj_set_style_radius(theme_btn, 6, LV_PART_MAIN);
-        lv_obj_set_style_shadow_width(theme_btn, 3, LV_PART_MAIN);
-        lv_obj_set_style_shadow_opa(theme_btn, LV_OPA_30, LV_PART_MAIN);
-
-        theme_apply_to_button(theme_btn, false); // 应用主题到按钮（只改变颜色）
-        lv_obj_add_event_cb(theme_btn, theme_select_cb, LV_EVENT_CLICKED, (void*)theme_types[i]);
-
-        lv_obj_t* theme_btn_label = lv_label_create(theme_btn);
-        lv_label_set_text(theme_btn_label, theme_names[i]);
-        theme_apply_to_label(theme_btn_label, false); // 应用主题到标签
-        lv_obj_center(theme_btn_label);
-
-        // 高亮当前主题
-        if (theme_get_current() == theme_types[i]) {
-            lv_obj_set_style_bg_color(theme_btn, theme_get_primary_color(), LV_PART_MAIN);
-        }
+    // 设置当前选中的主题
+    theme_type_t current_theme_type = theme_get_current();
+    int selected_index = 0;
+    switch (current_theme_type) {
+    case THEME_MORANDI:
+        selected_index = 0;
+        break;
+    case THEME_DARK:
+        selected_index = 1;
+        break;
+    case THEME_LIGHT:
+        selected_index = 2;
+        break;
+    case THEME_BLUE:
+        selected_index = 3;
+        break;
+    case THEME_GREEN:
+        selected_index = 4;
+        break;
+    default:
+        selected_index = 0;
+        break;
     }
+    lv_dropdown_set_selected(theme_dropdown, selected_index);
 
-    lv_obj_t* theme_status = lv_label_create(cont);
-    const theme_t* current_theme = theme_get_current_theme();
-    lv_label_set_text(theme_status, current_theme->name);
-    theme_apply_to_label(theme_status, false); // 应用主题到标签
-    lv_obj_align_to(theme_status, theme_btn_cont, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 5);
+    // 添加下拉列表事件回调
+    lv_obj_add_event_cb(theme_dropdown, theme_dropdown_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
     // 关于按钮
-    lv_obj_t* about_btn = lv_btn_create(cont);
+    lv_obj_t* about_btn = lv_btn_create(content_container);
     lv_obj_set_size(about_btn, 220, 35);
-    lv_obj_align(about_btn, LV_ALIGN_BOTTOM_MID, 0, -15);
+    lv_obj_align(about_btn, LV_ALIGN_BOTTOM_MID, 0, -10);
 
     // 设置关于按钮样式
     lv_obj_set_style_radius(about_btn, 6, LV_PART_MAIN);
@@ -299,15 +327,6 @@ void ui_settings_create(lv_obj_t* parent) {
     lv_label_set_text(about_label, text->about_label);
     theme_apply_to_label(about_label, false); // 应用主题到标签
     lv_obj_center(about_label);
-
-    // 返回按钮 - 使用统一的back按钮函数
-    ui_create_back_button(parent, text->back_button);
-
-    // 版本信息
-    lv_obj_t* version = lv_label_create(parent);
-    lv_label_set_text(version, text->version_info);
-    theme_apply_to_label(version, false); // 应用主题到标签
-    lv_obj_align(version, LV_ALIGN_BOTTOM_RIGHT, -10, -10);
 
     ESP_LOGI(TAG, "Settings UI created with language: %s", g_current_language == LANG_CHINESE ? "Chinese" : "English");
 }

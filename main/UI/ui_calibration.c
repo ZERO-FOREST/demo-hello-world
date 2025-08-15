@@ -14,12 +14,10 @@
 #include <stdio.h>
 #include <string.h>
 
-
 #include "calibration_manager.h"
 #include "joystick_adc.h"
 #include "lsm6ds3.h"
 #include "ui.h"
-
 
 static const char* TAG = "UI_CALIBRATION";
 
@@ -166,24 +164,7 @@ static void menu_btn_event_cb(lv_event_t* e) {
     }
 }
 
-// 创建状态栏
-static void create_status_bar(lv_obj_t* parent) {
-    g_status_bar = lv_obj_create(parent);
-    lv_obj_set_size(g_status_bar, 320, 40);
-    lv_obj_align(g_status_bar, LV_ALIGN_TOP_MID, 0, 0);
-    lv_obj_set_style_bg_color(g_status_bar, lv_color_hex(0x2C3E50), 0);
-    lv_obj_set_style_bg_opa(g_status_bar, LV_OPA_90, 0);
-    lv_obj_set_style_radius(g_status_bar, 0, 0);
-    lv_obj_set_style_border_width(g_status_bar, 0, 0);
-    lv_obj_set_style_pad_all(g_status_bar, 5, 0);
 
-    // 标题
-    lv_obj_t* title = lv_label_create(g_status_bar);
-    lv_label_set_text(title, "Calibration & Test");
-    lv_obj_align(title, LV_ALIGN_CENTER, 0, 0);
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_24, 0); // 统一使用24号字体
-    lv_obj_set_style_text_color(title, lv_color_hex(0xFFFFFF), 0);
-}
 
 // 创建主菜单
 static void create_main_menu(void) {
@@ -247,8 +228,8 @@ void ui_calibration_create(lv_obj_t* parent) {
         return;
     }
 
-    // 创建状态栏
-    create_status_bar(parent);
+    // 创建统一标题
+    ui_create_page_title(parent, "Calibration & Test");
 
     // 创建内容区域
     g_content_area = lv_obj_create(parent);

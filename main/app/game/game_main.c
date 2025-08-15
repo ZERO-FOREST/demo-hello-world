@@ -33,11 +33,8 @@ static void snake_game_cb(lv_event_t* e) {
 // --- 游戏菜单创建 ---
 
 void ui_game_menu_create(lv_obj_t* parent) {
-    // 创建标题
-    lv_obj_t* title = lv_label_create(parent);
-    lv_label_set_text(title, "Game Menu");
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 10);
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_24, 0);
+    // 创建统一标题
+    ui_create_page_title(parent, "Game Menu");
 
     // 创建游戏列表
     lv_obj_t* list = lv_list_create(parent);

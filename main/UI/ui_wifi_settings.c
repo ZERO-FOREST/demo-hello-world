@@ -98,11 +98,8 @@ void ui_wifi_settings_create(lv_obj_t* parent) {
     // 初始化WiFi管理器并注册回调
     wifi_manager_init(update_wifi_info);
 
-    // --- 标题 ---
-    lv_obj_t* title = lv_label_create(parent);
-    lv_label_set_text(title, "WiFi Settings");
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 5);
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_24, 0); // 统一使用24号字体
+    // --- 统一标题 ---
+    ui_create_page_title(parent, "WiFi Settings");
 
     // --- 返回按钮 ---
     ui_create_back_button(parent, "Back");

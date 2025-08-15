@@ -11,11 +11,8 @@ static void back_to_game_menu(lv_event_t* e) {
 }
 
 void ui_snake_create(lv_obj_t* parent) {
-    // 创建标题
-    lv_obj_t* title = lv_label_create(parent);
-    lv_label_set_text(title, "Snake Game");
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 10);
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_24, 0);
+    // 创建统一标题
+    ui_create_page_title(parent, "Snake Game");
 
     // 占位：游戏界面待实现
     lv_obj_t* label = lv_label_create(parent);

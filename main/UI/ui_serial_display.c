@@ -305,34 +305,20 @@ void ui_serial_display_create(lv_obj_t* parent) {
         return;
     }
 
-    // 创建状态栏容器 - 与主菜单保持一致
-    lv_obj_t* status_bar = lv_obj_create(parent);
-    lv_obj_set_size(status_bar, 320, 40);
-    lv_obj_align(status_bar, LV_ALIGN_TOP_MID, 0, 0);
-    lv_obj_set_style_bg_color(status_bar, lv_color_hex(0x2C3E50), 0);
-    lv_obj_set_style_bg_opa(status_bar, LV_OPA_90, 0);
-    lv_obj_set_style_radius(status_bar, 0, 0);
-    lv_obj_set_style_border_width(status_bar, 0, 0);
-    lv_obj_set_style_pad_all(status_bar, 5, 0);
+    // 创建统一标题
+    ui_create_page_title(parent, "Serial Display");
 
-    // 创建标题 - 在状态栏内居中
-    lv_obj_t* title = lv_label_create(status_bar);
-    lv_label_set_text(title, "Serial Display");
-    lv_obj_align(title, LV_ALIGN_CENTER, 0, 0);
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_24, 0); // 统一使用24号字体
-    lv_obj_set_style_text_color(title, lv_color_hex(0xFFFFFF), 0);
-
-    // 创建状态标签 - 在状态栏右侧
-    g_status_label = lv_label_create(status_bar);
-    lv_obj_align(g_status_label, LV_ALIGN_RIGHT_MID, -5, 0);
+    // 创建状态标签 - 在标题下方
+    g_status_label = lv_label_create(parent);
+    lv_obj_align(g_status_label, LV_ALIGN_TOP_RIGHT, -10, 50);
     lv_obj_set_style_text_font(g_status_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(g_status_label, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_text_color(g_status_label, theme_get_color(theme_get_current_theme()->colors.text_secondary), 0);
     lv_label_set_text(g_status_label, "Lines: 0/1024 | Auto: ON");
 
-    // 创建滚动区域 - 在状态栏下方
+    // 创建滚动区域 - 在标题下方
     g_scroll_area = lv_obj_create(parent);
     lv_obj_set_size(g_scroll_area, 300, 200);
-    lv_obj_align(g_scroll_area, LV_ALIGN_CENTER, 0, 20); // 向下偏移避开状态栏
+    lv_obj_align(g_scroll_area, LV_ALIGN_CENTER, 0, 20); // 向下偏移避开标题
     lv_obj_set_style_border_width(g_scroll_area, 2, 0);
     lv_obj_set_style_border_color(g_scroll_area, lv_color_hex(0x3498DB), 0); // 蓝色边框
     lv_obj_set_style_radius(g_scroll_area, 8, 0);

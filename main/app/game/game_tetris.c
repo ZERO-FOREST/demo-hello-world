@@ -441,7 +441,7 @@ static void ui_scoreboard_create(lv_obj_t* parent) {
 
     lv_obj_t* title = lv_label_create(cont);
     lv_label_set_text(title, "High Scores");
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_24, 0); // 保持24号字体
 
     // 显示分数
     for (int i = 0; i < NUM_HIGH_SCORES; i++) {
@@ -510,7 +510,7 @@ static void start_game_cb(lv_event_t* e) {
     // 标题
     lv_obj_t* title = lv_label_create(panel);
     lv_label_set_text(title, "Tetris");
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_24, 0); // 统一使用24号字体
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_24, 0); // 保持24号字体
 
     // 分数标签
     score_label = lv_label_create(panel);
@@ -561,7 +561,7 @@ static void ui_tetris_menu_create(lv_obj_t* parent) {
     // 标题
     lv_obj_t* title = lv_label_create(cont);
     lv_label_set_text(title, "Tetris");
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_24, 0); // 保持24号字体
 
     // 菜单按钮
     lv_obj_t* btn;

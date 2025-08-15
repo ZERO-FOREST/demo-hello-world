@@ -32,12 +32,8 @@ void ui_test_create(lv_obj_t* parent) {
     // 设置背景
     lv_obj_set_style_bg_color(parent, lv_color_hex(0xF6E9DB), LV_PART_MAIN); // 使用莫兰迪色系
 
-    // 创建标题
-    lv_obj_t* title = lv_label_create(parent);
-    lv_label_set_text(title, "TEST PAGE");
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_24, 0);
-    lv_obj_set_style_text_color(title, lv_color_hex(0x333333), 0);
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 10);
+    // 创建统一标题
+    ui_create_page_title(parent, "TEST PAGE");
 
     // 创建测试开关
     lv_obj_t* test_switch = lv_switch_create(parent);
