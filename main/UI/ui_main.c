@@ -27,9 +27,13 @@ static lv_color_t get_morandi_color(int index) {
     return lv_color_hex(morandi_colors[4].color_hex); // 默认返回背景色
 }
 
-// 全局变量保存时间标签和电池标签
+// 全局变量保存时间标签、电池标签和WiFi标签
 static lv_obj_t* g_time_label = NULL;
 static lv_obj_t* g_battery_label = NULL;
+static lv_obj_t* g_wifi_label = NULL;
+
+// 函数声明
+void ui_main_update_wifi_display(void);
 
 // 时间更新定时器回调函数
 static void time_update_timer_cb(lv_timer_t* timer) {
@@ -57,6 +61,9 @@ static void time_update_timer_cb(lv_timer_t* timer) {
             ESP_LOGD("UI_MAIN", "Time updated: %s", time_str);
         }
     }
+    
+    // 同时更新WiFi状态显示
+    ui_main_update_wifi_display();
 }
 
 // 电池电量更新函数（由任务调用）
@@ -101,6 +108,60 @@ void ui_main_update_battery_display(void) {
     }
 }
 
+// WiFi状态更新函数
+void ui_main_update_wifi_display(void) {
+    if (!g_wifi_label) {
+        ESP_LOGW("UI_MAIN", "WiFi label is NULL!");
+        return;
+    }
+
+    // 检查标签是否仍然有效
+    if (!lv_obj_is_valid(g_wifi_label)) {
+        ESP_LOGW("UI_MAIN", "WiFi label is no longer valid!");
+        g_wifi_label = NULL; // 重置为NULL
+        return;
+    }
+
+    // 获取WiFi连接状态
+    wifi_manager_info_t wifi_info = wifi_manager_get_info();
+    bool wifi_connected = (wifi_info.state == WIFI_STATE_CONNECTED);
+    
+    // 静态变量记录上一次的连接状态
+    static bool last_wifi_connected = false;
+    
+    // 根据连接状态显示或隐藏WiFi符号
+    if (wifi_connected) {
+        lv_obj_clear_flag(g_wifi_label, LV_OBJ_FLAG_HIDDEN);
+        ESP_LOGD("UI_MAIN", "WiFi connected, showing symbol");
+        
+        // 检查是否是第一次连接成功（从断开状态变为连接状态）
+        if (!last_wifi_connected) {
+            ESP_LOGI("UI_MAIN", "First WiFi connection detected, triggering time sync");
+            
+            // 触发一次时间同步
+            char time_str[32];
+            if (wifi_manager_get_time_str(time_str, sizeof(time_str))) {
+                ESP_LOGI("UI_MAIN", "Time sync from WiFi: %s", time_str);
+                
+                // 更新UI显示
+                if (g_time_label && lv_obj_is_valid(g_time_label)) {
+                    lv_label_set_text(g_time_label, time_str);
+                    lv_obj_invalidate(g_time_label);
+                    ESP_LOGI("UI_MAIN", "Time display updated from WiFi sync");
+                }
+            } else {
+                ESP_LOGW("UI_MAIN", "Failed to get time from WiFi");
+            }
+        }
+    } else {
+        lv_obj_add_flag(g_wifi_label, LV_OBJ_FLAG_HIDDEN);
+        ESP_LOGD("UI_MAIN", "WiFi disconnected, hiding symbol");
+    }
+    
+    // 更新上一次的连接状态
+    last_wifi_connected = wifi_connected;
+}
+
 // 菜单项回调函数类型
 typedef void (*menu_item_cb_t)(void);
 
@@ -126,6 +187,7 @@ static void wifi_settings_cb(void) {
         // 重置全局UI指针
         g_time_label = NULL;
         g_battery_label = NULL;
+        g_wifi_label = NULL;
 
         lv_obj_clean(screen);            // 清空当前屏幕
         ui_wifi_settings_create(screen); // 加载WiFi设置界面
@@ -146,6 +208,7 @@ static void settings_cb(void) {
         // 重置全局UI指针
         g_time_label = NULL;
         g_battery_label = NULL;
+        g_wifi_label = NULL;
 
         lv_obj_clean(screen);       // 清空当前屏幕
         ui_settings_create(screen); // 加载系统设置界面
@@ -182,6 +245,7 @@ static void serial_display_cb(void) {
         // 重置全局UI指针
         g_time_label = NULL;
         g_battery_label = NULL;
+        g_wifi_label = NULL;
 
         lv_obj_clean(screen);             // 清空当前屏幕
         ui_serial_display_create(screen); // 加载串口显示界面
@@ -210,6 +274,7 @@ static void test_cb(void) {
         // 重置全局UI指针
         g_time_label = NULL;
         g_battery_label = NULL;
+        g_wifi_label = NULL;
 
         lv_obj_clean(screen);   // 清空当前屏幕
         ui_test_create(screen); // 加载测试界面
@@ -260,6 +325,14 @@ void ui_main_menu_create(lv_obj_t* parent) {
     lv_obj_set_style_text_color(g_time_label, lv_color_hex(0x000000), 0); // 黑色
     lv_obj_align(g_time_label, LV_ALIGN_LEFT_MID, 6, 0);
     lv_label_set_text(g_time_label, "00:00");
+
+    // ==== WiFi符号 ====
+    g_wifi_label = lv_label_create(status_bar);
+    lv_obj_set_style_text_font(g_wifi_label, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(g_wifi_label, lv_color_hex(0x000000), 0); // 黑色
+    lv_label_set_text(g_wifi_label, LV_SYMBOL_WIFI);
+    lv_obj_align(g_wifi_label, LV_ALIGN_RIGHT_MID, -45, 0); // 在电池左边
+    lv_obj_add_flag(g_wifi_label, LV_OBJ_FLAG_HIDDEN); // 初始隐藏
 
     // ==== 电池图标（外壳 + 小凸起 + 电量文字） ====
     // 电池外壳
@@ -374,6 +447,9 @@ void ui_main_menu_create(lv_obj_t* parent) {
             lv_obj_set_style_text_color(g_battery_label, lv_color_hex(0x000000), 0);
         }
     }
+    
+    // 初始化WiFi状态显示
+    ui_main_update_wifi_display();
 
     ESP_LOGI("UI_MAIN", "Main menu created with background manager support");
 

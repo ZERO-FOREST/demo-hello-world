@@ -4,9 +4,10 @@
  * @author Your Name
  * @date 2024
  */
+#include "custom_symbols.h"
 #include "esp_log.h"
-#include "ui.h"
 #include "theme_manager.h"
+#include "ui.h"
 
 static const char* TAG = "UI_TEST";
 
@@ -53,10 +54,65 @@ void ui_test_create(lv_obj_t* parent) {
     lv_obj_t* content_container;
     ui_create_page_content_area(page_parent_container, &content_container);
 
+    // 确保 content_container 不覆盖子控件的字体
+    lv_obj_set_style_text_font(content_container, NULL, 0);
+
     // 4. 在content_container中添加页面内容
+
+    // 创建所有符号标签
+    lv_obj_t* symbol1 = create_symbol_label(content_container, SYMBOL_IMAGE_TRANS, lv_color_hex(0xFF0000));
+    if (symbol1) {
+        lv_obj_align(symbol1, LV_ALIGN_CENTER, -80, -60);
+    } else {
+        ESP_LOGE(TAG, "Failed to create SYMBOL_IMAGE_TRANS");
+    }
+
+    lv_obj_t* symbol2 = create_symbol_label(content_container, SYMBOL_GAME, lv_color_hex(0x00FF00));
+    if (symbol2) {
+        lv_obj_align(symbol2, LV_ALIGN_CENTER, -40, -60);
+    } else {
+        ESP_LOGE(TAG, "Failed to create SYMBOL_GAME");
+    }
+
+    lv_obj_t* symbol3 = create_symbol_label(content_container, SYMBOL_SERIAL_DISPLAY, lv_color_hex(0x0000FF));
+    if (symbol3) {
+        lv_obj_align(symbol3, LV_ALIGN_CENTER, 0, -60);
+    } else {
+        ESP_LOGE(TAG, "Failed to create SYMBOL_SERIAL_DISPLAY");
+    }
+
+    lv_obj_t* symbol4 = create_symbol_label(content_container, SYMBOL_NOWIFI, lv_color_hex(0xFFFF00));
+    if (symbol4) {
+        lv_obj_align(symbol4, LV_ALIGN_CENTER, 40, -60);
+    } else {
+        ESP_LOGE(TAG, "Failed to create SYMBOL_NOWIFI");
+    }
+
+    lv_obj_t* symbol5 = create_symbol_label(content_container, SYMBOL_CALIBRATION, lv_color_hex(0xFF00FF));
+    if (symbol5) {
+        lv_obj_align(symbol5, LV_ALIGN_CENTER, 80, -60);
+    } else {
+        ESP_LOGE(TAG, "Failed to create SYMBOL_CALIBRATION");
+    }
+
+    // 创建符号说明标签
+    lv_obj_t* symbol_desc_label = lv_label_create(content_container);
+    lv_label_set_text(symbol_desc_label, "Custom Symbols Test - Check Serial Output");
+    theme_apply_to_label(symbol_desc_label, false);
+    lv_obj_set_style_text_font(symbol_desc_label, &lv_font_montserrat_14, 0);
+    lv_obj_align(symbol_desc_label, LV_ALIGN_CENTER, 0, 0);
+
+    // 添加调试信息
+    ESP_LOGI(TAG, "Testing symbols:");
+    ESP_LOGI(TAG, "SYMBOL_IMAGE_TRANS: 0x%04X", SYMBOL_IMAGE_TRANS);
+    ESP_LOGI(TAG, "SYMBOL_GAME: 0x%04X", SYMBOL_GAME);
+    ESP_LOGI(TAG, "SYMBOL_SERIAL_DISPLAY: 0x%04X", SYMBOL_SERIAL_DISPLAY);
+    ESP_LOGI(TAG, "SYMBOL_NOWIFI: 0x%04X", SYMBOL_NOWIFI);
+    ESP_LOGI(TAG, "SYMBOL_CALIBRATION: 0x%04X", SYMBOL_CALIBRATION);
+
     // 创建测试开关
     lv_obj_t* test_switch = lv_switch_create(content_container);
-    lv_obj_align(test_switch, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_align(test_switch, LV_ALIGN_CENTER, 0, 20);
     theme_apply_to_switch(test_switch);
     lv_obj_add_event_cb(test_switch, test_switch_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
@@ -66,6 +122,12 @@ void ui_test_create(lv_obj_t* parent) {
     theme_apply_to_label(switch_label, false);
     lv_obj_set_style_text_font(switch_label, &lv_font_montserrat_16, 0);
     lv_obj_align_to(switch_label, test_switch, LV_ALIGN_OUT_BOTTOM_MID, 0, 10);
+
+    // 测试直接使用 Mysybmol 字体
+    lv_obj_t* test_label = lv_label_create(content_container);
+    lv_obj_set_style_text_font(test_label, &Mysybmol, 0);
+    lv_label_set_text(test_label, "\xEE\x98\x83"); // U+E603
+    lv_obj_align(test_label, LV_ALIGN_CENTER, 0, 40);
 
     ESP_LOGI(TAG, "Test UI created successfully");
 }
