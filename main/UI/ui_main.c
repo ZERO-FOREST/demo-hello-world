@@ -61,7 +61,7 @@ static void time_update_timer_cb(lv_timer_t* timer) {
             ESP_LOGD("UI_MAIN", "Time updated: %s", time_str);
         }
     }
-    
+
     // 同时更新WiFi状态显示
     ui_main_update_wifi_display();
 }
@@ -84,13 +84,13 @@ void ui_main_update_battery_display(void) {
     if (background_manager_is_battery_changed()) {
         char battery_str[32];
         background_battery_info_t battery_info;
-        
+
         if (background_manager_get_battery_str(battery_str, sizeof(battery_str)) == ESP_OK &&
             background_manager_get_battery(&battery_info) == ESP_OK) {
-            
+
             // 更新文字
             lv_label_set_text(g_battery_label, battery_str);
-            
+
             // 根据电量设置颜色
             if (battery_info.percentage <= 30) {
                 // 30%以下显示红色
@@ -99,11 +99,11 @@ void ui_main_update_battery_display(void) {
                 // 30%以上显示黑色
                 lv_obj_set_style_text_color(g_battery_label, lv_color_hex(0x000000), 0);
             }
-            
+
             // 标记已显示
             background_manager_mark_battery_displayed();
-            ESP_LOGD("UI_MAIN", "Battery updated: %s, color: %s", 
-                     battery_str, battery_info.percentage <= 30 ? "red" : "black");
+            ESP_LOGD("UI_MAIN", "Battery updated: %s, color: %s", battery_str,
+                     battery_info.percentage <= 30 ? "red" : "black");
         }
     }
 }
@@ -125,24 +125,24 @@ void ui_main_update_wifi_display(void) {
     // 获取WiFi连接状态
     wifi_manager_info_t wifi_info = wifi_manager_get_info();
     bool wifi_connected = (wifi_info.state == WIFI_STATE_CONNECTED);
-    
+
     // 静态变量记录上一次的连接状态
     static bool last_wifi_connected = false;
-    
+
     // 根据连接状态显示或隐藏WiFi符号
     if (wifi_connected) {
         lv_obj_clear_flag(g_wifi_label, LV_OBJ_FLAG_HIDDEN);
         ESP_LOGD("UI_MAIN", "WiFi connected, showing symbol");
-        
+
         // 检查是否是第一次连接成功（从断开状态变为连接状态）
         if (!last_wifi_connected) {
             ESP_LOGI("UI_MAIN", "First WiFi connection detected, triggering time sync");
-            
+
             // 触发一次时间同步
             char time_str[32];
             if (wifi_manager_get_time_str(time_str, sizeof(time_str))) {
                 ESP_LOGI("UI_MAIN", "Time sync from WiFi: %s", time_str);
-                
+
                 // 更新UI显示
                 if (g_time_label && lv_obj_is_valid(g_time_label)) {
                     lv_label_set_text(g_time_label, time_str);
@@ -157,7 +157,7 @@ void ui_main_update_wifi_display(void) {
         lv_obj_add_flag(g_wifi_label, LV_OBJ_FLAG_HIDDEN);
         ESP_LOGD("UI_MAIN", "WiFi disconnected, hiding symbol");
     }
-    
+
     // 更新上一次的连接状态
     last_wifi_connected = wifi_connected;
 }
@@ -332,7 +332,7 @@ void ui_main_menu_create(lv_obj_t* parent) {
     lv_obj_set_style_text_color(g_wifi_label, lv_color_hex(0x000000), 0); // 黑色
     lv_label_set_text(g_wifi_label, LV_SYMBOL_WIFI);
     lv_obj_align(g_wifi_label, LV_ALIGN_RIGHT_MID, -45, 0); // 在电池左边
-    lv_obj_add_flag(g_wifi_label, LV_OBJ_FLAG_HIDDEN); // 初始隐藏
+    lv_obj_add_flag(g_wifi_label, LV_OBJ_FLAG_HIDDEN);      // 初始隐藏
 
     // ==== 电池图标（外壳 + 小凸起 + 电量文字） ====
     // 电池外壳
@@ -432,14 +432,14 @@ void ui_main_menu_create(lv_obj_t* parent) {
     char time_str[32];
     char battery_str[32];
     background_battery_info_t battery_info;
-    
+
     if (background_manager_get_time_str(time_str, sizeof(time_str)) == ESP_OK) {
         lv_label_set_text(g_time_label, time_str);
     }
     if (background_manager_get_battery_str(battery_str, sizeof(battery_str)) == ESP_OK &&
         background_manager_get_battery(&battery_info) == ESP_OK) {
         lv_label_set_text(g_battery_label, battery_str);
-        
+
         // 根据电量设置初始颜色
         if (battery_info.percentage <= 30) {
             lv_obj_set_style_text_color(g_battery_label, lv_color_hex(0xFF0000), 0);
@@ -447,7 +447,7 @@ void ui_main_menu_create(lv_obj_t* parent) {
             lv_obj_set_style_text_color(g_battery_label, lv_color_hex(0x000000), 0);
         }
     }
-    
+
     // 初始化WiFi状态显示
     ui_main_update_wifi_display();
 
