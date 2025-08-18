@@ -1,3 +1,11 @@
+'''
+Author: tidycraze 2595256284@qq.com
+Date: 2025-08-13 09:23:25
+LastEditors: tidycraze 2595256284@qq.com
+LastEditTime: 2025-08-18 15:30:15
+FilePath: \demo-hello-world\others\py_test_demo\test_serial_display.py
+Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
+'''
 #!/usr/bin/env python3
 """
 串口显示功能测试脚本
@@ -37,7 +45,7 @@ def test_serial_display(host, port):
             print(f"发送消息 {i}: {message}")
             data = (message + "\n").encode('utf-8')
             sock.send(data)
-            time.sleep(1)  # 等待1秒
+            time.sleep(0.01)  # 等待1秒
         
         print("所有测试消息已发送")
         

@@ -37,7 +37,6 @@ static lv_obj_t* g_text_area = NULL;
 static lv_obj_t* g_status_label = NULL;
 static lv_obj_t* g_back_btn = NULL;
 static lv_obj_t* g_clear_btn = NULL;
-static lv_obj_t* g_scroll_area = NULL;
 
 // 数据缓冲区 - 使用PSRAM
 static display_line_t* g_lines = NULL;
@@ -195,8 +194,9 @@ static void update_display(void) {
     // 更新状态信息
     if (g_status_label && lv_obj_is_valid(g_status_label)) {
         char status_text[128];
-        snprintf(status_text, sizeof(status_text), "Lines: %d/%d | Auto: %s", g_line_count, MAX_LINES,
-                 g_auto_scroll ? "ON" : "OFF");
+        bool tcp_running = serial_display_is_running();
+        snprintf(status_text, sizeof(status_text), "TCP:8080 %s | Lines: %d/%d", tcp_running ? "ON" : "OFF",
+                 g_line_count, MAX_LINES);
         lv_label_set_text(g_status_label, status_text);
     }
 }
@@ -220,10 +220,20 @@ static void clear_display(void) {
 // 显示任务 - 处理消息队列
 static void display_task(void* pvParameters) {
     display_msg_t msg;
+    TickType_t last_status_update = 0;
+    const TickType_t status_update_interval = pdMS_TO_TICKS(2000); // 每2秒更新一次状态
 
     ESP_LOGI(TAG, "Display task started");
 
     while (g_display_running && g_display_queue) {
+        TickType_t current_time = xTaskGetTickCount();
+
+        // 定期更新状态显示
+        if (current_time - last_status_update >= status_update_interval) {
+            update_display();
+            last_status_update = current_time;
+        }
+
         if (xQueueReceive(g_display_queue, &msg, pdMS_TO_TICKS(100)) == pdTRUE) {
             switch (msg.type) {
             case MSG_NEW_DATA:
@@ -257,6 +267,10 @@ static void display_task(void* pvParameters) {
 static void back_btn_event_cb(lv_event_t* e) {
     lv_obj_t* screen = lv_scr_act();
     if (screen) {
+        // 停止TCP服务器
+        serial_display_stop();
+        ESP_LOGI(TAG, "Serial display TCP server stopped on back button");
+
         // 先停止显示任务
         g_display_running = false;
         if (g_display_task_handle) {
@@ -284,7 +298,6 @@ static void back_btn_event_cb(lv_event_t* e) {
         g_status_label = NULL;
         g_back_btn = NULL;
         g_clear_btn = NULL;
-        g_scroll_area = NULL;
 
         lv_obj_clean(screen);
         ui_main_menu_create(screen);
@@ -373,10 +386,26 @@ void ui_serial_display_create(lv_obj_t* parent) {
         ui_serial_display_destroy();
     }
 
+    // 初始化串口显示模块
+    esp_err_t ret = serial_display_init();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize serial display module");
+        return;
+    }
+
+    // 启动TCP服务器，监听端口8080
+    if (!serial_display_start(8080)) {
+        ESP_LOGE(TAG, "Failed to start serial display TCP server");
+        return;
+    }
+
+    ESP_LOGI(TAG, "Serial display TCP server started on port 8080");
+
     // 初始化PSRAM缓冲区
-    esp_err_t ret = init_psram_buffer();
+    ret = init_psram_buffer();
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize PSRAM buffer");
+        serial_display_stop();
         return;
     }
 
@@ -407,28 +436,22 @@ void ui_serial_display_create(lv_obj_t* parent) {
     ui_create_page_content_area(page_parent_container, &content_container);
 
     // 4. 在content_container中添加页面内容
-    // 创建状态标签
+    // 创建状态标签 - 简化显示，移除auto信息
     g_status_label = lv_label_create(content_container);
-    lv_obj_align(g_status_label, LV_ALIGN_TOP_RIGHT, -10, 10);
-    lv_obj_set_style_text_font(g_status_label, &lv_font_montserrat_14, 0);
+    lv_obj_align(g_status_label, LV_ALIGN_TOP_RIGHT, -5, 2);
+    lv_obj_set_style_text_font(g_status_label, &lv_font_montserrat_12, 0); // 使用更小的字体
     lv_obj_set_style_text_color(g_status_label, theme_get_color(theme_get_current_theme()->colors.text_secondary), 0);
-    lv_label_set_text(g_status_label, "Lines: 0/1024 | Auto: ON");
+    lv_label_set_text(g_status_label, "TCP:8080 | Lines: 0/1024");
 
-    // 创建滚动区域
-    g_scroll_area = lv_obj_create(content_container);
-    lv_obj_set_size(g_scroll_area, 220, 180);
-    lv_obj_align(g_scroll_area, LV_ALIGN_CENTER, 0, 0);
-    lv_obj_set_style_border_width(g_scroll_area, 2, 0);
-    lv_obj_set_style_border_color(g_scroll_area, theme_get_color(theme_get_current_theme()->colors.border), 0);
-    lv_obj_set_style_radius(g_scroll_area, 8, 0);
-    lv_obj_set_style_pad_all(g_scroll_area, 5, 0);
-    lv_obj_set_style_bg_color(g_scroll_area, theme_get_color(theme_get_current_theme()->colors.background), 0);
-
-    // 创建文本区域
-    g_text_area = lv_textarea_create(g_scroll_area);
-    lv_obj_set_size(g_text_area, 210, 170);
-    lv_obj_align(g_text_area, LV_ALIGN_CENTER, 0, 0);
-    lv_obj_set_style_text_font(g_text_area, &lv_font_montserrat_14, 0);
+    // 创建文本区域 - 直接占满整个内容区域
+    g_text_area = lv_textarea_create(content_container);
+    lv_obj_set_size(g_text_area, 240, 290);            // 占满整个内容区域
+    lv_obj_align(g_text_area, LV_ALIGN_CENTER, 0, 10); // 向下偏移，为状态标签留出空间
+    lv_obj_set_style_border_width(g_text_area, 0, 0);  // 移除边框
+    lv_obj_set_style_radius(g_text_area, 0, 0);        // 移除圆角
+    lv_obj_set_style_pad_all(g_text_area, 5, 0);       // 添加少量内边距
+    lv_obj_set_style_bg_color(g_text_area, theme_get_color(theme_get_current_theme()->colors.surface), 0);
+    lv_obj_set_style_text_font(g_text_area, &lv_font_montserrat_12, 0); // 使用更小的字体
     lv_obj_set_style_text_color(g_text_area, theme_get_color(theme_get_current_theme()->colors.text_primary), 0);
     lv_obj_set_style_bg_color(g_text_area, theme_get_color(theme_get_current_theme()->colors.surface), 0);
     lv_textarea_set_placeholder_text(g_text_area, "Waiting for data...");
@@ -442,23 +465,15 @@ void ui_serial_display_create(lv_obj_t* parent) {
     // 添加滚动事件
     lv_obj_add_event_cb(g_text_area, scroll_event_cb, LV_EVENT_SCROLL, NULL);
 
-    // 5. 创建底部按钮容器
-    lv_obj_t* btn_cont = lv_obj_create(page_parent_container);
-    lv_obj_set_size(btn_cont, 240, 50);
-    lv_obj_align(btn_cont, LV_ALIGN_BOTTOM_MID, 0, -5);
-    lv_obj_set_style_bg_opa(btn_cont, LV_OPA_0, 0);
-    lv_obj_set_style_border_width(btn_cont, 0, 0);
-    lv_obj_set_style_pad_all(btn_cont, 0, 0);
-
-    // 创建清空按钮
-    g_clear_btn = lv_btn_create(btn_cont);
-    lv_obj_set_size(g_clear_btn, 100, 40);
-    lv_obj_align(g_clear_btn, LV_ALIGN_CENTER, 0, 0);
+    // 5. 创建清空按钮 - 直接放在内容区域右下角
+    g_clear_btn = lv_btn_create(content_container);
+    lv_obj_set_size(g_clear_btn, 50, 20);                     // 很小的按钮
+    lv_obj_align(g_clear_btn, LV_ALIGN_BOTTOM_RIGHT, -5, -5); // 右下角
     theme_apply_to_button(g_clear_btn, true);
     lv_obj_add_event_cb(g_clear_btn, clear_btn_event_cb, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t* clear_label = lv_label_create(g_clear_btn);
-    lv_label_set_text(clear_label, "Clear");
+    lv_label_set_text(clear_label, "C");
     lv_obj_center(clear_label);
 
     // 初始化数据
@@ -480,14 +495,23 @@ void ui_serial_display_create(lv_obj_t* parent) {
         vQueueDelete(g_display_queue);
         g_display_queue = NULL;
         cleanup_psram_buffer();
+        serial_display_stop();
         return;
     }
+
+    // 发送初始状态更新消息
+    display_msg_t status_msg = {.type = MSG_UPDATE_STATUS};
+    xQueueSend(g_display_queue, &status_msg, pdMS_TO_TICKS(100));
 
     ESP_LOGI(TAG, "Serial display UI created successfully");
 }
 
 // 销毁串口显示界面
 void ui_serial_display_destroy(void) {
+    // 停止TCP服务器
+    serial_display_stop();
+    ESP_LOGI(TAG, "Serial display TCP server stopped");
+
     // 停止显示任务
     g_display_running = false;
     if (g_display_task_handle) {
@@ -515,7 +539,6 @@ void ui_serial_display_destroy(void) {
     g_status_label = NULL;
     g_back_btn = NULL;
     g_clear_btn = NULL;
-    g_scroll_area = NULL;
 
     ESP_LOGI(TAG, "Serial display UI destroyed");
 }
