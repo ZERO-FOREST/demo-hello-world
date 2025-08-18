@@ -133,6 +133,7 @@ static lv_color_t morandi_button_colors[3];
 static lv_color_t dark_button_colors[3];
 static lv_color_t light_button_colors[3];
 static lv_color_t blue_button_colors[3];
+static lv_color_t green_button_colors[3];
 
 // 初始化按钮颜色数组
 static void init_button_colors() {
@@ -151,6 +152,10 @@ static void init_button_colors() {
     blue_button_colors[0] = lv_color_hex(0x1976D2);
     blue_button_colors[1] = lv_color_hex(0x42A5F5);
     blue_button_colors[2] = lv_color_hex(0xFFC107);
+
+    green_button_colors[0] = lv_color_hex(0x388E3C);
+    green_button_colors[1] = lv_color_hex(0x66BB6A);
+    green_button_colors[2] = lv_color_hex(0xFF6F00);
 }
 
 // 获取当前主题的按钮颜色数组
@@ -168,6 +173,9 @@ static const lv_color_t* get_current_button_colors(size_t* count) {
     } else if (theme == &blue_theme) {
         *count = sizeof(blue_button_colors) / sizeof(lv_color_t);
         return blue_button_colors;
+    } else if (theme == &green_theme) {
+        *count = sizeof(green_button_colors) / sizeof(lv_color_t);
+        return green_button_colors;
     }
     *count = 0;
     return NULL;

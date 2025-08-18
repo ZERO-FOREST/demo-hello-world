@@ -132,11 +132,18 @@ static void add_line(const char* text, time_t timestamp) {
 
 // 更新显示内容
 static void update_display(void) {
-    if (!g_text_area || !g_buffer_initialized || g_lines == NULL || !lv_obj_is_valid(g_text_area))
+    if (!g_text_area || !g_buffer_initialized || g_lines == NULL) {
         return;
+    }
+
+    // 检查LVGL对象是否有效
+    if (!lv_obj_is_valid(g_text_area)) {
+        ESP_LOGW(TAG, "Text area object is not valid");
+        return;
+    }
 
     // 构建显示文本
-    char display_text[8192] = ""; // 足够大的缓冲区
+    char display_text[4096] = ""; // 减小缓冲区大小
     int start_line = 0;
 
     if (g_auto_scroll) {
@@ -152,10 +159,34 @@ static void update_display(void) {
 
     int display_count = 0;
     for (int i = start_line; i < g_line_count && display_count < MAX_DISPLAY_LINES; i++) {
-        char line_text[512];
-        snprintf(line_text, sizeof(line_text), "%s %s\n", g_lines[i].timestamp, g_lines[i].text);
-        strcat(display_text, line_text);
-        display_count++;
+        char line_text[256]; // 减小行缓冲区大小
+        line_text[0] = '\0'; // 初始化缓冲区
+
+        // 安全地构建行文本
+        int written = 0;
+
+        // 添加时间戳
+        written += snprintf(line_text + written, sizeof(line_text) - written, "%s,", g_lines[i].timestamp);
+        if (written >= sizeof(line_text) - 1) {
+            continue; // 跳过这一行
+        }
+
+        // 添加文本内容（限制长度）
+        int remaining_space = sizeof(line_text) - written - 2; // -2 for "\n" and null terminator
+        if (remaining_space > 0) {
+            written +=
+                snprintf(line_text + written, sizeof(line_text) - written, "%.*s\n", remaining_space, g_lines[i].text);
+        } else {
+            // 只添加换行符
+            written += snprintf(line_text + written, sizeof(line_text) - written, "\n");
+        }
+
+        if (strlen(display_text) + strlen(line_text) < sizeof(display_text) - 1) {
+            strcat(display_text, line_text);
+            display_count++;
+        } else {
+            break; // 避免缓冲区溢出
+        }
     }
 
     // 更新文本区域
@@ -172,13 +203,14 @@ static void update_display(void) {
 
 // 清空显示
 static void clear_display(void) {
-    if (!g_buffer_initialized || g_lines == NULL)
+    if (!g_buffer_initialized || g_lines == NULL) {
         return;
+    }
 
     g_line_count = 0;
     g_current_index = 0;
     memset(g_lines, 0, MAX_LINES * sizeof(display_line_t));
-    
+
     // 只有在UI元素有效时才更新显示
     if (g_text_area && lv_obj_is_valid(g_text_area)) {
         update_display();
@@ -195,14 +227,14 @@ static void display_task(void* pvParameters) {
         if (xQueueReceive(g_display_queue, &msg, pdMS_TO_TICKS(100)) == pdTRUE) {
             switch (msg.type) {
             case MSG_NEW_DATA:
-                if (g_buffer_initialized) {
+                if (g_buffer_initialized && g_lines != NULL) {
                     add_line(msg.data, msg.timestamp);
                     update_display();
                 }
                 break;
 
             case MSG_CLEAR_DISPLAY:
-                if (g_buffer_initialized) {
+                if (g_buffer_initialized && g_lines != NULL) {
                     clear_display();
                 }
                 break;
@@ -228,7 +260,12 @@ static void back_btn_event_cb(lv_event_t* e) {
         // 先停止显示任务
         g_display_running = false;
         if (g_display_task_handle) {
-            vTaskDelay(pdMS_TO_TICKS(100));
+            // 等待任务结束
+            vTaskDelay(pdMS_TO_TICKS(200));
+            // 检查任务是否还在运行
+            if (eTaskGetState(g_display_task_handle) != eDeleted) {
+                vTaskDelete(g_display_task_handle);
+            }
             g_display_task_handle = NULL;
         }
 
@@ -330,6 +367,12 @@ void ui_serial_display_add_text(const char* text) {
 
 // 创建串口显示界面
 void ui_serial_display_create(lv_obj_t* parent) {
+    // 如果已经存在，先清理
+    if (g_display_running || g_display_queue || g_display_task_handle) {
+        ESP_LOGW(TAG, "Serial display already exists, cleaning up first");
+        ui_serial_display_destroy();
+    }
+
     // 初始化PSRAM缓冲区
     esp_err_t ret = init_psram_buffer();
     if (ret != ESP_OK) {
@@ -343,6 +386,9 @@ void ui_serial_display_create(lv_obj_t* parent) {
     // 1. 创建页面父级容器（统一管理整个页面）
     lv_obj_t* page_parent_container;
     ui_create_page_parent_container(parent, &page_parent_container);
+
+    // 设置全局屏幕变量
+    g_serial_display_screen = parent;
 
     // 2. 创建顶部栏容器（包含返回按钮和标题）
     lv_obj_t* top_bar_container;
@@ -419,7 +465,7 @@ void ui_serial_display_create(lv_obj_t* parent) {
     clear_display();
 
     // 创建消息队列
-    g_display_queue = xQueueCreate(50, sizeof(display_msg_t));
+    g_display_queue = xQueueCreate(10, sizeof(display_msg_t));
     if (!g_display_queue) {
         ESP_LOGE(TAG, "Failed to create display queue");
         cleanup_psram_buffer();
@@ -428,7 +474,7 @@ void ui_serial_display_create(lv_obj_t* parent) {
 
     // 启动显示任务
     g_display_running = true;
-    if (xTaskCreate(display_task, "display_task", 4096, NULL, 5, &g_display_task_handle) != pdPASS) {
+    if (xTaskCreatePinnedToCore(display_task, "ui_display_task", 8192, NULL, 3, &g_display_task_handle, 1) != pdPASS) {
         ESP_LOGE(TAG, "Failed to create display task");
         g_display_running = false;
         vQueueDelete(g_display_queue);
@@ -445,7 +491,12 @@ void ui_serial_display_destroy(void) {
     // 停止显示任务
     g_display_running = false;
     if (g_display_task_handle) {
-        vTaskDelay(pdMS_TO_TICKS(100));
+        // 等待任务结束
+        vTaskDelay(pdMS_TO_TICKS(200));
+        // 检查任务是否还在运行
+        if (eTaskGetState(g_display_task_handle) != eDeleted) {
+            vTaskDelete(g_display_task_handle);
+        }
         g_display_task_handle = NULL;
     }
 

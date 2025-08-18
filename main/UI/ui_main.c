@@ -19,14 +19,6 @@
 #include "wifi_image_transfer.h"
 #include "wifi_manager.h"
 
-// 获取莫兰迪颜色的辅助函数
-static lv_color_t get_morandi_color(int index) {
-    if (index >= 0 && index < MORANDI_COLORS_COUNT) {
-        return lv_color_hex(morandi_colors[index].color_hex);
-    }
-    return lv_color_hex(morandi_colors[4].color_hex); // 默认返回背景色
-}
-
 // 全局变量保存时间标签和电池标签
 static lv_obj_t* g_time_label = NULL;
 static lv_obj_t* g_battery_label = NULL;

@@ -183,6 +183,7 @@ static void serial_task(void* pvParameters) {
 // TCP服务器任务
 static void tcp_server_task(void* pvParameters) {
     uint16_t port = *(uint16_t*)pvParameters;
+    uint16_t* port_param = (uint16_t*)pvParameters;
     char addr_str[128];
     int addr_family = AF_INET;
     int ip_protocol = IPPROTO_IP;
@@ -271,6 +272,7 @@ static void tcp_server_task(void* pvParameters) {
 CLEAN_UP:
     close(listen_sock);
     s_server_running = false;
+    free(port_param);
     vTaskDelete(NULL);
 }
 
@@ -312,20 +314,31 @@ bool serial_display_start(uint16_t port) {
         return true;
     }
 
+    // 分配端口参数内存
+    uint16_t* port_param = malloc(sizeof(uint16_t));
+    if (port_param == NULL) {
+        ESP_LOGE(TAG, "Failed to allocate port parameter");
+        return false;
+    }
+    *port_param = port;
+
     // 启动串口任务
     s_serial_running = true;
-    if (xTaskCreate(serial_task, "serial_task", 4096, NULL, 5, &s_serial_task_handle) != pdPASS) {
+    if (xTaskCreatePinnedToCore(serial_task, "serial_task", 4096, NULL, 4, &s_serial_task_handle, 1) != pdPASS) {
         ESP_LOGE(TAG, "Failed to create serial task");
         s_serial_running = false;
+        free(port_param);
         return false;
     }
 
     // 启动TCP服务器任务
-    if (xTaskCreate(tcp_server_task, "tcp_server", 4096, &port, 5, &s_tcp_server_task_handle) != pdPASS) {
+    if (xTaskCreatePinnedToCore(tcp_server_task, "tcp_server", 4096, port_param, 4, &s_tcp_server_task_handle, 1) !=
+        pdPASS) {
         ESP_LOGE(TAG, "Failed to create TCP server task");
         s_serial_running = false;
         vTaskDelete(s_serial_task_handle);
         s_serial_task_handle = NULL;
+        free(port_param);
         return false;
     }
 

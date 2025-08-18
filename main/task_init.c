@@ -342,10 +342,10 @@ esp_err_t init_all_tasks(void) {
     }
 
     // 启动 I2S TDM 演示（正弦波输出）
-    ret = i2s_tdm_demo_init();
-    if (ret != ESP_OK) {
-        ESP_LOGW(TAG, "I2S TDM demo init failed: %s", esp_err_to_name(ret));
-    }
+    // ret = i2s_tdm_demo_init();
+    // if (ret != ESP_OK) {
+    //     ESP_LOGW(TAG, "I2S TDM demo init failed: %s", esp_err_to_name(ret));
+    // }
 
     ESP_LOGI(TAG, "All tasks initialized successfully");
     return ESP_OK;
