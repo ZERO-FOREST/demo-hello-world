@@ -11,9 +11,9 @@
 extern "C" {
 #endif
 
-#include <stdint.h>
-#include <stdbool.h>
 #include "esp_err.h" // 添加缺失的头文件
+#include <stdbool.h>
+#include <stdint.h>
 
 // WiFi状态枚举
 typedef enum {
@@ -77,11 +77,24 @@ void wifi_manager_sync_time(void);
  * @param max_len 缓冲区最大长度
  * @return 是否成功获取时间
  */
-bool wifi_manager_get_time_str(char *time_str, size_t max_len);
+bool wifi_manager_get_time_str(char* time_str, size_t max_len);
 
+/**
+ * @brief 添加WiFi到列表
+ * @param ssid WiFi名称
+ * @param password WiFi密码
+ * @return void
+ */
+static void add_wifi_to_list(const char* ssid, const char* password);
+
+/**
+ * @brief 从NVS加载WiFi列表
+ *
+ */
+static void load_wifi_list_from_nvs();
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif // WIFI_MANAGER_H 
+#endif // WIFI_MANAGER_H

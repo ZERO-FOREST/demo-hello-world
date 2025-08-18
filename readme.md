@@ -35,6 +35,12 @@
    ```
 3. 连接开发板，打开串口工具查看输出
 
+### 更新计划
+
+1. 后续支持ELRS协议，支持串行多通道PWM传输
+2. 支持接收端4通道PWM直出
+3. 接收端将采用PCIE接口设计，目前想法为pcie x1 接口
+
 ## 参考文档
 
 - [ESP-IDF 官方文档](https://docs.espressif.com/projects/esp-idf/zh_CN/latest/esp32s3/index.html)
