@@ -22,6 +22,7 @@
 
 // --- LVGL 对象 ---
 static lv_obj_t* canvas;
+static lv_obj_t* next_canvas; // 下一个方块显示画布
 static lv_obj_t* score_label;
 static lv_obj_t* level_label;
 static lv_timer_t* game_tick_timer = NULL;
@@ -39,6 +40,19 @@ typedef struct {
     uint8_t shape[4][4];
     lv_color_t color;
 } Tetromino;
+
+// 当前下落的方块
+static struct {
+    int x, y;
+    const Tetromino* p_tetromino;
+    uint8_t shape[4][4];
+} current_piece;
+
+// 下一个方块
+static struct {
+    const Tetromino* p_tetromino;
+    uint8_t shape[4][4];
+} next_piece;
 
 // --- NVS (非易失性存储) 函数 ---
 
@@ -114,16 +128,10 @@ static const Tetromino tetrominos[] = {
      .color = LV_COLOR_MAKE(0xFF, 0x00, 0x00)}, // Z (红色)
 };
 
-// 当前下落的方块
-static struct {
-    int x, y;
-    const Tetromino* p_tetromino;
-    uint8_t shape[4][4];
-} current_piece;
-
 // --- 函数声明 ---
 static void game_init(void);
 static void draw_board(void);
+static void draw_next_piece(void);
 static void game_tick(lv_timer_t* timer);
 static void input_handler_cb(lv_timer_t* timer);
 
@@ -152,12 +160,27 @@ static bool check_collision(int new_x, int new_y, uint8_t piece_shape[4][4]) {
     return false;
 }
 
+// 生成下一个方块
+static void generate_next_piece() {
+    next_piece.p_tetromino = &tetrominos[esp_random() % (sizeof(tetrominos) / sizeof(Tetromino))];
+    memcpy(next_piece.shape, next_piece.p_tetromino->shape, 16); // 4x4=16
+}
+
 // 生成新方块
 static void spawn_new_piece() {
-    current_piece.p_tetromino = &tetrominos[esp_random() % (sizeof(tetrominos) / sizeof(Tetromino))];
-    memcpy(current_piece.shape, current_piece.p_tetromino->shape, 16); // 4x4=16
+    // 如果还没有下一个方块，先生成一个
+    if (next_piece.p_tetromino == NULL) {
+        generate_next_piece();
+    }
+
+    // 将下一个方块设为当前方块
+    current_piece.p_tetromino = next_piece.p_tetromino;
+    memcpy(current_piece.shape, next_piece.shape, 16);
     current_piece.x = BOARD_WIDTH / 2 - 2;
     current_piece.y = 0;
+
+    // 生成新的下一个方块
+    generate_next_piece();
 
     // 如果新生成的方块直接就碰撞了，说明游戏结束
     if (check_collision(current_piece.x, current_piece.y, current_piece.shape)) {
@@ -236,6 +259,36 @@ static void draw_block(int x, int y, lv_color_t color) {
     lv_canvas_draw_rect(canvas, x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE, &rect_dsc);
 }
 
+// 绘制下一个方块
+static void draw_next_piece() {
+    if (!next_canvas || !next_piece.p_tetromino)
+        return;
+
+    // 用背景色清空画布
+    lv_canvas_fill_bg(next_canvas, lv_color_hex(0xcccccc), LV_OPA_COVER);
+
+    // 计算下一个方块在画布中的居中位置
+    int offset_x = 0; // 4x4方块在4x4画布中的偏移
+    int offset_y = 0;
+
+    // 绘制下一个方块
+    for (int y = 0; y < 4; y++) {
+        for (int x = 0; x < 4; x++) {
+            if (next_piece.shape[y][x]) {
+                lv_draw_rect_dsc_t rect_dsc;
+                lv_draw_rect_dsc_init(&rect_dsc);
+                rect_dsc.bg_color = next_piece.p_tetromino->color;
+                rect_dsc.radius = 2;
+                rect_dsc.border_width = BORDER_WIDTH;
+                rect_dsc.border_color = lv_color_black();
+
+                lv_canvas_draw_rect(next_canvas, (offset_x + x) * BLOCK_SIZE, (offset_y + y) * BLOCK_SIZE, BLOCK_SIZE,
+                                    BLOCK_SIZE, &rect_dsc);
+            }
+        }
+    }
+}
+
 // 绘制整个游戏区域
 static void draw_board() {
     // 用背景色清空画布
@@ -260,6 +313,9 @@ static void draw_board() {
             }
         }
     }
+
+    // 更新下一个方块显示
+    draw_next_piece();
 }
 
 // --- 玩家动作 ---
@@ -357,6 +413,7 @@ static void input_handler_cb(lv_timer_t* timer) {
     static uint32_t last_key_time = 0;
     static bool is_down_pressed = false;
     static uint32_t down_press_start_time = 0;
+    static uint32_t last_soft_drop_time = 0;
     static bool hard_drop_triggered = false;
 
     key_dir_t keys = key_scan();
@@ -383,12 +440,22 @@ static void input_handler_cb(lv_timer_t* timer) {
             is_down_pressed = true;
             hard_drop_triggered = false;
             down_press_start_time = lv_tick_get();
+            last_soft_drop_time = lv_tick_get();
             tetris_soft_drop(); // 立即软着陆
         } else {
-            // 按键被按住
-            if (!hard_drop_triggered && lv_tick_elaps(down_press_start_time) > 500) { // 500ms 触发硬着陆
+            // 按键被按住 - 实现加速下落
+            uint32_t current_time = lv_tick_get();
+            uint32_t press_duration = lv_tick_elaps(down_press_start_time);
+
+            if (!hard_drop_triggered && press_duration > 800) { // 800ms 触发硬着陆
                 tetris_hard_drop();
-                hard_drop_triggered = true; // 确保每次长按只触发一次
+                hard_drop_triggered = true;    // 确保每次长按只触发一次
+            } else if (press_duration > 200) { // 200ms后开始加速下落
+                // 加速下落：每100ms下落一格
+                if (lv_tick_elaps(last_soft_drop_time) > 100) {
+                    tetris_soft_drop();
+                    last_soft_drop_time = current_time;
+                }
             }
         }
     } else {
@@ -403,6 +470,9 @@ static void game_init(void) {
     game_over = false;
     score = 0;
     total_lines_cleared = 0;
+
+    // 初始化下一个方块
+    next_piece.p_tetromino = NULL;
 
     if (score_label) {
         lv_label_set_text_fmt(score_label, "Score:\n%d", score);
@@ -435,14 +505,21 @@ static void back_to_tetris_menu_from_scoreboard(lv_event_t* e) {
 static void ui_scoreboard_create(lv_obj_t* parent) {
     lv_obj_clean(parent);
 
+    // 设置父容器为不可滚动
+    lv_obj_set_scroll_dir(parent, LV_DIR_NONE);
+
     lv_obj_t* cont = lv_obj_create(parent);
     lv_obj_center(cont);
+    lv_obj_set_size(cont, 180, 240); // 设置容器大小，确保能容纳所有内容
     lv_obj_set_flex_flow(cont, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(cont, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_all(cont, 20, 0);
+    lv_obj_set_style_pad_row(cont, 10, 0);
 
     lv_obj_t* title = lv_label_create(cont);
     lv_label_set_text(title, "High Scores");
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_24, 0); // 保持24号字体
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_20, 0); // 增大字体
+    lv_obj_set_style_pad_bottom(title, 20, 0);
 
     // 显示分数
     for (int i = 0; i < NUM_HIGH_SCORES; i++) {
@@ -452,12 +529,16 @@ static void ui_scoreboard_create(lv_obj_t* parent) {
         } else {
             lv_label_set_text_fmt(score_entry, "%d. ---", i + 1);
         }
-        lv_obj_set_style_text_font(score_entry, &lv_font_montserrat_18, 0);
+        lv_obj_set_style_text_font(score_entry, &lv_font_montserrat_16, 0); // 增大字体
+        lv_obj_set_style_pad_bottom(score_entry, 5, 0);
     }
 
     // 返回按钮
     lv_obj_t* btn = lv_btn_create(cont);
     lv_obj_add_event_cb(btn, back_to_tetris_menu_from_scoreboard, LV_EVENT_CLICKED, parent);
+    lv_obj_set_size(btn, 150, 45);                              // 设置按钮大小
+    lv_obj_set_style_text_font(btn, &lv_font_montserrat_14, 0); // 设置按钮字体
+    lv_obj_set_style_pad_top(btn, 20, 0);
     lv_obj_t* label = lv_label_create(btn);
     lv_label_set_text(label, LV_SYMBOL_LEFT " Back");
     lv_obj_center(label);
@@ -481,6 +562,9 @@ static void back_to_tetris_menu(lv_event_t* e) {
         input_timer = NULL;
     }
 
+    // 清理游戏状态
+    next_piece.p_tetromino = NULL;
+
     lv_obj_t* parent = lv_event_get_user_data(e);
     if (parent) {
         lv_obj_clean(parent);
@@ -496,38 +580,59 @@ static void start_game_cb(lv_event_t* e) {
     // 为画布创建缓冲区 (非常重要，必须是 static 或全局)
     static lv_color_t cbuf[LV_CANVAS_BUF_SIZE_TRUE_COLOR(BOARD_WIDTH * BLOCK_SIZE, BOARD_HEIGHT * BLOCK_SIZE)];
 
+    // 设置父容器为不可滚动
+    lv_obj_set_scroll_dir(parent, LV_DIR_NONE);
+
     // 创建画布用于游戏区域
     canvas = lv_canvas_create(parent);
     lv_canvas_set_buffer(canvas, cbuf, BOARD_WIDTH * BLOCK_SIZE, BOARD_HEIGHT * BLOCK_SIZE, LV_IMG_CF_TRUE_COLOR);
-    lv_obj_align(canvas, LV_ALIGN_LEFT_MID, 5, 0);
+    lv_obj_align(canvas, LV_ALIGN_LEFT_MID, 10, 0);
 
     // --- 右侧控制/信息面板 ---
     lv_obj_t* panel = lv_obj_create(parent);
-    lv_obj_set_size(panel, 100, BOARD_HEIGHT * BLOCK_SIZE);
+    lv_obj_set_size(panel, 90, BOARD_HEIGHT * BLOCK_SIZE);
     lv_obj_align_to(panel, canvas, LV_ALIGN_OUT_RIGHT_MID, 5, 0);
     lv_obj_set_flex_flow(panel, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_flex_align(panel, LV_FLEX_ALIGN_SPACE_AROUND, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_flex_align(panel, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_all(panel, 5, 0);
 
     // 标题
     lv_obj_t* title = lv_label_create(panel);
     lv_label_set_text(title, "Tetris");
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_24, 0); // 保持24号字体
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_16, 0); // 减小字体
+    lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, 0);
 
     // 分数标签
     score_label = lv_label_create(panel);
     lv_label_set_text_fmt(score_label, "Score:\n%d", score);
     lv_obj_set_style_text_align(score_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_font(score_label, &lv_font_montserrat_12, 0); // 减小字体
 
     // 等级标签
     level_label = lv_label_create(panel);
     lv_label_set_text_fmt(level_label, "Level:\n%d", 1);
     lv_obj_set_style_text_align(level_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_font(level_label, &lv_font_montserrat_12, 0); // 减小字体
+
+    // 下一个方块标签
+    lv_obj_t* next_label = lv_label_create(panel);
+    lv_label_set_text(next_label, "Next:");
+    lv_obj_set_style_text_align(next_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_font(next_label, &lv_font_montserrat_12, 0); // 减小字体
+
+    // 下一个方块显示画布 - 使用更小的尺寸
+    static lv_color_t next_cbuf[LV_CANVAS_BUF_SIZE_TRUE_COLOR(4 * BLOCK_SIZE, 4 * BLOCK_SIZE)];
+    next_canvas = lv_canvas_create(panel);
+    lv_canvas_set_buffer(next_canvas, next_cbuf, 4 * BLOCK_SIZE, 4 * BLOCK_SIZE, LV_IMG_CF_TRUE_COLOR);
+    lv_obj_set_size(next_canvas, 4 * BLOCK_SIZE, 4 * BLOCK_SIZE);
 
     // 返回按钮 (返回到俄罗斯方块菜单)
     lv_obj_t* btn = lv_btn_create(panel);
     lv_obj_add_event_cb(btn, back_to_tetris_menu, LV_EVENT_CLICKED, parent);
+    lv_obj_set_size(btn, 70, 30); // 设置按钮大小
     lv_obj_t* btn_label = lv_label_create(btn);
     lv_label_set_text(btn_label, LV_SYMBOL_LEFT " Back");
+    lv_obj_set_style_text_font(btn_label, &lv_font_montserrat_14, 0); // 减小字体
     lv_obj_center(btn_label);
 
     // --- 启动游戏 ---
@@ -556,6 +661,9 @@ static void ui_tetris_menu_create(lv_obj_t* parent) {
     // 应用当前主题到屏幕
     theme_apply_to_screen(parent);
 
+    // 设置父容器为不可滚动
+    lv_obj_set_scroll_dir(parent, LV_DIR_NONE);
+
     // 1. 创建页面父级容器（统一管理整个页面）
     lv_obj_t* page_parent_container;
     ui_create_page_parent_container(parent, &page_parent_container);
@@ -578,16 +686,20 @@ static void ui_tetris_menu_create(lv_obj_t* parent) {
 
     // 4. 在content_container中添加页面内容
     // 容器和布局
-    lv_obj_t* cont = lv_obj_create(content_container);
+    lv_obj_t* cont = content_container;
     lv_obj_align(cont, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_set_size(cont, 180, 240); // 设置容器大小，确保能容纳所有按钮
     lv_obj_set_flex_flow(cont, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(cont, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_all(cont, 20, 0);
+    lv_obj_set_style_pad_row(cont, 15, 0);
 
     // 标题
     lv_obj_t* title = lv_label_create(cont);
     lv_label_set_text(title, "Tetris");
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_24, 0); // 保持24号字体
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_24, 0); // 增大字体
     theme_apply_to_label(title, true);
+    lv_obj_set_style_pad_bottom(title, 30, 0);
 
     // 菜单按钮
     lv_obj_t* btn;
@@ -597,6 +709,8 @@ static void ui_tetris_menu_create(lv_obj_t* parent) {
     btn = lv_btn_create(cont);
     lv_obj_add_event_cb(btn, start_game_cb, LV_EVENT_CLICKED, parent);
     theme_apply_to_button(btn, true);
+    lv_obj_set_size(btn, 140, 30);                              // 设置按钮大小
+    lv_obj_set_style_text_font(btn, &lv_font_montserrat_16, 0); // 设置按钮字体
     label = lv_label_create(btn);
     lv_label_set_text(label, "Start Game");
     lv_obj_center(label);
@@ -605,6 +719,8 @@ static void ui_tetris_menu_create(lv_obj_t* parent) {
     btn = lv_btn_create(cont);
     lv_obj_add_event_cb(btn, show_scoreboard_cb, LV_EVENT_CLICKED, parent);
     theme_apply_to_button(btn, true);
+    lv_obj_set_size(btn, 140, 30);                              // 设置按钮大小
+    lv_obj_set_style_text_font(btn, &lv_font_montserrat_16, 0); // 设置按钮字体
     label = lv_label_create(btn);
     lv_label_set_text(label, "Scoreboard");
     lv_obj_center(label);
@@ -612,6 +728,9 @@ static void ui_tetris_menu_create(lv_obj_t* parent) {
     // 帮助 (占位)
     btn = lv_btn_create(cont);
     theme_apply_to_button(btn, true);
+    lv_obj_set_size(btn, 140, 30);                              // 设置按钮大小
+    lv_obj_set_style_text_font(btn, &lv_font_montserrat_16, 0); // 设置按钮字体
+    lv_obj_set_style_bg_opa(btn, LV_OPA_50, 0);                 // 半透明表示禁用
     label = lv_label_create(btn);
     lv_label_set_text(label, "Help");
     lv_obj_center(label);
@@ -620,6 +739,9 @@ static void ui_tetris_menu_create(lv_obj_t* parent) {
     // 设置 (占位)
     btn = lv_btn_create(cont);
     theme_apply_to_button(btn, true);
+    lv_obj_set_size(btn, 140, 30);                              // 设置按钮大小
+    lv_obj_set_style_text_font(btn, &lv_font_montserrat_16, 0); // 设置按钮字体
+    lv_obj_set_style_bg_opa(btn, LV_OPA_50, 0);                 // 半透明表示禁用
     label = lv_label_create(btn);
     lv_label_set_text(label, "Settings");
     lv_obj_center(label);
@@ -629,6 +751,8 @@ static void ui_tetris_menu_create(lv_obj_t* parent) {
     btn = lv_btn_create(cont);
     lv_obj_add_event_cb(btn, back_to_app_menu, LV_EVENT_CLICKED, parent);
     theme_apply_to_button(btn, true);
+    lv_obj_set_size(btn, 140, 30);                              // 设置按钮大小
+    lv_obj_set_style_text_font(btn, &lv_font_montserrat_16, 0); // 设置按钮字体
     label = lv_label_create(btn);
     lv_label_set_text(label, "Exit");
     lv_obj_center(label);
