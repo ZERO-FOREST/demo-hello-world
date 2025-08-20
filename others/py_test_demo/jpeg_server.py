@@ -1,62 +1,140 @@
 import socket
-import os
-from tkinter import Tk, filedialog
+import cv2
+import numpy as np
+import time
 import sys
+from tkinter import Tk, filedialog
 
 ESP32_IP = '192.168.97.247'  # 修改为你的 ESP32 IP 地址
 ESP32_PORT = 6556           # ESP32 监听的端口
+MAX_IMAGE_SIZE_BYTES = 100 * 1024  # 100KB
+TARGET_RESOLUTION = (240, 240)
 
-def select_image_file():
+def select_video_file():
     """
-    弹出文件选择对话框，选择要发送的图片文件
-    返回图片文件路径
+    弹出文件选择对话框，选择要发送的视频文件
+    返回视频文件路径
     """
     root = Tk()
     root.withdraw()  # 隐藏主窗口
     file_path = filedialog.askopenfilename(
-        title="Select an image file",
-        filetypes=[("JPEG files", "*.jpg"), ("All files", "*.*")])
-    root.destroy()  # 释放资源，防止窗口阻塞
+        title="Select a video file",
+        filetypes=[("Video files", "*.mp4 *.avi *.mov"), ("All files", "*.*")])
+    root.destroy()
     return file_path
 
-def send_image_to_esp32():
+def resize_with_aspect_ratio(image, target_resolution):
     """
-    主动连接 ESP32 并发送图片，支持 Ctrl+C 退出
+    等比缩放图像，使其适应目标分辨率
     """
+    h, w = image.shape[:2]
+    target_w, target_h = target_resolution
+    ratio_w = target_w / w
+    ratio_h = target_h / h
+    ratio = min(ratio_w, ratio_h)
+    new_w = int(w * ratio)
+    new_h = int(h * ratio)
+    return cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_AREA)
+
+def send_video_to_esp32(video_source):
+    """
+    捕获视频，实时编码、压缩并发送到 ESP32
+    """
+    cap = cv2.VideoCapture(video_source)
+    if not cap.isOpened():
+        print(f"Error: Cannot open video source: {video_source}")
+        return
+
+    last_frame_time = time.time()
+    frame_count = 0
+
     try:
         while True:
-            # 选择图片文件
-            image_path = select_image_file()
-            if not image_path:
-                print("No image selected. Exiting.")
-                break
-
-            if not os.path.exists(image_path):
-                print(f"File not found: {image_path}")
-                continue
-
             print(f"Connecting to ESP32 {ESP32_IP}:{ESP32_PORT} ...")
             try:
-                # 创建 TCP socket 并连接 ESP32
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                     s.connect((ESP32_IP, ESP32_PORT))
-                    print(f"Connected. Sending image: {image_path}")
-                    
-                    # 读取图片数据
-                    with open(image_path, 'rb') as f:
-                        image_data = f.read()
-                    
-                    # 发送图片数据到 ESP32
-                    s.sendall(image_data)
-                    print(f"Sent {len(image_data)} bytes.")
-                    print("Image sent. Waiting for next image selection or exit.")
-        
+                    print("Connected. Starting video stream...")
+
+                    while True:
+                        ret, frame = cap.read()
+                        if not ret:
+                            # 如果是视频文件，循环播放
+                            if isinstance(video_source, str):
+                                print("Video ended. Restarting...")
+                                cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                                continue
+                            else:
+                                print("Error: Can't receive frame (stream end?). Exiting ...")
+                                break
+
+                        # 1. 等比缩放
+                        resized_frame = resize_with_aspect_ratio(frame, TARGET_RESOLUTION)
+
+                        # 2. JPEG 编码和压缩
+                        jpeg_quality = 95
+                        while True:
+                            encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), jpeg_quality]
+                            result, encimg = cv2.imencode('.jpg', resized_frame, encode_param)
+                            if not result:
+                                print("Error: Failed to encode frame.")
+                                break
+                            
+                            if len(encimg) <= MAX_IMAGE_SIZE_BYTES:
+                                break
+                            
+                            jpeg_quality -= 5
+                            if jpeg_quality < 10:
+                                print("Warning: Cannot compress image under 100KB")
+                                break
+                        
+                        if not result:
+                            continue
+
+                        # 3. 发送图像数据
+                        try:
+                            s.sendall(encimg.tobytes())
+                        except socket.error as e:
+                            print(f"Socket error: {e}. Reconnecting...")
+                            break # 发送失败，跳出内层循环以重新连接
+
+                        # 4. 计算并显示帧率
+                        frame_count += 1
+                        current_time = time.time()
+                        elapsed_time = current_time - last_frame_time
+                        if elapsed_time >= 1.0:
+                            fps = frame_count / elapsed_time
+                            print(f"FPS: {fps:.2f}, Frame size: {len(encimg)/1024:.2f} KB, Quality: {jpeg_quality}")
+                            frame_count = 0
+                            last_frame_time = current_time
+            
+            except ConnectionRefusedError:
+                print("Connection refused. Retrying in 5 seconds...")
+                time.sleep(5)
             except Exception as e:
-                print(f"Error: {e}")
-                break # 连接或发送过程中出错则退出
+                print(f"An error occurred: {e}")
+                break
+
     except KeyboardInterrupt:
         print("\n用户按下 Ctrl+C，程序已退出。")
+    finally:
+        cap.release()
+        print("Video source released.")
         sys.exit(0)
 
 if __name__ == "__main__":
-    send_image_to_esp32()
+    print("Select video source:")
+    print("1: Live Camera")
+    print("2: Local Video File")
+    choice = input("Enter your choice (1 or 2): ")
+
+    if choice == '1':
+        send_video_to_esp32(0)
+    elif choice == '2':
+        video_path = select_video_file()
+        if video_path:
+            send_video_to_esp32(video_path)
+        else:
+            print("No video file selected. Exiting.")
+    else:
+        print("Invalid choice. Exiting.")
