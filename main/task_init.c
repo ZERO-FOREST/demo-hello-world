@@ -13,6 +13,7 @@
 #include "power_management.h"
 #include "ui.h"
 #include "ws2812.h"
+#include "wifi_manager.h"
 #include <stdint.h>
 
 static const char* TAG = "TASK_INIT";
@@ -24,6 +25,7 @@ static TaskHandle_t s_ws2812_task_handle = NULL;
 static TaskHandle_t s_monitor_task_handle = NULL;
 static TaskHandle_t s_battery_task_handle = NULL;
 static TaskHandle_t s_joystick_task_handle = NULL;
+static TaskHandle_t s_wifi_task_handle = NULL;
 
 // WS2812演示任务
 static void ws2812_demo_task(void* pvParameters) {
@@ -123,6 +125,24 @@ static void system_monitor_task(void* pvParameters) {
 
         vTaskDelay(pdMS_TO_TICKS(10000)); // 10秒监控一次
     }
+}
+
+static void wifi_manager_task(void *pvParameters) {
+    ESP_LOGI(TAG, "WiFi Manager Task started on core %d", xPortGetCoreID());
+
+    esp_err_t ret = wifi_manager_init(NULL);
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "WiFi manager initialized");
+        ret = wifi_manager_start();
+        if (ret != ESP_OK) {
+            ESP_LOGW(TAG, "WiFi start failed: %s", esp_err_to_name(ret));
+        }
+    } else {
+        ESP_LOGW(TAG, "WiFi init failed: %s", esp_err_to_name(ret));
+    }
+
+    // Task can terminate after starting WiFi connection process
+    vTaskDelete(NULL);
 }
 
 // 电池监测任务（现在由后台管理模块处理，此任务主要用于日志记录）
@@ -277,6 +297,30 @@ esp_err_t init_system_monitor_task(void) {
     return ESP_OK;
 }
 
+esp_err_t init_wifi_manager_task(void) {
+    if (s_wifi_task_handle != NULL) {
+        ESP_LOGW(TAG, "WiFi manager task already running");
+        return ESP_OK;
+    }
+
+    BaseType_t result = xTaskCreatePinnedToCore(wifi_manager_task,       // 任务函数
+                                                "WiFi_Manager",          // 任务名称
+                                                TASK_STACK_MEDIUM,       // 堆栈大小 (4KB)
+                                                NULL,                    // 参数
+                                                TASK_PRIORITY_NORMAL,    // 普通优先级
+                                                &s_wifi_task_handle,     // 任务句柄
+                                                0                        // 绑定到Core 0
+    );
+
+    if (result != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create WiFi manager task");
+        return ESP_ERR_NO_MEM;
+    }
+
+    ESP_LOGI(TAG, "WiFi manager task created successfully on Core 0");
+    return ESP_OK;
+}
+
 esp_err_t init_battery_monitor_task(void) {
     if (s_battery_task_handle != NULL) {
         ESP_LOGW(TAG, "Battery monitor task already running");
@@ -327,17 +371,17 @@ esp_err_t init_all_tasks(void) {
         return ret;
     }
 
-    // 初始化系统监控任务
-    // ret = init_system_monitor_task();
-    // if (ret != ESP_OK) {
-    //     ESP_LOGE(TAG, "Failed to init system monitor task");
-    //     return ret;
-    // }
-
     // 初始化电池监测任务
     ret = init_battery_monitor_task();
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to init battery monitor task");
+        return ret;
+    }
+
+    // 初始化WiFi管理任务
+    ret = init_wifi_manager_task();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to init WiFi manager task");
         return ret;
     }
 
@@ -354,12 +398,6 @@ esp_err_t init_all_tasks(void) {
         ESP_LOGE(TAG, "Failed to init LVGL task");
         return ret;
     }
-
-    // 启动 I2S TDM 演示（正弦波输出）
-    // ret = i2s_tdm_demo_init();
-    // if (ret != ESP_OK) {
-    //     ESP_LOGW(TAG, "I2S TDM demo init failed: %s", esp_err_to_name(ret));
-    // }
 
     ESP_LOGI(TAG, "All tasks initialized successfully");
     return ESP_OK;
@@ -409,6 +447,12 @@ esp_err_t stop_all_tasks(void) {
         ESP_LOGI(TAG, "Battery monitor task stopped");
     }
 
+    if (s_wifi_task_handle) {
+        vTaskDelete(s_wifi_task_handle);
+        s_wifi_task_handle = NULL;
+        ESP_LOGI(TAG, "WiFi manager task stopped");
+    }
+
     // 停止 I2S TDM 演示
     i2s_tdm_demo_deinit();
 
@@ -424,6 +468,7 @@ void list_running_tasks(void) {
     ESP_LOGI(TAG, "Monitor Task: %s", s_monitor_task_handle ? "Running" : "Stopped");
     ESP_LOGI(TAG, "Joystick Task: %s", s_joystick_task_handle ? "Running" : "Stopped");
     ESP_LOGI(TAG, "Battery Task: %s", s_battery_task_handle ? "Running" : "Stopped");
+    ESP_LOGI(TAG, "WiFi Task: %s", s_wifi_task_handle ? "Running" : "Stopped");
     ESP_LOGI(TAG, "==================");
 }
 
@@ -434,3 +479,4 @@ TaskHandle_t get_ws2812_task_handle(void) { return s_ws2812_task_handle; }
 TaskHandle_t get_monitor_task_handle(void) { return s_monitor_task_handle; }
 TaskHandle_t get_battery_task_handle(void) { return s_battery_task_handle; }
 TaskHandle_t get_joystick_task_handle(void) { return s_joystick_task_handle; }
+TaskHandle_t get_wifi_task_handle(void) { return s_wifi_task_handle; }

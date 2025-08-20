@@ -9,8 +9,11 @@ void ui_main_menu_create(lv_obj_t* parent);
 static lv_obj_t* g_status_label;
 static lv_obj_t* g_ip_label;
 static lv_obj_t* g_mac_label;
+static lv_obj_t* g_ssid_label; // 新增SSID标签
 static lv_timer_t* g_update_timer;
 static bool g_wifi_ui_initialized = false;
+
+static void wifi_dropdown_event_cb(lv_event_t* e);
 
 /**
  * @brief 更新WiFi信息显示
@@ -39,10 +42,16 @@ static void update_wifi_info(void) {
 
     lv_label_set_text_fmt(g_ip_label, "IP Address: %s", info.ip_addr);
 
-    char mac_str[24]; // 增加缓冲区大小以容纳完整的MAC地址字符串
+    char mac_str[24];
     snprintf(mac_str, sizeof(mac_str), "MAC: %02X:%02X:%02X:%02X:%02X:%02X", info.mac_addr[0], info.mac_addr[1],
              info.mac_addr[2], info.mac_addr[3], info.mac_addr[4], info.mac_addr[5]);
     lv_label_set_text(g_mac_label, mac_str);
+
+    if (info.state == WIFI_STATE_CONNECTED) {
+        lv_label_set_text_fmt(g_ssid_label, "SSID: %s", info.ssid);
+    } else {
+        lv_label_set_text(g_ssid_label, "SSID: N/A");
+    }
 }
 
 /**
@@ -174,7 +183,38 @@ void ui_wifi_settings_create(lv_obj_t* parent) {
     lv_slider_set_range(power_slider, 2, 20);           // ESP32功率范围
     lv_slider_set_value(power_slider, 20, LV_ANIM_OFF); // 默认最大功率
 
-    // --- 3. WiFi信息显示 ---
+    // --- 3. WiFi连接列表 ---
+    lv_obj_t* dropdown_cont = lv_obj_create(cont);
+    lv_obj_set_size(dropdown_cont, 200, LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(dropdown_cont, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(dropdown_cont, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+
+    lv_obj_t* dropdown_label = lv_label_create(dropdown_cont);
+    lv_label_set_text(dropdown_label, "Saved Networks");
+    theme_apply_to_label(dropdown_label, false);
+
+    lv_obj_t* wifi_dropdown = lv_dropdown_create(dropdown_cont);
+    lv_obj_set_width(wifi_dropdown, 180);
+    theme_apply_to_button(wifi_dropdown, false);
+
+    // 填充WiFi列表
+    int32_t wifi_count = wifi_manager_get_wifi_list_size();
+    char ssid_list[512] = {0}; // 假设足够大
+    for (int i = 0; i < wifi_count; i++) {
+        const char* ssid = wifi_manager_get_wifi_ssid_by_index(i);
+        if (ssid) {
+            strlcat(ssid_list, ssid, sizeof(ssid_list));
+            if (i < wifi_count - 1) {
+                strlcat(ssid_list, "\n", sizeof(ssid_list));
+            }
+        }
+    }
+    lv_dropdown_set_options(wifi_dropdown, ssid_list);
+
+    // 添加事件回调
+    lv_obj_add_event_cb(wifi_dropdown, wifi_dropdown_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
+
+    // --- 4. WiFi信息显示 ---
     lv_obj_t* info_cont = lv_obj_create(cont);
     lv_obj_set_size(info_cont, 200, LV_SIZE_CONTENT);
     lv_obj_set_flex_flow(info_cont, LV_FLEX_FLOW_COLUMN);
@@ -190,13 +230,34 @@ void ui_wifi_settings_create(lv_obj_t* parent) {
     g_mac_label = lv_label_create(info_cont);
     theme_apply_to_label(g_mac_label, false);
 
-    // --- 绑定事件 ---
+    g_ssid_label = lv_label_create(info_cont); // 创建SSID标签
+    theme_apply_to_label(g_ssid_label, false);
+
+    // 初始化WiFi状态和信息
+    wifi_manager_info_t current_info = wifi_manager_get_info();
+    if (current_info.state == WIFI_STATE_DISABLED) {
+        lv_obj_clear_state(wifi_switch, LV_STATE_CHECKED);
+    } else {
+        lv_obj_add_state(wifi_switch, LV_STATE_CHECKED);
+    }
+    int8_t power_dbm = 20;
+    lv_slider_set_value(power_slider, power_dbm, LV_ANIM_OFF);
+    lv_label_set_text_fmt(power_val_label, "Tx Power: %d dBm", power_dbm);
+
+    // 添加事件回调
     lv_obj_add_event_cb(wifi_switch, wifi_switch_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
     lv_obj_add_event_cb(power_slider, power_slider_event_cb, LV_EVENT_VALUE_CHANGED, power_val_label);
 
-    // 初始状态更新
-    update_wifi_info();
+    // 创建并启动UI更新定时器
+    g_update_timer = lv_timer_create(ui_update_timer_cb, 500, NULL);
 
-    // 创建一个定时器来周期性更新UI
-    g_update_timer = lv_timer_create(ui_update_timer_cb, 1000, NULL);
+    // 立即更新一次UI
+    update_wifi_info();
+}
+
+static void wifi_dropdown_event_cb(lv_event_t* e)
+{
+    lv_obj_t* dropdown = lv_event_get_target(e);
+    uint16_t selected_index = lv_dropdown_get_selected(dropdown);
+    wifi_manager_connect_to_index(selected_index);
 }

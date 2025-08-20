@@ -53,20 +53,6 @@ void app_main(void) {
         ESP_LOGW(TAG, "Battery monitor init failed: %s", esp_err_to_name(ret));
     }
 
-    // 初始化并启动WiFi连接
-    ret = wifi_manager_init(NULL);
-    if (ret == ESP_OK) {
-        ESP_LOGI(TAG, "WiFi manager initialized");
-        ret = wifi_manager_start();
-        if (ret == ESP_OK) {
-            ESP_LOGI(TAG, "WiFi connection started");
-        } else {
-            ESP_LOGW(TAG, "WiFi start failed: %s", esp_err_to_name(ret));
-        }
-    } else {
-        ESP_LOGW(TAG, "WiFi init failed: %s", esp_err_to_name(ret));
-    }
-
     // 使用任务初始化模块统一管理任务
     ret = init_all_tasks();
     if (ret != ESP_OK) {

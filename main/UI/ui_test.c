@@ -6,14 +6,43 @@
  */
 #include "esp_log.h"
 #include "theme_manager.h"
+#include "joystick_adc.h"
 #include "ui.h"
 
 #include "Mysybmol.h"
 
 static const char* TAG = "UI_TEST";
 
+static lv_obj_t* joy1_x_raw_label;
+static lv_obj_t* joy1_y_raw_label;
+static lv_obj_t* joy1_x_norm_label;
+static lv_obj_t* joy1_y_norm_label;
+static lv_obj_t* joy2_x_raw_label;
+static lv_obj_t* joy2_y_raw_label;
+static lv_obj_t* joy2_x_norm_label;
+static lv_obj_t* joy2_y_norm_label;
+static lv_timer_t* joystick_timer;
+
+static void joystick_update_timer_cb(lv_timer_t* timer) {
+    joystick_data_t data;
+    if (joystick_adc_read(&data) == ESP_OK) {
+        lv_label_set_text_fmt(joy1_x_raw_label, "Joy1 X Raw: %d", data.raw_joy1_x);
+        lv_label_set_text_fmt(joy1_y_raw_label, "Joy1 Y Raw: %d", data.raw_joy1_y);
+        lv_label_set_text_fmt(joy1_x_norm_label, "Joy1 X Norm: %d", data.norm_joy1_x);
+        lv_label_set_text_fmt(joy1_y_norm_label, "Joy1 Y Norm: %d", data.norm_joy1_y);
+        lv_label_set_text_fmt(joy2_x_raw_label, "Joy2 X Raw: %d", data.raw_joy2_x);
+        lv_label_set_text_fmt(joy2_y_raw_label, "Joy2 Y Raw: %d", data.raw_joy2_y);
+        lv_label_set_text_fmt(joy2_x_norm_label, "Joy2 X Norm: %d", data.norm_joy2_x);
+        lv_label_set_text_fmt(joy2_y_norm_label, "Joy2 Y Norm: %d", data.norm_joy2_y);
+    }
+}
+
 // 自定义返回按钮回调 - 处理测试界面的特殊逻辑
 static void test_back_btn_callback(lv_event_t* e) {
+    if (joystick_timer) {
+        lv_timer_del(joystick_timer);
+        joystick_timer = NULL;
+    }
     lv_obj_t* screen = lv_scr_act();
     if (screen) {
         lv_obj_clean(screen);
@@ -56,25 +85,31 @@ void ui_test_create(lv_obj_t* parent) {
     ui_create_page_content_area(page_parent_container, &content_container);
 
     // 4. 在content_container中添加页面内容
+    lv_obj_t* cont = lv_obj_create(content_container);
+    lv_obj_set_size(cont, lv_pct(100), lv_pct(100));
+    lv_obj_set_flex_flow(cont, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(cont, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_center(cont);
 
-    // 创建所有符号标签
-    lv_obj_t* label = lv_label_create(content_container);
-    lv_obj_set_style_text_font(label, &Mysybmol, LV_PART_MAIN); // 设置字体
-    lv_label_set_text(label, MYSYBMOL_NO_WIFI);                 // 设置符号
-    lv_obj_align(label, LV_ALIGN_CENTER, 0, -20);               // 调整位置
+    joy1_x_raw_label = lv_label_create(cont);
+    joy1_y_raw_label = lv_label_create(cont);
+    joy1_x_norm_label = lv_label_create(cont);
+    joy1_y_norm_label = lv_label_create(cont);
+    joy2_x_raw_label = lv_label_create(cont);
+    joy2_y_raw_label = lv_label_create(cont);
+    joy2_x_norm_label = lv_label_create(cont);
+    joy2_y_norm_label = lv_label_create(cont);
 
-    // 创建测试开关
-    lv_obj_t* test_switch = lv_switch_create(content_container);
-    lv_obj_align(test_switch, LV_ALIGN_CENTER, 0, 20);
-    theme_apply_to_switch(test_switch);
-    lv_obj_add_event_cb(test_switch, test_switch_cb, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_label_set_text(joy1_x_raw_label, "Joy1 X Raw: 0");
+    lv_label_set_text(joy1_y_raw_label, "Joy1 Y Raw: 0");
+    lv_label_set_text(joy1_x_norm_label, "Joy1 X Norm: 0");
+    lv_label_set_text(joy1_y_norm_label, "Joy1 Y Norm: 0");
+    lv_label_set_text(joy2_x_raw_label, "Joy2 X Raw: 0");
+    lv_label_set_text(joy2_y_raw_label, "Joy2 Y Raw: 0");
+    lv_label_set_text(joy2_x_norm_label, "Joy2 X Norm: 0");
+    lv_label_set_text(joy2_y_norm_label, "Joy2 Y Norm: 0");
 
-    // 创建开关标签
-    lv_obj_t* switch_label = lv_label_create(content_container);
-    lv_label_set_text(switch_label, "Test Switch");
-    theme_apply_to_label(switch_label, false);
-    lv_obj_set_style_text_font(switch_label, &lv_font_montserrat_16, 0);
-    lv_obj_align_to(switch_label, test_switch, LV_ALIGN_OUT_BOTTOM_MID, 0, 10);
+    joystick_timer = lv_timer_create(joystick_update_timer_cb, 50, NULL);
 
     ESP_LOGI(TAG, "Test UI created successfully");
 }

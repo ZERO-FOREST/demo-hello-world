@@ -33,15 +33,21 @@ static wifi_manager_event_cb_t g_event_cb = NULL;
 #define WIFI_NVS_KEY_SSID "ssid"
 #define WIFI_NVS_KEY_PASSWORD "password"
 
-#define MAX_WIFI_LIST_SIZE 5
+#define MAX_WIFI_LIST_SIZE 256
 
 typedef struct {
     char ssid[32];
     char password[64];
 } wifi_config_entry_t;
 
-static wifi_config_entry_t wifi_list[MAX_WIFI_LIST_SIZE];
-static int32_t wifi_list_size = 0;
+static wifi_config_entry_t wifi_list[MAX_WIFI_LIST_SIZE]={
+    {"tidy","22989822"},
+    {"Sysware-AP","syswareonline.com"},
+    {"Xiaomi13","22989822"},
+    {"TiydC","22989822"},
+
+};
+static int32_t wifi_list_size = 4;
 
 // 前向声明
 static bool load_wifi_config_from_nvs(char* ssid, size_t ssid_len, char* password, size_t password_len);
@@ -61,8 +67,9 @@ static void event_handler(void* arg, esp_event_base_t event_base, int32_t event_
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
         g_wifi_info.state = WIFI_STATE_DISCONNECTED;
         strcpy(g_wifi_info.ip_addr, "N/A");
+        memset(g_wifi_info.ssid, 0, sizeof(g_wifi_info.ssid)); // 清空SSID
 
-        if (s_retry_num < 5) {
+        if (s_retry_num < 3) {
             esp_wifi_connect();
             s_retry_num++;
             ESP_LOGI(TAG, "Retry to connect to the AP (%d/5)", s_retry_num);
@@ -78,29 +85,17 @@ static void event_handler(void* arg, esp_event_base_t event_base, int32_t event_
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
         ESP_LOGI(TAG, "Got IP address: %s", g_wifi_info.ip_addr);
 
+        // 获取并保存当前连接的SSID
+        wifi_config_t wifi_config;
+        esp_wifi_get_config(WIFI_IF_STA, &wifi_config);
+        strncpy(g_wifi_info.ssid, (char*)wifi_config.sta.ssid, sizeof(g_wifi_info.ssid) - 1);
+
         // Add connected WiFi to the list
-        add_wifi_to_list("TidyC", "22989822");
-        add_wifi_to_list("Sysware-HP", "12345678");
-        add_wifi_to_list("tidy", "22989822");
-        add_wifi_to_list("Xiaomi", "22989822");
+        add_wifi_to_list((char*)wifi_config.sta.ssid, (char*)wifi_config.sta.password);
 
         ESP_LOGI(TAG, "Starting time synchronization...");
         wifi_manager_sync_time();
 
-        // 等待时间同步完成
-        int retry = 0;
-        const int max_retry = 10;
-        while (sntp_get_sync_status() != SNTP_SYNC_STATUS_COMPLETED && retry < max_retry) {
-            vTaskDelay(pdMS_TO_TICKS(1000));
-            retry++;
-            ESP_LOGI(TAG, "Waiting for time sync... (%d/%d)", retry, max_retry);
-        }
-
-        if (retry < max_retry) {
-            ESP_LOGI(TAG, "Time synchronized successfully!");
-        } else {
-            ESP_LOGW(TAG, "Time sync timeout!");
-        }
     }
 
     // 如果设置了回调函数，则调用它
@@ -145,6 +140,7 @@ esp_err_t wifi_manager_init(wifi_manager_event_cb_t event_cb) {
     memset(&g_wifi_info, 0, sizeof(g_wifi_info));
     g_wifi_info.state = WIFI_STATE_DISABLED;
     strcpy(g_wifi_info.ip_addr, "N/A");
+    memset(g_wifi_info.ssid, 0, sizeof(g_wifi_info.ssid));
 
     // 先初始化WiFi底层
     esp_err_t ret = wifi_init_stack();
@@ -164,56 +160,39 @@ esp_err_t wifi_manager_init(wifi_manager_event_cb_t event_cb) {
 esp_err_t wifi_manager_start(void) {
     s_wifi_event_group = xEventGroupCreate();
 
-    wifi_config_t wifi_config = {
-        .sta =
-            {
-                // 连接到用户指定的WiFi
-                .ssid = "TidyC",
-                .password = "22989822",
-                /* 设置最低安全等级为WPA/WPA2 PSK */
-                .threshold.authmode = WIFI_AUTH_WPA_WPA2_PSK,
-            },
-    };
+    load_wifi_list_from_nvs();
 
-    char ssid[32] = {0};
-    char password[64] = {0};
-    if (load_wifi_config_from_nvs(ssid, sizeof(ssid), password, sizeof(password))) {
-        strncpy((char*)wifi_config.sta.ssid, ssid, sizeof(wifi_config.sta.ssid));
-        strncpy((char*)wifi_config.sta.password, password, sizeof(wifi_config.sta.password));
+    wifi_config_t wifi_config = {0};
+    
+    // 优先使用上次成功连接的WiFi
+    if (load_wifi_config_from_nvs((char*)wifi_config.sta.ssid, sizeof(wifi_config.sta.ssid),
+                                  (char*)wifi_config.sta.password, sizeof(wifi_config.sta.password))) {
+        ESP_LOGI(TAG, "Attempting to connect to last known WiFi: %s", wifi_config.sta.ssid);
+    } else if (wifi_list_size > 0) {
+        // 否则，尝试列表中的第一个WiFi
+        strncpy((char*)wifi_config.sta.ssid, wifi_list[0].ssid, sizeof(wifi_config.sta.ssid));
+        strncpy((char*)wifi_config.sta.password, wifi_list[0].password, sizeof(wifi_config.sta.password));
+        ESP_LOGI(TAG, "Attempting to connect to WiFi from list: %s", wifi_config.sta.ssid);
     } else {
+        // 如果都没有，则使用默认配置
+        ESP_LOGW(TAG, "No saved WiFi configuration found, using default.");
         strncpy((char*)wifi_config.sta.ssid, "TidyC", sizeof(wifi_config.sta.ssid));
         strncpy((char*)wifi_config.sta.password, "22989822", sizeof(wifi_config.sta.password));
     }
 
+    wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA_WPA2_PSK;
+    
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
     ESP_ERROR_CHECK(esp_wifi_start());
 
-    // WiFi启动后设置发射功率为8dBm（较为适中的功率）
-    esp_err_t power_ret = esp_wifi_set_max_tx_power(32); // 8dBm = 32/4
+    // WiFi启动后设置发射功率
+    esp_err_t power_ret = esp_wifi_set_max_tx_power(32);
     if (power_ret != ESP_OK) {
         ESP_LOGW(TAG, "Failed to set WiFi power: %s", esp_err_to_name(power_ret));
     }
 
-    ESP_LOGI(TAG, "wifi_manager_start finished.");
-
-    load_wifi_list_from_nvs();
-    for (int i = 0; i < wifi_list_size; i++) {
-        strncpy((char*)wifi_config.sta.ssid, wifi_list[i].ssid, sizeof(wifi_config.sta.ssid));
-        strncpy((char*)wifi_config.sta.password, wifi_list[i].password, sizeof(wifi_config.sta.password));
-        ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
-        ESP_ERROR_CHECK(esp_wifi_start());
-
-        EventBits_t bits = xEventGroupWaitBits(s_wifi_event_group, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT, pdFALSE, pdFALSE,
-                                               pdMS_TO_TICKS(10000));
-        if (bits & WIFI_CONNECTED_BIT) {
-            ESP_LOGI(TAG, "Connected to WiFi: %s", wifi_list[i].ssid);
-            break;
-        } else {
-            ESP_LOGW(TAG, "Failed to connect to WiFi: %s", wifi_list[i].ssid);
-        }
-    }
-
+    ESP_LOGI(TAG, "wifi_manager_start finished, connection is in progress...");
     return ESP_OK;
 }
 
@@ -222,11 +201,14 @@ esp_err_t wifi_manager_stop(void) {
     if (err == ESP_OK) {
         g_wifi_info.state = WIFI_STATE_DISABLED;
         strcpy(g_wifi_info.ip_addr, "N/A");
+        memset(g_wifi_info.ssid, 0, sizeof(g_wifi_info.ssid)); // 清空SSID
         if (g_event_cb)
             g_event_cb();
     }
-    vEventGroupDelete(s_wifi_event_group);
-    s_wifi_event_group = NULL;
+    if (s_wifi_event_group) {
+        vEventGroupDelete(s_wifi_event_group);
+        s_wifi_event_group = NULL;
+    }
     ESP_LOGI(TAG, "WiFi stopped.");
     return err;
 }
@@ -267,8 +249,8 @@ void wifi_manager_sync_time(void) {
     esp_sntp_setservername(1, "ntp1.aliyun.com");
     esp_sntp_setservername(2, "ntp2.aliyun.com");
 
-    // 设置更新间隔（15分钟）
-    esp_sntp_set_sync_interval(900000);
+    // 设置更新间隔（1小时）
+    esp_sntp_set_sync_interval(3600000);
 
     // 设置时间同步回调
     esp_sntp_set_time_sync_notification_cb(time_sync_notification_cb);
@@ -302,6 +284,42 @@ bool wifi_manager_get_time_str(char* time_str, size_t max_len) {
     // 格式化时间字符串：只显示时间 HH:MM
     strftime(time_str, max_len, "%H:%M", &timeinfo);
     return true;
+}
+
+int32_t wifi_manager_get_wifi_list_size(void)
+{
+    return wifi_list_size;
+}
+
+const char* wifi_manager_get_wifi_ssid_by_index(int32_t index)
+{
+    if (index < 0 || index >= wifi_list_size) {
+        return NULL;
+    }
+    return wifi_list[index].ssid;
+}
+
+esp_err_t wifi_manager_connect_to_index(int32_t index)
+{
+    if (index < 0 || index >= wifi_list_size) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    ESP_LOGI(TAG, "Connecting to %s...", wifi_list[index].ssid);
+    
+    wifi_config_t wifi_config = {0};
+    strlcpy((char *)wifi_config.sta.ssid, wifi_list[index].ssid, sizeof(wifi_config.sta.ssid));
+    strlcpy((char *)wifi_config.sta.password, wifi_list[index].password, sizeof(wifi_config.sta.password));
+
+    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
+    esp_err_t err = esp_wifi_connect();
+    if (err == ESP_OK) {
+        g_wifi_info.state = WIFI_STATE_CONNECTING;
+        if (g_event_cb) {
+            g_event_cb();
+        }
+    }
+    return err;
 }
 
 static void save_wifi_config_to_nvs(const char* ssid, const char* password) {

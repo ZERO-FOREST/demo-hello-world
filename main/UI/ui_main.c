@@ -18,6 +18,7 @@
 #include "ui_test.h"
 #include "wifi_image_transfer.h"
 #include "wifi_manager.h"
+#include "Mysybmol.h"
 
 // 获取莫兰迪颜色的辅助函数
 static lv_color_t get_morandi_color(int index) {
@@ -129,33 +130,11 @@ void ui_main_update_wifi_display(void) {
     // 静态变量记录上一次的连接状态
     static bool last_wifi_connected = false;
 
-    // 根据连接状态显示或隐藏WiFi符号
+    // 根据连接状态更新WiFi符号
     if (wifi_connected) {
-        lv_obj_clear_flag(g_wifi_label, LV_OBJ_FLAG_HIDDEN);
-        ESP_LOGD("UI_MAIN", "WiFi connected, showing symbol");
-
-        // 检查是否是第一次连接成功（从断开状态变为连接状态）
-        if (!last_wifi_connected) {
-            ESP_LOGI("UI_MAIN", "First WiFi connection detected, triggering time sync");
-
-            // 触发一次时间同步
-            char time_str[32];
-            if (wifi_manager_get_time_str(time_str, sizeof(time_str))) {
-                ESP_LOGI("UI_MAIN", "Time sync from WiFi: %s", time_str);
-
-                // 更新UI显示
-                if (g_time_label && lv_obj_is_valid(g_time_label)) {
-                    lv_label_set_text(g_time_label, time_str);
-                    lv_obj_invalidate(g_time_label);
-                    ESP_LOGI("UI_MAIN", "Time display updated from WiFi sync");
-                }
-            } else {
-                ESP_LOGW("UI_MAIN", "Failed to get time from WiFi");
-            }
-        }
+        lv_label_set_text(g_wifi_label, LV_SYMBOL_WIFI);
     } else {
-        lv_obj_add_flag(g_wifi_label, LV_OBJ_FLAG_HIDDEN);
-        ESP_LOGD("UI_MAIN", "WiFi disconnected, hiding symbol");
+        lv_label_set_text(g_wifi_label, MYSYBMOL_NO_WIFI);
     }
 
     // 更新上一次的连接状态
@@ -177,12 +156,7 @@ static void wifi_settings_cb(void) {
     lv_obj_t* screen = lv_scr_act();
     if (screen) {
         // 先停止时间更新定时器，避免访问已删除的UI元素
-        static lv_timer_t* timer = NULL;
-        if (timer) {
-            lv_timer_del(timer);
-            timer = NULL;
-            ESP_LOGI("UI_MAIN", "Time update timer stopped");
-        }
+         
 
         // 重置全局UI指针
         g_time_label = NULL;
@@ -328,11 +302,10 @@ void ui_main_menu_create(lv_obj_t* parent) {
 
     // ==== WiFi符号 ====
     g_wifi_label = lv_label_create(status_bar);
-    lv_obj_set_style_text_font(g_wifi_label, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_font(g_wifi_label, &Mysybmol, 0); // 使用自定义字体
     lv_obj_set_style_text_color(g_wifi_label, lv_color_hex(0x000000), 0); // 黑色
-    lv_label_set_text(g_wifi_label, LV_SYMBOL_WIFI);
+    lv_label_set_text(g_wifi_label, MYSYBMOL_NO_WIFI); // 默认显示未连接
     lv_obj_align(g_wifi_label, LV_ALIGN_RIGHT_MID, -45, 0); // 在电池左边
-    lv_obj_add_flag(g_wifi_label, LV_OBJ_FLAG_HIDDEN);      // 初始隐藏
 
     // ==== 电池图标（外壳 + 小凸起 + 电量文字） ====
     // 电池外壳

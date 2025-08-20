@@ -28,6 +28,7 @@ typedef struct {
     wifi_manager_state_t state;
     char ip_addr[16];
     uint8_t mac_addr[6];
+    char ssid[33];       // 当前连接的SSID
 } wifi_manager_info_t;
 
 // WiFi状态变化时的回调函数类型
@@ -92,6 +93,66 @@ static void add_wifi_to_list(const char* ssid, const char* password);
  *
  */
 static void load_wifi_list_from_nvs();
+
+/**
+ * @brief 获取已保存的WiFi列表大小
+ * @return int32_t WiFi数量
+ */
+int32_t wifi_manager_get_wifi_list_size(void);
+
+/**
+ * @brief 根据索引获取WiFi的SSID
+ * @param index 索引
+ * @return const char* SSID字符串, 如果索引无效则返回NULL
+ */
+const char* wifi_manager_get_wifi_ssid_by_index(int32_t index);
+
+/**
+ * @brief 连接到指定索引的WiFi
+ * @param index 要连接的WiFi在列表中的索引
+ * @return esp_err_t
+ */
+esp_err_t wifi_manager_connect_to_index(int32_t index);
+
+/**
+ * @brief 获取已保存的WiFi列表大小
+ * @return int32_t WiFi数量
+ */
+int32_t wifi_manager_get_wifi_list_size(void);
+
+/**
+ * @brief 根据索引获取WiFi的SSID
+ * @param index 索引
+ * @return const char* SSID字符串, 如果索引无效则返回NULL
+ */
+const char* wifi_manager_get_wifi_ssid_by_index(int32_t index);
+
+/**
+ * @brief 连接到指定索引的WiFi
+ * @param index 要连接的WiFi在列表中的索引
+ * @return esp_err_t
+ */
+esp_err_t wifi_manager_connect_to_index(int32_t index);
+
+/**
+ * @brief 获取已保存的WiFi列表大小
+ * @return int32_t WiFi数量
+ */
+int32_t wifi_manager_get_wifi_list_size(void);
+
+/**
+ * @brief 根据索引获取WiFi的SSID
+ * @param index 索引
+ * @return const char* SSID字符串, 如果索引无效则返回NULL
+ */
+const char* wifi_manager_get_wifi_ssid_by_index(int32_t index);
+
+/**
+ * @brief 连接到指定索引的WiFi
+ * @param index 要连接的WiFi在列表中的索引
+ * @return esp_err_t
+ */
+esp_err_t wifi_manager_connect_to_index(int32_t index);
 
 #ifdef __cplusplus
 }
