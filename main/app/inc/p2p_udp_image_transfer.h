@@ -102,6 +102,11 @@ esp_err_t p2p_udp_image_transfer_start(void);
 void p2p_udp_image_transfer_stop(void);
 
 /**
+ * @brief 反初始化P2P UDP图传系统
+ */
+void p2p_udp_image_transfer_deinit(void);
+
+/**
  * @brief 发送JPEG图像数据
  * @param jpeg_data JPEG数据指针
  * @param jpeg_size JPEG数据大小

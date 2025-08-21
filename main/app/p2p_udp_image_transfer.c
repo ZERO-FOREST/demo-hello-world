@@ -32,6 +32,10 @@ static int g_udp_socket = -1;
 static p2p_udp_image_callback_t g_image_callback = NULL;
 static p2p_udp_status_callback_t g_status_callback = NULL;
 
+// Event handler instances
+static esp_event_handler_instance_t g_wifi_event_instance = NULL;
+static esp_event_handler_instance_t g_ip_event_instance = NULL;
+
 // 任务和队列
 static TaskHandle_t g_rx_task_handle = NULL;
 static TaskHandle_t g_decode_task_handle = NULL;
@@ -106,8 +110,9 @@ esp_err_t p2p_udp_image_transfer_init(p2p_connection_mode_t mode, p2p_udp_image_
         return ESP_ERR_NO_MEM;
     }
 
-    // 初始化网络接口
-    ESP_ERROR_CHECK(esp_netif_init());
+    // 初始化网络接口 - This should be called only once in the application's lifecycle (e.g. in app_main).
+    // It's assumed to be called elsewhere. Removing from here to prevent re-init issues.
+    // ESP_ERROR_CHECK(esp_netif_init());
     
     // 检查事件循环是否已经存在，避免重复创建
     esp_err_t ret = esp_event_loop_create_default();
@@ -118,8 +123,8 @@ esp_err_t p2p_udp_image_transfer_init(p2p_connection_mode_t mode, p2p_udp_image_
     }
 
     // 注册事件处理器
-    ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler, NULL, NULL));
-    ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT, ESP_EVENT_ANY_ID, &ip_event_handler, NULL, NULL));
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler, NULL, &g_wifi_event_instance));
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT, ESP_EVENT_ANY_ID, &ip_event_handler, NULL, &g_ip_event_instance));
 
     g_initialized = true;
     ESP_LOGI(TAG, "P2P UDP image transfer initialized in %s mode", mode == P2P_MODE_AP ? "AP" : "STA");
@@ -190,19 +195,15 @@ void p2p_udp_image_transfer_stop(void) {
         vTaskDelete(g_decode_task_handle);
         g_decode_task_handle = NULL;
     }
-    /*
-    if (g_tx_task_handle) {
-        vTaskDelete(g_tx_task_handle);
-        g_tx_task_handle = NULL;
-    }
-    */
-    // 关闭socket
+    
+    // 关闭socket, 这将解除recvfrom的阻塞
     if (g_udp_socket >= 0) {
+        shutdown(g_udp_socket, SHUT_RDWR);
         close(g_udp_socket);
         g_udp_socket = -1;
     }
 
-    // 清理解码队列
+    // 清理解码队列,但不删除它
     if (g_decode_queue) {
         decode_queue_item_t item;
         while (xQueueReceive(g_decode_queue, &item, 0) == pdTRUE) {
@@ -210,19 +211,16 @@ void p2p_udp_image_transfer_stop(void) {
                 free(item.frame_buffer);
             }
         }
-        vQueueDelete(g_decode_queue);
-        g_decode_queue = NULL;
     }
 
-    // 停止Wi-Fi
-    esp_wifi_stop();
-    esp_wifi_deinit();
+    // 停止Wi-Fi的调用已移至deinit函数
+    // esp_wifi_stop();
 
     // 清理帧缓冲区
     cleanup_current_frame();
 
-    set_connection_state(P2P_STATE_IDLE, "Stopped");
-    ESP_LOGI(TAG, "P2P UDP image transfer stopped");
+    set_connection_state(P2P_STATE_IDLE, "Tasks Stopped");
+    ESP_LOGI(TAG, "P2P UDP image transfer tasks stopped");
 }
 
 static esp_err_t wifi_init_p2p(void) {
@@ -794,7 +792,7 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t e
     if (event_base == WIFI_EVENT) {
         switch (event_id) {
         case WIFI_EVENT_AP_START:
-            set_connection_state(P2P_STATE_AP_RUNNING, "AP started");
+            set_connection_state(P2P_STATE_AP_STARTING, "Starting AP");
             ESP_LOGI(TAG, "Wi-Fi AP started");
             break;
 
@@ -930,6 +928,61 @@ void p2p_udp_get_stats(uint32_t* tx_packets, uint32_t* rx_packets, uint32_t* los
     if (retx_packets)
         *retx_packets = g_retx_packets;
 }
+
+void p2p_udp_image_transfer_deinit(void)
+{
+    if (!g_initialized) {
+        return;
+    }
+
+    // Stop the service if it is running
+    if (g_running) {
+        p2p_udp_image_transfer_stop();
+    }
+
+    // 首先注销事件处理器，以避免在关闭过程中产生回调
+    if (g_ip_event_instance) { // Unregister IP first
+        esp_event_handler_instance_unregister(IP_EVENT, ESP_EVENT_ANY_ID, g_ip_event_instance);
+        g_ip_event_instance = NULL;
+    }
+    if (g_wifi_event_instance) {
+        esp_event_handler_instance_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID, g_wifi_event_instance);
+        g_wifi_event_instance = NULL;
+    }
+
+    // 现在安全地停止并反初始化Wi-Fi
+    esp_wifi_stop();
+    esp_err_t err = esp_wifi_deinit();
+    if (err != ESP_OK && err != ESP_ERR_WIFI_NOT_INIT) {
+        ESP_LOGE(TAG, "Failed to deinit wifi: %s", esp_err_to_name(err));
+    }
+
+    // 销毁网络接口
+    if (g_netif) {
+        esp_netif_destroy(g_netif);
+        g_netif = NULL;
+    }
+
+    // 删除队列
+    if (g_decode_queue) {
+        vQueueDelete(g_decode_queue);
+        g_decode_queue = NULL;
+    }
+
+    // Delete mutexes
+    if (g_state_mutex) {
+        vSemaphoreDelete(g_state_mutex);
+        g_state_mutex = NULL;
+    }
+    if (g_frame_mutex) {
+        vSemaphoreDelete(g_frame_mutex);
+        g_frame_mutex = NULL;
+    }
+
+    g_initialized = false;
+    ESP_LOGI(TAG, "P2P UDP image transfer de-initialized");
+}
+
 
 float p2p_udp_get_fps(void)
 {

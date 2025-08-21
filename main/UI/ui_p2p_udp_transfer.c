@@ -150,10 +150,11 @@ void ui_p2p_udp_transfer_destroy(void) {
 
     ESP_LOGI(TAG, "Destroying P2P UDP transfer UI");
 
-    // 停止P2P UDP服务
-    if (s_is_running) {
-        p2p_udp_image_transfer_stop();
-        s_is_running = false;
+    // Deinitialize the P2P UDP system
+    if (s_is_initialized) {
+        p2p_udp_image_transfer_deinit();
+        s_is_initialized = false;
+        s_is_running = false; // deinit calls stop, so this is also false
     }
 
     // 停止并删除定时器
