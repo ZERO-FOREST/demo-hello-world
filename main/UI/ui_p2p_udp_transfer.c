@@ -94,7 +94,7 @@ void ui_p2p_udp_transfer_create(lv_obj_t* parent) {
     lv_obj_set_size(control_panel, LV_PCT(35), LV_PCT(100));
     lv_obj_set_flex_flow(control_panel, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_all(control_panel, 10, 0);
-    theme_apply_to_container(control_panel, false);
+    theme_apply_to_container(control_panel);
 
     // 模式选择
     lv_obj_t* mode_cont = lv_obj_create(control_panel);
@@ -202,7 +202,7 @@ void ui_p2p_udp_transfer_create(lv_obj_t* parent) {
     lv_obj_t* image_panel = lv_obj_create(main_cont);
     lv_obj_set_size(image_panel, LV_PCT(63), LV_PCT(100));
     lv_obj_set_style_pad_all(image_panel, 10, 0);
-    theme_apply_to_container(image_panel, false);
+    theme_apply_to_container(image_panel);
 
     lv_obj_t* image_title = lv_label_create(image_panel);
     lv_label_set_text(image_title, "接收图像：");
@@ -395,11 +395,24 @@ static void on_connect_btn_clicked(lv_event_t* e) {
         return;
     }
 
+    // 更新状态显示
+    if (s_status_label) {
+        char status_text[128];
+        snprintf(status_text, sizeof(status_text), "正在连接到 %s...", ssid);
+        lv_label_set_text(s_status_label, status_text);
+    }
+
     esp_err_t ret = p2p_udp_connect_to_ap(ssid, password);
     if (ret == ESP_OK) {
         ESP_LOGI(TAG, "Connecting to AP: %s", ssid);
     } else {
         ESP_LOGE(TAG, "Failed to connect to AP: %s", esp_err_to_name(ret));
+        // 更新错误状态
+        if (s_status_label) {
+            char error_text[128];
+            snprintf(error_text, sizeof(error_text), "连接失败: %s", esp_err_to_name(ret));
+            lv_label_set_text(s_status_label, error_text);
+        }
     }
 }
 

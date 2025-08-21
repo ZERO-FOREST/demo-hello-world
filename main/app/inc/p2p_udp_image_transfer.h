@@ -1,9 +1,9 @@
 #ifndef P2P_UDP_IMAGE_TRANSFER_H
 #define P2P_UDP_IMAGE_TRANSFER_H
 
+#include "esp_err.h"
 #include "esp_jpeg_common.h"
-#include <stdbool.h>
-#include <stdint.h>
+#include "stdbool.h"
 
 #ifdef __cplusplus
 extern "C" {

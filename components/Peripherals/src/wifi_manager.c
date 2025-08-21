@@ -69,13 +69,13 @@ static void event_handler(void* arg, esp_event_base_t event_base, int32_t event_
         strcpy(g_wifi_info.ip_addr, "N/A");
         memset(g_wifi_info.ssid, 0, sizeof(g_wifi_info.ssid)); // 清空SSID
 
-        if (s_retry_num < 3) {
-            esp_wifi_connect();
-            s_retry_num++;
-            ESP_LOGI(TAG, "Retry to connect to the AP (%d/5)", s_retry_num);
-        } else {
-            xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
-            ESP_LOGE(TAG, "Connect to the AP fail");
+        // 重置重试计数，避免自动重连
+        s_retry_num = 0;
+        ESP_LOGI(TAG, "WiFi disconnected");
+        
+        // 如果设置了回调函数，则调用它
+        if (g_event_cb) {
+            g_event_cb();
         }
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t* event = (ip_event_got_ip_t*)event_data;
@@ -307,9 +307,17 @@ esp_err_t wifi_manager_connect_to_index(int32_t index)
 
     ESP_LOGI(TAG, "Connecting to %s...", wifi_list[index].ssid);
     
+    // 先断开当前连接，避免冲突
+    esp_wifi_disconnect();
+    vTaskDelay(pdMS_TO_TICKS(200)); // 等待断开完成
+    
     wifi_config_t wifi_config = {0};
     strlcpy((char *)wifi_config.sta.ssid, wifi_list[index].ssid, sizeof(wifi_config.sta.ssid));
     strlcpy((char *)wifi_config.sta.password, wifi_list[index].password, sizeof(wifi_config.sta.password));
+
+    // 设置认证模式
+    wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA_WPA2_PSK;
+    wifi_config.sta.threshold.rssi = -127;
 
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
     esp_err_t err = esp_wifi_connect();

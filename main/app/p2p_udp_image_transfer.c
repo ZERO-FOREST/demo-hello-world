@@ -688,9 +688,9 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t e
             break;
 
         case WIFI_EVENT_STA_DISCONNECTED:
-            set_connection_state(P2P_STATE_STA_CONNECTING, "STA disconnected, retrying");
-            ESP_LOGI(TAG, "Wi-Fi STA disconnected, retrying...");
-            esp_wifi_connect();
+            set_connection_state(P2P_STATE_STA_CONNECTING, "STA disconnected");
+            ESP_LOGI(TAG, "Wi-Fi STA disconnected");
+            // 不自动重连，让用户手动选择
             break;
 
         default:
@@ -753,11 +753,19 @@ esp_err_t p2p_udp_connect_to_ap(const char* ap_ssid, const char* ap_password) {
         return ESP_ERR_INVALID_ARG;
     }
 
+    // 先断开当前连接，避免冲突
+    esp_wifi_disconnect();
+    vTaskDelay(pdMS_TO_TICKS(100)); // 等待断开完成
+
     wifi_config_t wifi_config = {0};
     strncpy((char*)wifi_config.sta.ssid, ap_ssid, sizeof(wifi_config.sta.ssid) - 1);
     if (ap_password) {
         strncpy((char*)wifi_config.sta.password, ap_password, sizeof(wifi_config.sta.password) - 1);
     }
+
+    // 设置认证模式
+    wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA_WPA2_PSK;
+    wifi_config.sta.threshold.rssi = -127;
 
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
     ESP_ERROR_CHECK(esp_wifi_connect());
