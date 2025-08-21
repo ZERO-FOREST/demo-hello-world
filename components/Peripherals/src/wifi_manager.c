@@ -117,7 +117,15 @@ static esp_err_t wifi_init_stack(void) {
     ESP_ERROR_CHECK(ret);
 
     ESP_ERROR_CHECK(esp_netif_init());
-    ESP_ERROR_CHECK(esp_event_loop_create_default());
+    
+    // 检查事件循环是否已经存在，避免重复创建
+    ret = esp_event_loop_create_default();
+    if (ret == ESP_ERR_INVALID_STATE) {
+        ESP_LOGW(TAG, "Event loop already exists, skipping creation");
+    } else {
+        ESP_ERROR_CHECK(ret);
+    }
+    
     esp_netif_create_default_wifi_sta();
 
     // 初始化WiFi驱动
