@@ -6,6 +6,7 @@
  */
 
 #include "../app/game/game.h"
+#include "Mysybmol.h"
 #include "background_manager.h"
 #include "color.h"
 #include "esp_log.h"
@@ -18,7 +19,7 @@
 #include "ui_test.h"
 #include "wifi_image_transfer.h"
 #include "wifi_manager.h"
-#include "Mysybmol.h"
+
 
 // 获取莫兰迪颜色的辅助函数
 static lv_color_t get_morandi_color(int index) {
@@ -156,7 +157,6 @@ static void wifi_settings_cb(void) {
     lv_obj_t* screen = lv_scr_act();
     if (screen) {
         // 先停止时间更新定时器，避免访问已删除的UI元素
-         
 
         // 重置全局UI指针
         g_time_label = NULL;
@@ -255,6 +255,27 @@ static void test_cb(void) {
     }
 }
 
+static void p2p_udp_transfer_cb(void) {
+    lv_obj_t* screen = lv_scr_act();
+    if (screen) {
+        // 先停止时间更新定时器，避免访问已删除的UI元素
+        static lv_timer_t* timer = NULL;
+        if (timer) {
+            lv_timer_del(timer);
+            timer = NULL;
+            ESP_LOGI("UI_MAIN", "Time update timer stopped");
+        }
+
+        // 重置全局UI指针
+        g_time_label = NULL;
+        g_battery_label = NULL;
+        g_wifi_label = NULL;
+
+        lv_obj_clean(screen);               // 清空当前屏幕
+        ui_p2p_udp_transfer_create(screen); // 加载P2P UDP图传界面
+    }
+}
+
 // 可扩展的菜单项结构
 typedef struct {
     const char* text;
@@ -268,6 +289,7 @@ static menu_item_t menu_items[] = {
     {"Settings", settings_cb},
     {"Game", game_cb},
     {"Image Transfer", image_transfer_cb},
+    {"P2P UDP Transfer", p2p_udp_transfer_cb},
     {"Serial Display", serial_display_cb},
     {"Calibration", calibration_cb},
     {"Test", test_cb},
@@ -302,10 +324,10 @@ void ui_main_menu_create(lv_obj_t* parent) {
 
     // ==== WiFi符号 ====
     g_wifi_label = lv_label_create(status_bar);
-    lv_obj_set_style_text_font(g_wifi_label, &Mysybmol, 0); // 使用自定义字体
+    lv_obj_set_style_text_font(g_wifi_label, &Mysybmol, 0);               // 使用自定义字体
     lv_obj_set_style_text_color(g_wifi_label, lv_color_hex(0x000000), 0); // 黑色
-    lv_label_set_text(g_wifi_label, MYSYBMOL_NO_WIFI); // 默认显示未连接
-    lv_obj_align(g_wifi_label, LV_ALIGN_RIGHT_MID, -45, 0); // 在电池左边
+    lv_label_set_text(g_wifi_label, MYSYBMOL_NO_WIFI);                    // 默认显示未连接
+    lv_obj_align(g_wifi_label, LV_ALIGN_RIGHT_MID, -45, 0);               // 在电池左边
 
     // ==== 电池图标（外壳 + 小凸起 + 电量文字） ====
     // 电池外壳

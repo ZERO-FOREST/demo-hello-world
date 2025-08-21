@@ -88,6 +88,10 @@ void ui_serial_display_add_text(const char* text);
 void ui_calibration_create(lv_obj_t* parent);
 void ui_calibration_destroy(void);
 
+// --- P2P UDP图传界面 ---
+void ui_p2p_udp_transfer_create(lv_obj_t* parent);
+void ui_p2p_udp_transfer_destroy(void);
+
 // 统一的back按钮创建函数
 void ui_create_back_button(lv_obj_t* parent, const char* text);
 void ui_create_game_back_button(lv_obj_t* parent, const char* text);
