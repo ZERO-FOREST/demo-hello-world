@@ -1,8 +1,11 @@
-/**
- * @file background_manager.c
- * @brief 后台管理模块实现 - 管理时间和电池电量的后台更新
- * @author TidyCraze
- * @date 2025-01-27
+/*
+ * @Author: tidycraze 2595256284@qq.com
+ * @Date: 2025-08-19 13:02:59
+ * @LastEditors: tidycraze 2595256284@qq.com
+ * @LastEditTime: 2025-08-21 09:57:31
+ * @FilePath: \demo-hello-world\main\background_manager.c
+ * @Description: 后台管理模块实现 - 管理时间和电池电量的后台更新
+ * Copyright (c) 2025 by ${git_name_email}, All Rights Reserved. 
  */
 
 #include "background_manager.h"
@@ -35,7 +38,7 @@ static uint64_t s_last_battery_update = 0;
 static uint64_t s_last_wifi_sync = 0;
 static uint64_t s_start_time = 0;
 
-// 后台任务函数
+
 static void background_manager_task(void* pvParameters) {
     ESP_LOGI(TAG, "Background manager task started on core %d", xPortGetCoreID());
     

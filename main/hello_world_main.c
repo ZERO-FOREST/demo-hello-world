@@ -1,8 +1,12 @@
-/**
- * @file hello_world_main.c
- * @brief 主函数
- * @author TidyCraze
- * @date 2025-08-14
+/*
+ * @Author: tidycraze 2595256284@qq.com
+ * @Date: 2025-07-28 11:29:59
+ * @LastEditors: tidycraze 2595256284@qq.com
+ * @LastEditTime: 2025-08-21 09:57:19
+ * @FilePath: \demo-hello-world\main\hello_world_main.c
+ * @Description: 
+ * 
+ * Copyright (c) 2025 by ${git_name_email}, All Rights Reserved. 
  */
 
 #include "background_manager.h"
