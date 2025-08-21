@@ -1,15 +1,10 @@
-#include "esp_event.h"
 #include "esp_log.h"
-#include "esp_system.h"
-#include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
-#include "freertos/event_groups.h"
 #include "freertos/task.h"
-#include "lwip/err.h"
 #include "lwip/sockets.h"
-#include "lwip/sys.h"
-#include "nvs_flash.h"
+#include <errno.h>
 #include <lwip/netdb.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "esp_jpeg_common.h"
@@ -29,6 +24,7 @@ static TaskHandle_t s_tcp_server_task_handle = NULL;
 static bool s_server_running = false;
 static uint8_t* s_jpeg_frame_buffer = NULL;
 static int s_jpeg_frame_pos = 0;
+static int s_listen_sock = -1;
 
 // Forward declaration for the function that will handle decoded image
 static void handle_decoded_image(uint8_t* img_buf, int width, int height, jpeg_pixel_format_t format);
@@ -45,6 +41,7 @@ static void tcp_server_task(void* pvParameters) {
     if (s_jpeg_frame_buffer == NULL) {
         ESP_LOGE(TAG, "Failed to allocate JPEG frame buffer");
         s_server_running = false;
+        s_tcp_server_task_handle = NULL;
         vTaskDelete(NULL);
         return;
     }
@@ -55,27 +52,61 @@ static void tcp_server_task(void* pvParameters) {
     dest_addr.sin_port = htons(port);
     ip_protocol = IPPROTO_IP;
 
-    int listen_sock = socket(addr_family, SOCK_STREAM, ip_protocol);
-    if (listen_sock < 0) {
+    s_listen_sock = socket(addr_family, SOCK_STREAM, ip_protocol);
+    if (s_listen_sock < 0) {
         ESP_LOGE(TAG, "Unable to create socket: errno %d", errno);
         s_server_running = false;
         free(s_jpeg_frame_buffer);
+        s_jpeg_frame_buffer = NULL;
+        s_tcp_server_task_handle = NULL;
         vTaskDelete(NULL);
         return;
     }
     ESP_LOGI(TAG, "Socket created");
 
-    int err = bind(listen_sock, (struct sockaddr*)&dest_addr, sizeof(dest_addr));
+    // Set socket options to allow address reuse
+    int opt = 1;
+    if (setsockopt(s_listen_sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
+        ESP_LOGE(TAG, "Failed to set SO_REUSEADDR: errno %d", errno);
+        close(s_listen_sock);
+        s_server_running = false;
+        free(s_jpeg_frame_buffer);
+        s_jpeg_frame_buffer = NULL;
+        s_tcp_server_task_handle = NULL;
+        vTaskDelete(NULL);
+        return;
+    }
+
+    // Also set SO_REUSEPORT if available (helps with port reuse)
+    opt = 1;
+    if (setsockopt(s_listen_sock, SOL_SOCKET, SO_REUSEPORT, &opt, sizeof(opt)) < 0) {
+        ESP_LOGW(TAG, "Failed to set SO_REUSEPORT (may not be supported): errno %d", errno);
+        // This is not critical, continue anyway
+    }
+
+    int err = bind(s_listen_sock, (struct sockaddr*)&dest_addr, sizeof(dest_addr));
     if (err != 0) {
         ESP_LOGE(TAG, "Socket unable to bind: errno %d", errno);
-        goto CLEAN_UP;
+        close(s_listen_sock);
+        s_server_running = false;
+        free(s_jpeg_frame_buffer);
+        s_jpeg_frame_buffer = NULL;
+        s_tcp_server_task_handle = NULL;
+        vTaskDelete(NULL);
+        return;
     }
     ESP_LOGI(TAG, "Socket bound, port %d", port);
 
-    err = listen(listen_sock, LISTEN_SOCKET_NUM);
+    err = listen(s_listen_sock, LISTEN_SOCKET_NUM);
     if (err != 0) {
         ESP_LOGE(TAG, "Error occurred during listen: errno %d", errno);
-        goto CLEAN_UP;
+        close(s_listen_sock);
+        s_server_running = false;
+        free(s_jpeg_frame_buffer);
+        s_jpeg_frame_buffer = NULL;
+        s_tcp_server_task_handle = NULL;
+        vTaskDelete(NULL);
+        return;
     }
     ESP_LOGI(TAG, "Socket listening");
 
@@ -84,7 +115,7 @@ static void tcp_server_task(void* pvParameters) {
     while (s_server_running) {
         struct sockaddr_in source_addr;
         socklen_t addr_len = sizeof(source_addr);
-        int sock = accept(listen_sock, (struct sockaddr*)&source_addr, &addr_len);
+        int sock = accept(s_listen_sock, (struct sockaddr*)&source_addr, &addr_len);
         if (sock < 0) {
             ESP_LOGE(TAG, "Unable to accept connection: errno %d", errno);
             continue;
@@ -141,7 +172,7 @@ static void tcp_server_task(void* pvParameters) {
                 }
                 memcpy(s_jpeg_frame_buffer + s_jpeg_frame_pos, rx_buffer, len);
                 s_jpeg_frame_pos += len;
-                
+
                 // Check if we have received a complete JPEG frame
                 // Look for JPEG end marker (0xFF 0xD9)
                 if (s_jpeg_frame_pos >= 2) {
@@ -161,7 +192,7 @@ static void tcp_server_task(void* pvParameters) {
             // Set input buffer for complete frame
             jpeg_io->inbuf = s_jpeg_frame_buffer;
             jpeg_io->inbuf_len = s_jpeg_frame_pos;
-            
+
             // Parse JPEG header
             dec_ret = jpeg_dec_parse_header(jpeg_dec, jpeg_io, out_info);
             if (dec_ret == JPEG_ERR_OK) {
@@ -199,7 +230,7 @@ static void tcp_server_task(void* pvParameters) {
             } else {
                 ESP_LOGE(TAG, "Failed to parse JPEG header: %d", dec_ret);
             }
-            
+
             // Reset buffer for next frame
             s_jpeg_frame_pos = 0;
         }
@@ -218,13 +249,16 @@ static void tcp_server_task(void* pvParameters) {
         close(sock);
     }
 
-CLEAN_UP:
-    close(listen_sock);
+    if (s_listen_sock >= 0) {
+        close(s_listen_sock);
+        s_listen_sock = -1;
+    }
     s_server_running = false;
     if (s_jpeg_frame_buffer) {
         free(s_jpeg_frame_buffer);
         s_jpeg_frame_buffer = NULL;
     }
+    s_tcp_server_task_handle = NULL;
     vTaskDelete(NULL);
 }
 
@@ -242,6 +276,20 @@ bool wifi_image_transfer_start(uint16_t port) {
         return true;
     }
 
+    // Ensure clean state before starting
+    if (s_listen_sock >= 0) {
+        close(s_listen_sock);
+        s_listen_sock = -1;
+    }
+
+    if (s_jpeg_frame_buffer != NULL) {
+        free(s_jpeg_frame_buffer);
+        s_jpeg_frame_buffer = NULL;
+    }
+
+    s_jpeg_frame_pos = 0;
+    s_tcp_server_task_handle = NULL;
+
     // Start the TCP server task
     // Task stack size might need adjustment based on image size and processing
     if (xTaskCreate(tcp_server_task, "tcp_server", 8192, &port, 5, &s_tcp_server_task_handle) != pdPASS) {
@@ -253,13 +301,37 @@ bool wifi_image_transfer_start(uint16_t port) {
 
 void wifi_image_transfer_stop(void) {
     if (s_server_running) {
+        ESP_LOGI(TAG, "Stopping TCP server...");
         s_server_running = false;
-        // Give some time for the task to finish gracefully
-        vTaskDelay(pdMS_TO_TICKS(100));
-        if (s_tcp_server_task_handle != NULL) {
-            vTaskDelete(s_tcp_server_task_handle);
-            s_tcp_server_task_handle = NULL;
+
+        // Close the listen socket first to unblock accept()
+        if (s_listen_sock >= 0) {
+            ESP_LOGI(TAG, "Closing listen socket");
+            close(s_listen_sock);
+            s_listen_sock = -1;
         }
+
+        // Wait for the task to finish gracefully
+        if (s_tcp_server_task_handle != NULL) {
+            // Wait up to 1 second for the task to terminate
+            for (int i = 0; i < 100 && s_tcp_server_task_handle != NULL; i++) {
+                vTaskDelay(pdMS_TO_TICKS(10));
+            }
+
+            // If task still exists, force delete it
+            if (s_tcp_server_task_handle != NULL) {
+                ESP_LOGW(TAG, "Force deleting TCP server task");
+                vTaskDelete(s_tcp_server_task_handle);
+                s_tcp_server_task_handle = NULL;
+            }
+        }
+
+        // Ensure buffer is cleaned up
+        if (s_jpeg_frame_buffer != NULL) {
+            free(s_jpeg_frame_buffer);
+            s_jpeg_frame_buffer = NULL;
+        }
+
         ESP_LOGI(TAG, "TCP server stopped.");
     } else {
         ESP_LOGW(TAG, "TCP server not running.");
