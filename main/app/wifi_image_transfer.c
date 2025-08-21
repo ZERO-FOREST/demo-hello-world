@@ -127,122 +127,233 @@ static void tcp_server_task(void* pvParameters) {
         }
         ESP_LOGI(TAG, "Socket accepted IP address: %s", addr_str);
 
+        // Set socket timeout to detect disconnections
+        struct timeval timeout;
+        timeout.tv_sec = 2; // 2 second timeout
+        timeout.tv_usec = 0;
+        setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+
         int len;
         uint8_t rx_buffer[TCP_RECV_BUF_SIZE];
-        s_jpeg_frame_pos = 0; // Reset buffer for new frame
-
-        jpeg_dec_handle_t jpeg_dec = NULL;
-        jpeg_dec_io_t* jpeg_io = NULL;
-        jpeg_dec_header_info_t* out_info = NULL;
-        uint8_t* output_buffer = NULL;
-        int output_len = 0;
 
         jpeg_dec_config_t config = DEFAULT_JPEG_DEC_CONFIG();
         config.output_type = JPEG_PIXEL_FORMAT_RGB565_BE; // Set output to RGB565 Big Endian for LVGL
 
-        jpeg_error_t dec_ret = jpeg_dec_open(&config, &jpeg_dec);
+        jpeg_error_t dec_ret;
+        jpeg_dec_handle_t jpeg_dec = NULL;
+        dec_ret = jpeg_dec_open(&config, &jpeg_dec);
         if (dec_ret != JPEG_ERR_OK) {
             ESP_LOGE(TAG, "Failed to open JPEG decoder: %d", dec_ret);
             goto CLOSE_SOCKET;
         }
 
-        jpeg_io = calloc(1, sizeof(jpeg_dec_io_t));
-        out_info = calloc(1, sizeof(jpeg_dec_header_info_t));
-        if (jpeg_io == NULL || out_info == NULL) {
-            ESP_LOGE(TAG, "Failed to allocate decoder structures");
-            dec_ret = JPEG_ERR_NO_MEM;
-            goto DECODE_CLEAN_UP;
-        }
+        // Process multiple frames on the same connection
+        int consecutive_failures = 0;
+        const int MAX_CONSECUTIVE_FAILURES = 10;
 
-        // Receive complete JPEG data first
-        bool frame_complete = false;
-        do {
-            len = recv(sock, rx_buffer, sizeof(rx_buffer), 0);
-            if (len < 0) {
-                ESP_LOGE(TAG, "Error occurred during receive: errno %d", errno);
+        while (s_server_running) {
+            s_jpeg_frame_pos = 0; // Reset buffer for new frame
+
+            jpeg_dec_io_t* jpeg_io = calloc(1, sizeof(jpeg_dec_io_t));
+            jpeg_dec_header_info_t* out_info = calloc(1, sizeof(jpeg_dec_header_info_t));
+            uint8_t* output_buffer = NULL;
+            int output_len = 0;
+
+            if (jpeg_io == NULL || out_info == NULL) {
+                ESP_LOGE(TAG, "Failed to allocate decoder structures");
+                if (jpeg_io)
+                    free(jpeg_io);
+                if (out_info)
+                    free(out_info);
                 break;
-            } else if (len == 0) {
-                ESP_LOGW(TAG, "Connection closed");
-                break;
-            } else {
-                // Append received data to JPEG frame buffer
-                if (s_jpeg_frame_pos + len > MAX_JPEG_FRAME_SIZE) {
-                    ESP_LOGE(TAG, "JPEG frame buffer overflow!");
+            }
+
+            // Receive complete JPEG data first
+            bool frame_complete = false;
+            bool jpeg_started = false;
+            int frame_start_pos = 0;
+
+            do {
+                len = recv(sock, rx_buffer, sizeof(rx_buffer), 0);
+                if (len < 0) {
+                    if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                        ESP_LOGW(TAG, "Receive timeout, client may have disconnected");
+                    } else {
+                        ESP_LOGE(TAG, "Error occurred during receive: errno %d", errno);
+                    }
                     break;
-                }
-                memcpy(s_jpeg_frame_buffer + s_jpeg_frame_pos, rx_buffer, len);
-                s_jpeg_frame_pos += len;
+                } else if (len == 0) {
+                    ESP_LOGW(TAG, "Connection closed by client");
+                    break;
+                } else {
+                    // Append received data to JPEG frame buffer
+                    if (s_jpeg_frame_pos + len > MAX_JPEG_FRAME_SIZE) {
+                        ESP_LOGE(TAG, "JPEG frame buffer overflow! Resetting buffer.");
+                        s_jpeg_frame_pos = 0;
+                        jpeg_started = false;
+                        break;
+                    }
+                    memcpy(s_jpeg_frame_buffer + s_jpeg_frame_pos, rx_buffer, len);
+                    s_jpeg_frame_pos += len;
 
-                // Check if we have received a complete JPEG frame
-                // Look for JPEG end marker (0xFF 0xD9)
-                if (s_jpeg_frame_pos >= 2) {
-                    for (int i = s_jpeg_frame_pos - 2; i >= 0; i--) {
-                        if (s_jpeg_frame_buffer[i] == 0xFF && s_jpeg_frame_buffer[i + 1] == 0xD9) {
-                            frame_complete = true;
-                            ESP_LOGI(TAG, "Complete JPEG frame received, size: %d bytes", s_jpeg_frame_pos);
-                            break;
+                    // Look for JPEG start marker (0xFF 0xD8) if not found yet
+                    if (!jpeg_started && s_jpeg_frame_pos >= 2) {
+                        for (int i = 0; i <= s_jpeg_frame_pos - 2; i++) {
+                            if (s_jpeg_frame_buffer[i] == 0xFF && s_jpeg_frame_buffer[i + 1] == 0xD8) {
+                                frame_start_pos = i;
+                                jpeg_started = true;
+                                // Move data to start of buffer if JPEG doesn't start at beginning
+                                if (frame_start_pos > 0) {
+                                    memmove(s_jpeg_frame_buffer, s_jpeg_frame_buffer + frame_start_pos,
+                                            s_jpeg_frame_pos - frame_start_pos);
+                                    s_jpeg_frame_pos -= frame_start_pos;
+                                }
+                                break;
+                            }
+                        }
+                    }
+
+                    // Look for JPEG end marker (0xFF 0xD9) only after start is found
+                    if (jpeg_started && s_jpeg_frame_pos >= 4) {          // Need at least SOI + minimal data + EOI
+                        for (int i = 2; i <= s_jpeg_frame_pos - 2; i++) { // Start from position 2 to avoid matching SOI
+                            if (s_jpeg_frame_buffer[i] == 0xFF && s_jpeg_frame_buffer[i + 1] == 0xD9) {
+                                frame_complete = true;
+                                s_jpeg_frame_pos = i + 2; // Include EOI marker
+
+                                // Only log every 10th frame to reduce spam
+                                static int frame_count = 0;
+                                if (++frame_count % 10 == 0) {
+                                    ESP_LOGI(TAG, "Frame #%d received, size: %d bytes", frame_count, s_jpeg_frame_pos);
+                                }
+                                break;
+                            }
                         }
                     }
                 }
-            }
-        } while (!frame_complete && s_server_running);
+            } while (!frame_complete && s_server_running);
 
-        // Now decode the complete JPEG frame
-        if (frame_complete && s_jpeg_frame_pos > 0) {
-            // Set input buffer for complete frame
-            jpeg_io->inbuf = s_jpeg_frame_buffer;
-            jpeg_io->inbuf_len = s_jpeg_frame_pos;
-
-            // Parse JPEG header
-            dec_ret = jpeg_dec_parse_header(jpeg_dec, jpeg_io, out_info);
-            if (dec_ret == JPEG_ERR_OK) {
-                ESP_LOGI(TAG, "JPEG Header parsed: Width=%d, Height=%d", out_info->width, out_info->height);
-
-                // Calculate output buffer size
-                if (config.output_type == JPEG_PIXEL_FORMAT_RGB565_LE ||
-                    config.output_type == JPEG_PIXEL_FORMAT_RGB565_BE ||
-                    config.output_type == JPEG_PIXEL_FORMAT_CbYCrY) {
-                    output_len = out_info->width * out_info->height * 2;
-                } else if (config.output_type == JPEG_PIXEL_FORMAT_RGB888) {
-                    output_len = out_info->width * out_info->height * 3;
-                } else {
-                    ESP_LOGE(TAG, "Unsupported output format");
-                    dec_ret = JPEG_ERR_UNSUPPORT_FMT;
-                    goto DECODE_CLEAN_UP;
+            // Now decode the complete JPEG frame if we have one
+            if (frame_complete && s_jpeg_frame_pos > 0 && jpeg_started) {
+                // Validate JPEG frame structure
+                if (s_jpeg_frame_pos < 4 || s_jpeg_frame_buffer[0] != 0xFF || s_jpeg_frame_buffer[1] != 0xD8 ||
+                    s_jpeg_frame_buffer[s_jpeg_frame_pos - 2] != 0xFF ||
+                    s_jpeg_frame_buffer[s_jpeg_frame_pos - 1] != 0xD9) {
+                    ESP_LOGE(TAG, "Invalid JPEG frame structure");
+                    // Send NACK and continue
+                    uint8_t nack = 0x15;
+                    send(sock, &nack, 1, 0);
+                    consecutive_failures++;
+                    if (jpeg_io)
+                        free(jpeg_io);
+                    if (out_info)
+                        free(out_info);
+                    continue;
                 }
 
-                output_buffer = jpeg_calloc_align(output_len, 16);
-                if (output_buffer == NULL) {
-                    ESP_LOGE(TAG, "Failed to allocate output buffer");
-                    dec_ret = JPEG_ERR_NO_MEM;
-                    goto DECODE_CLEAN_UP;
-                }
-                jpeg_io->outbuf = output_buffer;
+                // Set input buffer for complete frame
+                jpeg_io->inbuf = s_jpeg_frame_buffer;
+                jpeg_io->inbuf_len = s_jpeg_frame_pos;
 
-                // Decode the complete JPEG frame
-                dec_ret = jpeg_dec_process(jpeg_dec, jpeg_io);
+                // Parse JPEG header
+                dec_ret = jpeg_dec_parse_header(jpeg_dec, jpeg_io, out_info);
                 if (dec_ret == JPEG_ERR_OK) {
-                    ESP_LOGI(TAG, "JPEG Decoded successfully!");
-                    handle_decoded_image(output_buffer, out_info->width, out_info->height, config.output_type);
+                    // Only log header info for first frame or when dimensions change
+                    static int last_width = 0, last_height = 0;
+                    if (out_info->width != last_width || out_info->height != last_height) {
+                        ESP_LOGI(TAG, "JPEG Header parsed: Width=%d, Height=%d", out_info->width, out_info->height);
+                        last_width = out_info->width;
+                        last_height = out_info->height;
+                    }
+
+                    // Calculate output buffer size
+                    if (config.output_type == JPEG_PIXEL_FORMAT_RGB565_LE ||
+                        config.output_type == JPEG_PIXEL_FORMAT_RGB565_BE ||
+                        config.output_type == JPEG_PIXEL_FORMAT_CbYCrY) {
+                        output_len = out_info->width * out_info->height * 2;
+                    } else if (config.output_type == JPEG_PIXEL_FORMAT_RGB888) {
+                        output_len = out_info->width * out_info->height * 3;
+                    } else {
+                        ESP_LOGE(TAG, "Unsupported output format");
+                        if (jpeg_io)
+                            free(jpeg_io);
+                        if (out_info)
+                            free(out_info);
+                        break;
+                    }
+
+                    output_buffer = jpeg_calloc_align(output_len, 16);
+                    if (output_buffer == NULL) {
+                        ESP_LOGE(TAG, "Failed to allocate output buffer");
+                        if (jpeg_io)
+                            free(jpeg_io);
+                        if (out_info)
+                            free(out_info);
+                        break;
+                    }
+                    jpeg_io->outbuf = output_buffer;
+
+                    // Decode the complete JPEG frame
+                    dec_ret = jpeg_dec_process(jpeg_dec, jpeg_io);
+                    if (dec_ret == JPEG_ERR_OK) {
+                        // Remove success log spam - only log errors
+                        handle_decoded_image(output_buffer, out_info->width, out_info->height, config.output_type);
+
+                        // Send ACK to client
+                        uint8_t ack = 0x06;
+                        send(sock, &ack, 1, 0);
+
+                        // Reset failure counter on success
+                        consecutive_failures = 0;
+
+                        // Add a small delay to control frame rate
+                        vTaskDelay(pdMS_TO_TICKS(33)); // ~30 FPS
+                    } else {
+                        ESP_LOGE(TAG, "Failed to decode JPEG data: %d", dec_ret);
+                        // Send NACK to client
+                        uint8_t nack = 0x15;
+                        send(sock, &nack, 1, 0);
+                        consecutive_failures++;
+                    }
                 } else {
-                    ESP_LOGE(TAG, "Failed to decode JPEG data: %d", dec_ret);
+                    ESP_LOGE(TAG, "Failed to parse JPEG header: %d", dec_ret);
+                    // Send NACK to client
+                    uint8_t nack = 0x15;
+                    send(sock, &nack, 1, 0);
+                    consecutive_failures++;
                 }
-            } else {
-                ESP_LOGE(TAG, "Failed to parse JPEG header: %d", dec_ret);
+            } else if (s_jpeg_frame_pos > 0 || !jpeg_started) {
+                // Incomplete frame or invalid data, send NACK
+                uint8_t nack = 0x15;
+                send(sock, &nack, 1, 0);
+                ESP_LOGW(TAG, "Incomplete or invalid frame data received (pos: %d, started: %d)", s_jpeg_frame_pos,
+                         jpeg_started);
+                consecutive_failures++;
             }
 
-            // Reset buffer for next frame
-            s_jpeg_frame_pos = 0;
-        }
+            // Clean up this frame's resources
+            if (jpeg_io)
+                free(jpeg_io);
+            if (out_info)
+                free(out_info);
+            if (output_buffer)
+                jpeg_free_align(output_buffer);
 
-    DECODE_CLEAN_UP:
-        jpeg_dec_close(jpeg_dec);
-        if (jpeg_io)
-            free(jpeg_io);
-        if (out_info)
-            free(out_info);
-        if (output_buffer)
-            jpeg_free_align(output_buffer);
+            // If we didn't get a complete frame or had an error, break the loop
+            if (!frame_complete || len <= 0) {
+                break;
+            }
+
+            // If too many consecutive failures, break the connection to reset
+            if (consecutive_failures >= MAX_CONSECUTIVE_FAILURES) {
+                ESP_LOGW(TAG, "Too many consecutive failures (%d), closing connection for reset", consecutive_failures);
+                break;
+            }
+        } // End of frame processing loop
+
+        // Clean up decoder
+        if (jpeg_dec) {
+            jpeg_dec_close(jpeg_dec);
+        }
 
     CLOSE_SOCKET:
         shutdown(sock, 0);
@@ -264,8 +375,17 @@ static void tcp_server_task(void* pvParameters) {
 
 static void handle_decoded_image(uint8_t* img_buf, int width, int height, jpeg_pixel_format_t format) {
     // This function would typically display the image on a screen
-    // For now, we just log the information.
-    ESP_LOGI(TAG, "Decoded Image: Width=%d, Height=%d, Format=%d", width, height, format);
+    // Only log image info on first frame or when dimensions change
+    static int last_w = 0, last_h = 0;
+    static int frame_num = 0;
+    frame_num++;
+
+    if (width != last_w || height != last_h || frame_num == 1) {
+        ESP_LOGI(TAG, "Decoded Image: Width=%d, Height=%d, Format=%d (Frame #%d)", width, height, format, frame_num);
+        last_w = width;
+        last_h = height;
+    }
+
     // You can add your display logic here, e.g., send to LVGL or an LCD driver
     ui_image_transfer_set_image_data(img_buf, width, height, format);
 }

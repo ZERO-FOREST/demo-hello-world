@@ -5,9 +5,9 @@ import time
 import sys
 from tkinter import Tk, filedialog
 
-ESP32_IP = '192.168.97.247'  # 修改为你的 ESP32 IP 地址
+ESP32_IP = '192.168.123.159'  # 修改为你的 ESP32 IP 地址
 ESP32_PORT = 6556           # ESP32 监听的端口
-MAX_IMAGE_SIZE_BYTES = 100 * 1024  # 100KB
+MAX_IMAGE_SIZE_BYTES = 90 * 1024  # 90KB single buffer
 TARGET_RESOLUTION = (240, 240)
 
 def select_video_file():
@@ -54,6 +54,7 @@ def send_video_to_esp32(video_source):
             try:
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                     s.connect((ESP32_IP, ESP32_PORT))
+                    s.settimeout(1.0)  # 设置1秒超时
                     print("Connected. Starting video stream...")
 
                     while True:
@@ -71,21 +72,21 @@ def send_video_to_esp32(video_source):
                         # 1. 等比缩放
                         resized_frame = resize_with_aspect_ratio(frame, TARGET_RESOLUTION)
 
-                        # 2. JPEG 编码和压缩
-                        jpeg_quality = 95
+                                                # 2. JPEG 编码和压缩
+                        jpeg_quality = 90  # 合理的起始质量
                         while True:
                             encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), jpeg_quality]
                             result, encimg = cv2.imencode('.jpg', resized_frame, encode_param)
                             if not result:
                                 print("Error: Failed to encode frame.")
                                 break
-                            
+
                             if len(encimg) <= MAX_IMAGE_SIZE_BYTES:
                                 break
-                            
-                            jpeg_quality -= 5
-                            if jpeg_quality < 10:
-                                print("Warning: Cannot compress image under 100KB")
+
+                            jpeg_quality -= 5  # 逐步降低质量
+                            if jpeg_quality < 40:  # 质量下限
+                                print("Warning: Cannot compress image under 90KB")
                                 break
                         
                         if not result:
@@ -93,7 +94,21 @@ def send_video_to_esp32(video_source):
 
                         # 3. 发送图像数据
                         try:
+                            # 发送图像数据
                             s.sendall(encimg.tobytes())
+                            
+                            # 等待ACK/NACK响应
+                            try:
+                                resp = s.recv(1)
+                                if resp == b'\x06':  # ACK
+                                    pass  # 成功接收
+                                elif resp == b'\x15':  # NACK
+                                    print("接收方返回NACK，帧数据可能溢出")
+                                    time.sleep(0.1)  # 稍微延迟，给接收方一些处理时间
+                                else:
+                                    print(f"收到未知响应：{resp.hex()}")
+                            except socket.timeout:
+                                print("等待响应超时")
                         except socket.error as e:
                             print(f"Socket error: {e}. Reconnecting...")
                             break # 发送失败，跳出内层循环以重新连接
