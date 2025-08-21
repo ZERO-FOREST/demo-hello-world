@@ -267,15 +267,11 @@ static void display_task(void* pvParameters) {
 static void back_btn_event_cb(lv_event_t* e) {
     lv_obj_t* screen = lv_scr_act();
     if (screen) {
-        // 停止TCP服务器
-        serial_display_stop();
-        ESP_LOGI(TAG, "Serial display TCP server stopped on back button");
-
         // 先停止显示任务
         g_display_running = false;
         if (g_display_task_handle) {
             // 等待任务结束
-            vTaskDelay(pdMS_TO_TICKS(200));
+            vTaskDelay(pdMS_TO_TICKS(300));
             // 检查任务是否还在运行
             if (eTaskGetState(g_display_task_handle) != eDeleted) {
                 vTaskDelete(g_display_task_handle);
@@ -291,6 +287,10 @@ static void back_btn_event_cb(lv_event_t* e) {
 
         // 清理PSRAM缓冲区
         cleanup_psram_buffer();
+
+        // 停止TCP服务器 - 移到最后执行
+        serial_display_stop();
+        ESP_LOGI(TAG, "Serial display TCP server stopped on back button");
 
         // 清空全局变量
         g_serial_display_screen = NULL;

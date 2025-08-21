@@ -44,6 +44,7 @@ static TaskHandle_t s_tcp_server_task_handle = NULL;
 static TaskHandle_t s_serial_task_handle = NULL;
 static bool s_server_running = false;
 static bool s_serial_running = false;
+static bool s_stopping = false;  // 添加停止标志
 
 // 数据缓冲区 - 使用PSRAM
 static uint8_t* s_display_buffer = NULL;
@@ -222,6 +223,24 @@ static void tcp_server_task(void* pvParameters) {
     while (s_server_running) {
         struct sockaddr_in source_addr;
         socklen_t addr_len = sizeof(source_addr);
+        
+        // 使用select来设置超时，以便能够及时响应停止信号
+        fd_set readfds;
+        struct timeval tv;
+        FD_ZERO(&readfds);
+        FD_SET(listen_sock, &readfds);
+        tv.tv_sec = 1;  // 1秒超时
+        tv.tv_usec = 0;
+        
+        int select_result = select(listen_sock + 1, &readfds, NULL, NULL, &tv);
+        if (select_result < 0) {
+            ESP_LOGE(TAG, "Select error: errno %d", errno);
+            continue;
+        } else if (select_result == 0) {
+            // 超时，检查是否需要停止
+            continue;
+        }
+        
         int sock = accept(listen_sock, (struct sockaddr*)&source_addr, &addr_len);
         if (sock < 0) {
             ESP_LOGE(TAG, "Unable to accept connection: errno %d", errno);
@@ -238,6 +257,11 @@ static void tcp_server_task(void* pvParameters) {
         uint8_t rx_buffer[TCP_RECV_BUF_SIZE];
 
         do {
+            // 检查是否需要停止
+            if (!s_server_running) {
+                break;
+            }
+            
             len = recv(sock, rx_buffer, sizeof(rx_buffer), 0);
             if (len < 0) {
                 ESP_LOGE(TAG, "Error occurred during receive: errno %d", errno);
@@ -347,12 +371,23 @@ bool serial_display_start(uint16_t port) {
 }
 
 void serial_display_stop(void) {
+    // 防止重复调用
+    if (s_stopping) {
+        ESP_LOGW(TAG, "Serial display stop already in progress");
+        return;
+    }
+    
+    s_stopping = true;
+    
     // 停止TCP服务器
     if (s_server_running) {
         s_server_running = false;
-        vTaskDelay(pdMS_TO_TICKS(100));
+        vTaskDelay(pdMS_TO_TICKS(200));
         if (s_tcp_server_task_handle != NULL) {
-            vTaskDelete(s_tcp_server_task_handle);
+            // 检查任务状态
+            if (eTaskGetState(s_tcp_server_task_handle) != eDeleted) {
+                vTaskDelete(s_tcp_server_task_handle);
+            }
             s_tcp_server_task_handle = NULL;
         }
     }
@@ -360,15 +395,21 @@ void serial_display_stop(void) {
     // 停止串口任务
     if (s_serial_running) {
         s_serial_running = false;
-        vTaskDelay(pdMS_TO_TICKS(100));
+        vTaskDelay(pdMS_TO_TICKS(200));
         if (s_serial_task_handle != NULL) {
-            vTaskDelete(s_serial_task_handle);
+            // 检查任务状态
+            if (eTaskGetState(s_serial_task_handle) != eDeleted) {
+                vTaskDelete(s_serial_task_handle);
+            }
             s_serial_task_handle = NULL;
         }
     }
 
     // 清理PSRAM缓冲区
     cleanup_psram_buffer();
+    
+    // 重置停止标志
+    s_stopping = false;
 
     ESP_LOGI(TAG, "Serial display stopped");
 }
