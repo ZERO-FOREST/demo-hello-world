@@ -66,8 +66,8 @@ class P2PUDPClient:
             self.socket = None
             print("UDP连接已关闭")
     
-    def create_packet_header(self, packet_type, packet_id, total_packets, 
-                           frame_size, data_size, frame_id=None):
+    def create_packet_header(self, packet_type, packet_id, total_packets,
+                           frame_size, data_size, checksum, frame_id=None):
         """
         创建数据包头部
         
@@ -77,26 +77,36 @@ class P2PUDPClient:
         if frame_id is None:
             frame_id = self.frame_id
             
-        # 计算简单校验和（用于演示）
-        checksum = (frame_id + packet_id + data_size) & 0xFFFF
-        
         # 获取当前时间戳（毫秒）
         timestamp = int(time.time() * 1000) & 0xFFFFFFFF
         
-        # 打包头部数据（32字节）
-        header = struct.pack('<LBBHHLHHLHL4s',
-            P2P_UDP_MAGIC,      # magic (4 bytes)
-            packet_type,        # packet_type (1 byte)
-            1,                  # version (1 byte)
-            packet_id,          # sequence_num (2 bytes)
-            frame_id,           # frame_id (4 bytes)
-            packet_id,          # packet_id (2 bytes)
-            total_packets,      # total_packets (2 bytes)
-            frame_size,         # frame_size (4 bytes)
-            data_size,          # data_size (2 bytes)
-            checksum,           # checksum (2 bytes)
-            timestamp,          # timestamp (4 bytes)
-            b'\x00' * 4         # reserved (4 bytes)
+        # 打包头部数据（32字节），确保与ESP32端的p2p_udp_packet_header_t结构体匹配
+        # < little-endian
+        # I: uint32_t (magic)
+        # B: uint8_t (packet_type)
+        # B: uint8_t (version)
+        # H: uint16_t (sequence_num)
+        # I: uint32_t (frame_id)
+        # H: uint16_t (packet_id)
+        # H: uint16_t (total_packets)
+        # I: uint32_t (frame_size)
+        # H: uint16_t (data_size)
+        # H: uint16_t (checksum)
+        # I: uint32_t (timestamp)
+        # 4s: char[4] (reserved)
+        header = struct.pack('<IBBHIHHIHHI4s',
+            P2P_UDP_MAGIC,      # magic
+            packet_type,        # packet_type
+            1,                  # version
+            0,                  # sequence_num
+            frame_id,           # frame_id
+            packet_id,          # packet_id
+            total_packets,      # total_packets
+            frame_size,         # frame_size
+            data_size,          # data_size
+            checksum,           # checksum
+            timestamp,          # timestamp
+            b'\x00' * 4         # reserved
         )
         
         return header
@@ -162,7 +172,7 @@ class P2PUDPClient:
         payload_size = P2P_UDP_MAX_PACKET_SIZE - P2P_UDP_HEADER_SIZE
         total_packets = (len(jpeg_data) + payload_size - 1) // payload_size
         
-        print(f"发送图像: {len(jpeg_data)} 字节，分为 {total_packets} 个数据包")
+        # print(f"发送图像: {len(jpeg_data)} 字节，分为 {total_packets} 个数据包")
         
         self.frame_id += 1
         success_packets = 0
@@ -174,13 +184,17 @@ class P2PUDPClient:
             current_data_size = min(payload_size, len(jpeg_data) - offset)
             packet_data = jpeg_data[offset:offset + current_data_size]
             
+            # 移除校验和
+            checksum = 0 # sum(packet_data) & 0xFFFF
+
             # 创建包头
             header = self.create_packet_header(
                 PACKET_TYPE_FRAME_DATA,
                 packet_id,
                 total_packets,
                 len(jpeg_data),
-                current_data_size
+                current_data_size,
+                checksum # Pass the correct checksum
             )
             
             # 组合完整数据包
@@ -193,17 +207,17 @@ class P2PUDPClient:
                 
                 if sent_bytes == len(full_packet):
                     success_packets += 1
-                    print(f"包 {packet_id + 1}/{total_packets} 发送成功 ({current_data_size} 字节)")
+                    # print(f"包 {packet_id + 1}/{total_packets} 发送成功 ({current_data_size} 字节)")
                 else:
                     print(f"包 {packet_id + 1}/{total_packets} 发送不完整")
                 
-                # 添加小延迟避免网络拥塞
-                time.sleep(0.001)
+                # 移除发送延迟以提高速度
+                # time.sleep(0.001)
                 
             except Exception as e:
                 print(f"发送包 {packet_id + 1}/{total_packets} 失败: {e}")
         
-        print(f"图像发送完成: {success_packets}/{total_packets} 包成功")
+        # print(f"图像发送完成: {success_packets}/{total_packets} 包成功")
         return success_packets == total_packets
     
     def send_camera_stream(self, camera_index=0, fps=10):
@@ -271,6 +285,66 @@ class P2PUDPClient:
             cap.release()
             cv2.destroyAllWindows()
             print("摄像头流传输结束")
+
+    def send_video_file(self, video_path, fps=10):
+        """
+        发送视频文件
+        
+        Args:
+            video_path: 视频文件路径
+            fps: 帧率
+        """
+        if not self.socket:
+            print("未连接到服务器")
+            return
+        
+        cap = cv2.VideoCapture(str(video_path))
+        if not cap.isOpened():
+            print(f"无法打开视频文件 {video_path}")
+            return
+            
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        print(f"开始发送视频: {video_path}, 共 {total_frames} 帧, 目标帧率: {fps} FPS")
+        print("按 Ctrl+C 退出")
+
+        self.running = True
+        frame_interval = 1.0 / fps
+        last_frame_time = 0
+        frame_count = 0
+
+        try:
+            while self.running:
+                current_time = time.time()
+                
+                # 控制帧率
+                if current_time - last_frame_time < frame_interval:
+                    time.sleep(0.001)
+                    continue
+
+                ret, frame = cap.read()
+                if not ret:
+                    print("视频播放结束")
+                    break
+                
+                frame_count += 1
+                
+                # 编码为JPEG
+                encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 75]
+                _, jpeg_data = cv2.imencode('.jpg', frame, encode_param)
+                jpeg_data = jpeg_data.tobytes()
+                
+                print(f"发送帧: {frame_count}/{total_frames}")
+                # 发送JPEG数据
+                self.send_jpeg_data(jpeg_data)
+                
+                last_frame_time = current_time
+
+        except KeyboardInterrupt:
+            print("\n用户中断")
+        finally:
+            self.running = False
+            cap.release()
+            print("视频发送结束")
     
     def print_stats(self):
         """打印统计信息"""
@@ -287,7 +361,8 @@ def main():
     parser.add_argument('--port', type=int, default=P2P_UDP_PORT, help='目标端口')
     parser.add_argument('--image', help='要发送的图像文件路径')
     parser.add_argument('--camera', type=int, help='摄像头索引（启用摄像头流）')
-    parser.add_argument('--fps', type=int, default=10, help='摄像头帧率')
+    parser.add_argument('--video', help='要发送的视频文件路径')
+    parser.add_argument('--fps', type=int, default=30, help='摄像头或视频的帧率')
     
     args = parser.parse_args()
     
@@ -311,7 +386,15 @@ def main():
         elif args.camera is not None:
             # 启动摄像头流
             client.send_camera_stream(args.camera, args.fps)
-            
+        
+        elif args.video is not None:
+            # 发送视频文件
+            video_path = Path(args.video)
+            if not video_path.exists():
+                print(f"视频文件不存在: {video_path}")
+                return
+            client.send_video_file(video_path, args.fps)
+
         else:
             # 发送测试图像
             print("生成测试图像...")

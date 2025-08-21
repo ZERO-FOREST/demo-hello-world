@@ -5,7 +5,7 @@ import time
 import sys
 from tkinter import Tk, filedialog
 
-ESP32_IP = '192.168.123.159'  # 修改为你的 ESP32 IP 地址
+ESP32_IP = '192.168.84.247'  # 修改为你的 ESP32 IP 地址
 ESP32_PORT = 6556           # ESP32 监听的端口
 MAX_IMAGE_SIZE_BYTES = 90 * 1024  # 90KB single buffer
 TARGET_RESOLUTION = (240, 240)

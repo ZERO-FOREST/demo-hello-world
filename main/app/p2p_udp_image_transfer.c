@@ -34,42 +34,55 @@ static p2p_udp_status_callback_t g_status_callback = NULL;
 
 // 任务和队列
 static TaskHandle_t g_rx_task_handle = NULL;
-static TaskHandle_t g_tx_task_handle = NULL;
-static QueueHandle_t g_tx_queue = NULL;
+static TaskHandle_t g_decode_task_handle = NULL;
+static QueueHandle_t g_decode_queue = NULL;
 static SemaphoreHandle_t g_state_mutex = NULL;
 
 // 帧接收管理
 static p2p_udp_frame_info_t g_current_frame = {0};
 static SemaphoreHandle_t g_frame_mutex = NULL;
 
+// 为解码队列定义一个结构体
+typedef struct {
+    uint8_t* frame_buffer;
+    uint32_t frame_size;
+    uint32_t frame_id;
+} decode_queue_item_t;
+
 // 统计信息
 static uint32_t g_tx_packets = 0;
 static uint32_t g_rx_packets = 0;
 static uint32_t g_lost_packets = 0;
 static uint32_t g_retx_packets = 0;
+static float g_current_fps = 0.0f;
+static uint32_t g_fps_frame_count = 0;
+static uint32_t g_fps_last_time = 0;
 
 // 发送队列项
+/*
 typedef struct {
     uint8_t* data;
     uint32_t size;
 } tx_queue_item_t;
+*/
 
 // 前向声明
 static esp_err_t wifi_init_p2p(void);
 static esp_err_t udp_socket_init(void);
 static void udp_rx_task(void* pvParameters);
-static void udp_tx_task(void* pvParameters);
+static void jpeg_decode_task(void* pvParameters);
+// static void udp_tx_task(void* pvParameters);
 static void wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data);
 static void ip_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data);
 static void set_connection_state(p2p_connection_state_t state, const char* info);
 static uint32_t get_timestamp_ms(void);
 static uint16_t calculate_checksum(const uint8_t* data, uint16_t len);
 static esp_err_t process_received_packet(const uint8_t* packet_data, int len, struct sockaddr_in* sender_addr);
-static esp_err_t send_ack_packet(uint32_t frame_id, uint16_t packet_id, struct sockaddr_in* dest_addr);
-static esp_err_t send_nack_packet(uint32_t frame_id, uint16_t packet_id, struct sockaddr_in* dest_addr);
+// static esp_err_t send_ack_packet(uint32_t frame_id, uint16_t packet_id, struct sockaddr_in* dest_addr);
+// static esp_err_t send_nack_packet(uint32_t frame_id, uint16_t packet_id, struct sockaddr_in* dest_addr);
 static void cleanup_current_frame(void);
 static bool is_frame_complete(void);
-static esp_err_t decode_and_callback_frame(void);
+static esp_err_t decode_frame_data(uint8_t* buffer, uint32_t size, uint32_t frame_id);
 
 esp_err_t p2p_udp_image_transfer_init(p2p_connection_mode_t mode, p2p_udp_image_callback_t image_callback,
                                       p2p_udp_status_callback_t status_callback) {
@@ -85,16 +98,24 @@ esp_err_t p2p_udp_image_transfer_init(p2p_connection_mode_t mode, p2p_udp_image_
     // 创建互斥锁和队列
     g_state_mutex = xSemaphoreCreateMutex();
     g_frame_mutex = xSemaphoreCreateMutex();
-    g_tx_queue = xQueueCreate(10, sizeof(tx_queue_item_t));
+    g_decode_queue = xQueueCreate(2, sizeof(decode_queue_item_t));
+    // g_tx_queue = xQueueCreate(10, sizeof(tx_queue_item_t));
 
-    if (!g_state_mutex || !g_frame_mutex || !g_tx_queue) {
+    if (!g_state_mutex || !g_frame_mutex || !g_decode_queue /*|| !g_tx_queue*/) {
         ESP_LOGE(TAG, "Failed to create synchronization objects");
         return ESP_ERR_NO_MEM;
     }
 
     // 初始化网络接口
     ESP_ERROR_CHECK(esp_netif_init());
-    ESP_ERROR_CHECK(esp_event_loop_create_default());
+    
+    // 检查事件循环是否已经存在，避免重复创建
+    esp_err_t ret = esp_event_loop_create_default();
+    if (ret == ESP_ERR_INVALID_STATE) {
+        ESP_LOGW(TAG, "Event loop already exists, skipping creation");
+    } else {
+        ESP_ERROR_CHECK(ret);
+    }
 
     // 注册事件处理器
     ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler, NULL, NULL));
@@ -129,6 +150,15 @@ esp_err_t p2p_udp_image_transfer_start(void) {
         return ESP_ERR_NO_MEM;
     }
 
+    // 创建解码任务，优先级略高于网络任务
+    if (xTaskCreate(jpeg_decode_task, "jpeg_decode", 4096, NULL, 6, &g_decode_task_handle) != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create decode task");
+        vTaskDelete(g_rx_task_handle);
+        g_rx_task_handle = NULL;
+        return ESP_ERR_NO_MEM;
+    }
+
+    /*
     // 创建发送任务
     if (xTaskCreate(udp_tx_task, "udp_tx", 4096, NULL, 5, &g_tx_task_handle) != pdPASS) {
         ESP_LOGE(TAG, "Failed to create TX task");
@@ -136,6 +166,7 @@ esp_err_t p2p_udp_image_transfer_start(void) {
         g_rx_task_handle = NULL;
         return ESP_ERR_NO_MEM;
     }
+    */
 
     g_running = true;
     ESP_LOGI(TAG, "P2P UDP image transfer started");
@@ -155,16 +186,32 @@ void p2p_udp_image_transfer_stop(void) {
         vTaskDelete(g_rx_task_handle);
         g_rx_task_handle = NULL;
     }
-
+    if (g_decode_task_handle) {
+        vTaskDelete(g_decode_task_handle);
+        g_decode_task_handle = NULL;
+    }
+    /*
     if (g_tx_task_handle) {
         vTaskDelete(g_tx_task_handle);
         g_tx_task_handle = NULL;
     }
-
+    */
     // 关闭socket
     if (g_udp_socket >= 0) {
         close(g_udp_socket);
         g_udp_socket = -1;
+    }
+
+    // 清理解码队列
+    if (g_decode_queue) {
+        decode_queue_item_t item;
+        while (xQueueReceive(g_decode_queue, &item, 0) == pdTRUE) {
+            if (item.frame_buffer) {
+                free(item.frame_buffer);
+            }
+        }
+        vQueueDelete(g_decode_queue);
+        g_decode_queue = NULL;
     }
 
     // 停止Wi-Fi
@@ -290,7 +337,7 @@ static void udp_rx_task(void* pvParameters) {
     ESP_LOGI(TAG, "UDP RX task ended");
     vTaskDelete(NULL);
 }
-
+/*
 static void udp_tx_task(void* pvParameters) {
     tx_queue_item_t tx_item;
 
@@ -321,7 +368,8 @@ static void udp_tx_task(void* pvParameters) {
     ESP_LOGI(TAG, "UDP TX task ended");
     vTaskDelete(NULL);
 }
-
+*/
+/*
 esp_err_t p2p_udp_send_image(const uint8_t* jpeg_data, uint32_t jpeg_size) {
     if (!g_running || g_udp_socket < 0 || !jpeg_data || jpeg_size == 0) {
         return ESP_ERR_INVALID_ARG;
@@ -391,7 +439,7 @@ esp_err_t p2p_udp_send_image(const uint8_t* jpeg_data, uint32_t jpeg_size) {
     ESP_LOGI(TAG, "Image sent successfully: %d packets", total_packets);
     return ESP_OK;
 }
-
+*/
 static esp_err_t process_received_packet(const uint8_t* packet_data, int len, struct sockaddr_in* sender_addr) {
     if (len < sizeof(p2p_udp_packet_header_t)) {
         ESP_LOGW(TAG, "Packet too small: %d bytes", len);
@@ -413,13 +461,17 @@ static esp_err_t process_received_packet(const uint8_t* packet_data, int len, st
     }
 
     // 验证校验和
+    /*
     const uint8_t* payload = packet_data + sizeof(p2p_udp_packet_header_t);
     uint16_t calculated_checksum = calculate_checksum(payload, header->data_size);
     if (calculated_checksum != header->checksum) {
         ESP_LOGW(TAG, "Checksum mismatch: expected 0x%04x, got 0x%04x", header->checksum, calculated_checksum);
-        send_nack_packet(header->frame_id, header->packet_id, sender_addr);
+        // send_nack_packet(header->frame_id, header->packet_id, sender_addr);
         return ESP_ERR_INVALID_CRC;
     }
+    */
+    const uint8_t* payload = packet_data + sizeof(p2p_udp_packet_header_t);
+
 
     if (xSemaphoreTake(g_frame_mutex, pdMS_TO_TICKS(100)) != pdTRUE) {
         ESP_LOGW(TAG, "Failed to take frame mutex");
@@ -432,7 +484,27 @@ static esp_err_t process_received_packet(const uint8_t* packet_data, int len, st
     switch (header->packet_type) {
     case P2P_UDP_PACKET_TYPE_FRAME_DATA:
         // 检查是否是新帧
-        if (g_current_frame.frame_id != header->frame_id || g_current_frame.frame_buffer == NULL) {
+        if (g_current_frame.frame_id != header->frame_id) {
+
+            // 如果存在上一帧（无论是否完整），则认为其已结束，送去解码队列
+            if (g_current_frame.frame_buffer && g_current_frame.received_packets > 0) {
+                 ESP_LOGI(TAG, "New frame %lu arrived, queueing previous frame %lu (%d/%d packets received)",
+                         header->frame_id, g_current_frame.frame_id,
+                         g_current_frame.received_packets, g_current_frame.total_packets);
+
+                // 将帧数据发送到解码队列
+                decode_queue_item_t item_to_queue = {
+                    .frame_buffer = g_current_frame.frame_buffer,
+                    .frame_size = g_current_frame.frame_size,
+                    .frame_id = g_current_frame.frame_id,
+                };
+                if (xQueueSend(g_decode_queue, &item_to_queue, 0) != pdTRUE) {
+                    ESP_LOGW(TAG, "Decode queue is full. Dropping frame %lu.", item_to_queue.frame_id);
+                    free(item_to_queue.frame_buffer);
+                }
+                // 缓冲区的所有权已转移，将其置空以免被重复释放
+                g_current_frame.frame_buffer = NULL;
+            }
 
             // 清理旧帧
             cleanup_current_frame();
@@ -446,18 +518,34 @@ static esp_err_t process_received_packet(const uint8_t* packet_data, int len, st
             g_current_frame.is_complete = false;
 
             // 分配帧缓冲区
+            // 检查帧大小是否合理
+            if (header->frame_size == 0 || header->frame_size > P2P_UDP_MAX_FRAME_SIZE) {
+                ESP_LOGE(TAG, "Invalid frame size: %lu", header->frame_size);
+                cleanup_current_frame();
+                ret = ESP_ERR_INVALID_SIZE;
+                break;
+            }
             g_current_frame.frame_buffer = heap_caps_malloc(header->frame_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-            g_current_frame.packet_received = calloc(header->total_packets, sizeof(bool));
+            
+            // 不再需要packet_received数组
+            // g_current_frame.packet_received = calloc(header->total_packets, sizeof(bool));
 
-            if (!g_current_frame.frame_buffer || !g_current_frame.packet_received) {
-                ESP_LOGE(TAG, "Failed to allocate frame buffers");
+            if (!g_current_frame.frame_buffer) {
+                ESP_LOGE(TAG, "Failed to allocate frame buffer for frame %lu, size %lu", header->frame_id, header->frame_size);
                 cleanup_current_frame();
                 ret = ESP_ERR_NO_MEM;
                 break;
             }
 
-            ESP_LOGI(TAG, "New frame started: ID=%lu, size=%lu, packets=%d", header->frame_id, header->frame_size,
+            ESP_LOGD(TAG, "New frame started: ID=%lu, size=%lu, packets=%d", header->frame_id, header->frame_size,
                      header->total_packets);
+        }
+
+        // 检查g_current_frame.frame_buffer是否有效
+        if (!g_current_frame.frame_buffer) {
+            // 这可能是因为前一帧分配失败，或者这是一个乱序的旧帧包
+            ESP_LOGD(TAG, "Dropping packet for frame %lu as no buffer is allocated", header->frame_id);
+            break;
         }
 
         // 检查包ID有效性
@@ -467,36 +555,19 @@ static esp_err_t process_received_packet(const uint8_t* packet_data, int len, st
             break;
         }
 
-        // 检查是否已接收此包
-        if (g_current_frame.packet_received[header->packet_id]) {
-            ESP_LOGD(TAG, "Duplicate packet %d", header->packet_id);
-            send_ack_packet(header->frame_id, header->packet_id, sender_addr);
-            break;
-        }
-
-        // 复制数据到帧缓冲区
+        // 复制数据到帧缓冲区 (不再检查是否重复)
         uint32_t payload_size = P2P_UDP_MAX_PACKET_SIZE - sizeof(p2p_udp_packet_header_t);
         uint32_t offset = header->packet_id * payload_size;
 
         if (offset + header->data_size <= g_current_frame.frame_size) {
             memcpy(g_current_frame.frame_buffer + offset, payload, header->data_size);
-            g_current_frame.packet_received[header->packet_id] = true;
-            g_current_frame.received_packets++;
+            g_current_frame.received_packets++; // 只简单计数
             g_current_frame.last_update_time = get_timestamp_ms();
 
-            // 发送ACK
-            send_ack_packet(header->frame_id, header->packet_id, sender_addr);
+            ESP_LOGD(TAG, "Received packet %d for frame %lu. Total received: %d/%d", 
+                     header->packet_id, header->frame_id,
+                     g_current_frame.received_packets, g_current_frame.total_packets);
 
-            ESP_LOGD(TAG, "Received packet %d/%d for frame %lu", g_current_frame.received_packets,
-                     g_current_frame.total_packets, header->frame_id);
-
-            // 检查帧是否完整
-            if (is_frame_complete()) {
-                g_current_frame.is_complete = true;
-                ESP_LOGI(TAG, "Frame %lu complete, decoding...", header->frame_id);
-                decode_and_callback_frame();
-                cleanup_current_frame();
-            }
         } else {
             ESP_LOGE(TAG, "Packet data exceeds frame buffer");
             ret = ESP_ERR_INVALID_SIZE;
@@ -521,7 +592,7 @@ static esp_err_t process_received_packet(const uint8_t* packet_data, int len, st
     xSemaphoreGive(g_frame_mutex);
     return ret;
 }
-
+/*
 static esp_err_t send_ack_packet(uint32_t frame_id, uint16_t packet_id, struct sockaddr_in* dest_addr) {
     uint8_t ack_buffer[sizeof(p2p_udp_packet_header_t)];
     p2p_udp_packet_header_t* header = (p2p_udp_packet_header_t*)ack_buffer;
@@ -567,30 +638,33 @@ static esp_err_t send_nack_packet(uint32_t frame_id, uint16_t packet_id, struct 
 
     return ESP_OK;
 }
-
+*/
 static void cleanup_current_frame(void) {
     if (g_current_frame.frame_buffer) {
         free(g_current_frame.frame_buffer);
     }
+    /* 不再使用
     if (g_current_frame.packet_received) {
         free(g_current_frame.packet_received);
     }
+    */
     memset(&g_current_frame, 0, sizeof(g_current_frame));
 }
 
 static bool is_frame_complete(void) { return g_current_frame.received_packets == g_current_frame.total_packets; }
 
-static esp_err_t decode_and_callback_frame(void) {
-    if (!g_current_frame.frame_buffer || !g_image_callback) {
+static esp_err_t decode_frame_data(uint8_t* frame_buffer, uint32_t frame_size, uint32_t frame_id)
+{
+    if (!frame_buffer || !g_image_callback || frame_size == 0) {
+        if (frame_buffer) free(frame_buffer);
         return ESP_ERR_INVALID_ARG;
     }
 
-    // 验证JPEG格式
-    if (g_current_frame.frame_size < 4 || g_current_frame.frame_buffer[0] != 0xFF ||
-        g_current_frame.frame_buffer[1] != 0xD8 ||
-        g_current_frame.frame_buffer[g_current_frame.frame_size - 2] != 0xFF ||
-        g_current_frame.frame_buffer[g_current_frame.frame_size - 1] != 0xD9) {
-        ESP_LOGE(TAG, "Invalid JPEG format");
+    // 验证JPEG格式 (稍微放宽，因为帧可能不完整)
+    if (frame_size < 4 || frame_buffer[0] != 0xFF ||
+        frame_buffer[1] != 0xD8) {
+        ESP_LOGE(TAG, "Invalid JPEG start marker for frame %lu", frame_id);
+        free(frame_buffer);
         return ESP_ERR_INVALID_ARG;
     }
 
@@ -602,6 +676,7 @@ static esp_err_t decode_and_callback_frame(void) {
     jpeg_error_t dec_ret = jpeg_dec_open(&config, &jpeg_dec);
     if (dec_ret != JPEG_ERR_OK) {
         ESP_LOGE(TAG, "Failed to open JPEG decoder: %d", dec_ret);
+        free(frame_buffer);
         return ESP_FAIL;
     }
 
@@ -615,31 +690,42 @@ static esp_err_t decode_and_callback_frame(void) {
         if (out_info)
             free(out_info);
         jpeg_dec_close(jpeg_dec);
+        free(frame_buffer);
         return ESP_ERR_NO_MEM;
     }
 
     // 设置输入数据
-    jpeg_io->inbuf = g_current_frame.frame_buffer;
-    jpeg_io->inbuf_len = g_current_frame.frame_size;
+    jpeg_io->inbuf = frame_buffer;
+    jpeg_io->inbuf_len = frame_size;
 
     // 解析JPEG头部
     dec_ret = jpeg_dec_parse_header(jpeg_dec, jpeg_io, out_info);
     if (dec_ret != JPEG_ERR_OK) {
-        ESP_LOGE(TAG, "Failed to parse JPEG header: %d", dec_ret);
+        ESP_LOGE(TAG, "Failed to parse JPEG header for frame %lu: %d", frame_id, dec_ret);
         free(jpeg_io);
         free(out_info);
         jpeg_dec_close(jpeg_dec);
+        free(frame_buffer);
         return ESP_FAIL;
     }
 
     // 分配输出缓冲区
     int output_len = out_info->width * out_info->height * 2; // RGB565
+    if (output_len <= 0) {
+        ESP_LOGE(TAG, "Invalid output dimensions for frame %lu: %dx%d", frame_id, out_info->width, out_info->height);
+        free(jpeg_io);
+        free(out_info);
+        jpeg_dec_close(jpeg_dec);
+        free(frame_buffer);
+        return ESP_ERR_INVALID_SIZE;
+    }
     uint8_t* output_buffer = jpeg_calloc_align(output_len, 16);
     if (!output_buffer) {
         ESP_LOGE(TAG, "Failed to allocate output buffer");
         free(jpeg_io);
         free(out_info);
         jpeg_dec_close(jpeg_dec);
+        free(frame_buffer);
         return ESP_ERR_NO_MEM;
     }
 
@@ -648,12 +734,12 @@ static esp_err_t decode_and_callback_frame(void) {
     // 解码JPEG
     dec_ret = jpeg_dec_process(jpeg_dec, jpeg_io);
     if (dec_ret == JPEG_ERR_OK) {
-        ESP_LOGI(TAG, "JPEG decoded successfully: %dx%d", out_info->width, out_info->height);
+        ESP_LOGD(TAG, "JPEG decoded successfully: %dx%d", out_info->width, out_info->height);
 
         // 回调图像数据
         g_image_callback(output_buffer, out_info->width, out_info->height, config.output_type);
     } else {
-        ESP_LOGE(TAG, "Failed to decode JPEG: %d", dec_ret);
+        ESP_LOGE(TAG, "Failed to decode JPEG for frame %lu: %d", frame_id, dec_ret);
     }
 
     // 清理资源
@@ -662,7 +748,45 @@ static esp_err_t decode_and_callback_frame(void) {
     jpeg_free_align(output_buffer);
     jpeg_dec_close(jpeg_dec);
 
+    // 释放从队列中获取的输入帧缓冲区
+    free(frame_buffer);
+
     return (dec_ret == JPEG_ERR_OK) ? ESP_OK : ESP_FAIL;
+}
+
+static void jpeg_decode_task(void* pvParameters)
+{
+    decode_queue_item_t item;
+    ESP_LOGI(TAG, "JPEG decode task started");
+
+    while (g_running) {
+        // 等待队列中的解码任务
+        if (xQueueReceive(g_decode_queue, &item, portMAX_DELAY) == pdTRUE) {
+            if (item.frame_buffer) {
+                ESP_LOGD(TAG, "Decoding frame %lu from queue", item.frame_id);
+                // 解码函数将负责释放缓冲区
+                if (decode_frame_data(item.frame_buffer, item.frame_size, item.frame_id) == ESP_OK) {
+                    // FPS 计算
+                    g_fps_frame_count++;
+                    uint32_t current_time = get_timestamp_ms();
+                    if (current_time - g_fps_last_time >= 1000) {
+                        g_current_fps = (float)g_fps_frame_count * 1000.0f / (current_time - g_fps_last_time);
+                        g_fps_last_time = current_time;
+                        g_fps_frame_count = 0;
+                         ESP_LOGI(TAG, "p2p_udp_image_transfer FPS: %.2f", g_current_fps);
+                    }
+                }
+            }
+        }
+    }
+    // 退出前清理队列中剩余的项目
+    while (xQueueReceive(g_decode_queue, &item, 0) == pdTRUE) {
+        if (item.frame_buffer) {
+            free(item.frame_buffer);
+        }
+    }
+    ESP_LOGI(TAG, "JPEG decode task stopped");
+    vTaskDelete(NULL);
 }
 
 // 事件处理器实现
@@ -805,6 +929,11 @@ void p2p_udp_get_stats(uint32_t* tx_packets, uint32_t* rx_packets, uint32_t* los
         *lost_packets = g_lost_packets;
     if (retx_packets)
         *retx_packets = g_retx_packets;
+}
+
+float p2p_udp_get_fps(void)
+{
+    return g_current_fps;
 }
 
 void p2p_udp_reset_stats(void) {

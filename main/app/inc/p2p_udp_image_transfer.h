@@ -141,6 +141,12 @@ esp_err_t p2p_udp_get_local_ip(char* ip_str, size_t max_len);
 void p2p_udp_get_stats(uint32_t* tx_packets, uint32_t* rx_packets, uint32_t* lost_packets, uint32_t* retx_packets);
 
 /**
+ * @brief 获取当前解码帧率
+ * @return float
+ */
+float p2p_udp_get_fps(void);
+
+/**
  * @brief 重置统计信息
  */
 void p2p_udp_reset_stats(void);
