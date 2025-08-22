@@ -27,6 +27,7 @@ set(MAIN_SRCS
     "app/lvgl_main.c"
     "app/power_management.c"
     "background_manager.c"
+    "fonts/font_init.c"
     "fonts/Mysybmol.c"
 )
 
@@ -41,5 +42,5 @@ endif()
 idf_component_register(
     SRCS ${MAIN_SRCS}
     INCLUDE_DIRS "inc" "UI/inc" "demo" "app/inc" "app/game" "fonts"
-    REQUIRES lvgl esp_timer lvgl_port Peripherals driver spiffs
+    REQUIRES lvgl esp_timer lvgl_port Peripherals driver spiffs spi_flash
 )

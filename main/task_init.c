@@ -12,8 +12,8 @@
 #include "lvgl_main.h"
 #include "power_management.h"
 #include "ui.h"
-#include "ws2812.h"
 #include "wifi_manager.h"
+#include "ws2812.h"
 #include <stdint.h>
 
 static const char* TAG = "TASK_INIT";
@@ -127,7 +127,7 @@ static void system_monitor_task(void* pvParameters) {
     }
 }
 
-static void wifi_manager_task(void *pvParameters) {
+static void wifi_manager_task(void* pvParameters) {
     ESP_LOGI(TAG, "WiFi Manager Task started on core %d", xPortGetCoreID());
 
     esp_err_t ret = wifi_manager_init(NULL);
@@ -158,9 +158,8 @@ static void battery_monitor_task(void* pvParameters) {
         esp_err_t ret = background_manager_get_battery(&battery_info);
 
         if (ret == ESP_OK && battery_info.is_valid) {
-            ESP_LOGI(TAG, "Battery: %dmV, %d%%, Low: %d, Critical: %d", 
-                     battery_info.voltage_mv, battery_info.percentage,
-                     battery_info.is_low_battery, battery_info.is_critical);
+            ESP_LOGI(TAG, "Battery: %dmV, %d%%, Low: %d, Critical: %d", battery_info.voltage_mv,
+                     battery_info.percentage, battery_info.is_low_battery, battery_info.is_critical);
 
             // 检查低电量警告
             if (battery_info.is_critical) {
@@ -303,13 +302,13 @@ esp_err_t init_wifi_manager_task(void) {
         return ESP_OK;
     }
 
-    BaseType_t result = xTaskCreatePinnedToCore(wifi_manager_task,       // 任务函数
-                                                "WiFi_Manager",          // 任务名称
-                                                TASK_STACK_MEDIUM,       // 堆栈大小 (4KB)
-                                                NULL,                    // 参数
-                                                TASK_PRIORITY_NORMAL,    // 普通优先级
-                                                &s_wifi_task_handle,     // 任务句柄
-                                                0                        // 绑定到Core 0
+    BaseType_t result = xTaskCreatePinnedToCore(wifi_manager_task,    // 任务函数
+                                                "WiFi_Manager",       // 任务名称
+                                                TASK_STACK_MEDIUM,    // 堆栈大小 (4KB)
+                                                NULL,                 // 参数
+                                                TASK_PRIORITY_NORMAL, // 普通优先级
+                                                &s_wifi_task_handle,  // 任务句柄
+                                                0                     // 绑定到Core 0
     );
 
     if (result != pdPASS) {
@@ -349,14 +348,14 @@ esp_err_t init_all_tasks(void) {
     ESP_LOGI(TAG, "Initializing all tasks...");
 
     esp_err_t ret;
-    
+
     // 初始化后台管理模块
     ret = background_manager_init();
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to init background manager");
         return ret;
     }
-    
+
     // 启动后台管理任务
     ret = background_manager_start();
     if (ret != ESP_OK) {

@@ -1,60 +1,26 @@
 /**
  * @file ui_test.c
- * @brief 测试页面 - 用于验证LoadProhibited错误
+ * @brief 测试页面 - 用于测试
  * @author Your Name
  * @date 2024
  */
 #include "esp_log.h"
-#include "theme_manager.h"
 #include "joystick_adc.h"
+#include "misc/lv_color.h"
+#include "theme_manager.h"
 #include "ui.h"
 
 #include "Mysybmol.h"
 
 static const char* TAG = "UI_TEST";
 
-static lv_obj_t* joy1_x_raw_label;
-static lv_obj_t* joy1_y_raw_label;
-static lv_obj_t* joy1_x_norm_label;
-static lv_obj_t* joy1_y_norm_label;
-static lv_obj_t* joy2_x_raw_label;
-static lv_obj_t* joy2_y_raw_label;
-static lv_obj_t* joy2_x_norm_label;
-static lv_obj_t* joy2_y_norm_label;
-static lv_timer_t* joystick_timer;
-
-static void joystick_update_timer_cb(lv_timer_t* timer) {
-    joystick_data_t data;
-    if (joystick_adc_read(&data) == ESP_OK) {
-        lv_label_set_text_fmt(joy1_x_raw_label, "Joy1 X Raw: %d", data.raw_joy1_x);
-        lv_label_set_text_fmt(joy1_y_raw_label, "Joy1 Y Raw: %d", data.raw_joy1_y);
-        lv_label_set_text_fmt(joy1_x_norm_label, "Joy1 X Norm: %d", data.norm_joy1_x);
-        lv_label_set_text_fmt(joy1_y_norm_label, "Joy1 Y Norm: %d", data.norm_joy1_y);
-        lv_label_set_text_fmt(joy2_x_raw_label, "Joy2 X Raw: %d", data.raw_joy2_x);
-        lv_label_set_text_fmt(joy2_y_raw_label, "Joy2 Y Raw: %d", data.raw_joy2_y);
-        lv_label_set_text_fmt(joy2_x_norm_label, "Joy2 X Norm: %d", data.norm_joy2_x);
-        lv_label_set_text_fmt(joy2_y_norm_label, "Joy2 Y Norm: %d", data.norm_joy2_y);
-    }
-}
-
 // 自定义返回按钮回调 - 处理测试界面的特殊逻辑
 static void test_back_btn_callback(lv_event_t* e) {
-    if (joystick_timer) {
-        lv_timer_del(joystick_timer);
-        joystick_timer = NULL;
-    }
     lv_obj_t* screen = lv_scr_act();
     if (screen) {
         lv_obj_clean(screen);
         ui_main_menu_create(screen);
     }
-}
-
-// 开关回调
-static void test_switch_cb(lv_event_t* e) {
-    lv_obj_t* sw = lv_event_get_target(e);
-    bool is_on = lv_obj_has_state(sw, LV_STATE_CHECKED);
-    ESP_LOGI(TAG, "Test switch: %s", is_on ? "ON" : "OFF");
 }
 
 // 创建测试界面
@@ -91,25 +57,17 @@ void ui_test_create(lv_obj_t* parent) {
     lv_obj_set_flex_align(cont, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_center(cont);
 
-    joy1_x_raw_label = lv_label_create(cont);
-    joy1_y_raw_label = lv_label_create(cont);
-    joy1_x_norm_label = lv_label_create(cont);
-    joy1_y_norm_label = lv_label_create(cont);
-    joy2_x_raw_label = lv_label_create(cont);
-    joy2_y_raw_label = lv_label_create(cont);
-    joy2_x_norm_label = lv_label_create(cont);
-    joy2_y_norm_label = lv_label_create(cont);
+    // 创建测试标签
+    lv_obj_t* label = lv_label_create(cont);
+    
 
-    lv_label_set_text(joy1_x_raw_label, "Joy1 X Raw: 0");
-    lv_label_set_text(joy1_y_raw_label, "Joy1 Y Raw: 0");
-    lv_label_set_text(joy1_x_norm_label, "Joy1 X Norm: 0");
-    lv_label_set_text(joy1_y_norm_label, "Joy1 Y Norm: 0");
-    lv_label_set_text(joy2_x_raw_label, "Joy2 X Raw: 0");
-    lv_label_set_text(joy2_y_raw_label, "Joy2 Y Raw: 0");
-    lv_label_set_text(joy2_x_norm_label, "Joy2 X Norm: 0");
-    lv_label_set_text(joy2_y_norm_label, "Joy2 Y Norm: 0");
+    lv_font_t* loaded_font = get_loaded_font();
+    lv_obj_set_style_text_font(label, loaded_font, LV_PART_MAIN);
+    lv_label_set_text(label, "你好,世界!\n字体分区加载成功!");
+    lv_obj_set_style_text_color(label, lv_color_black(), LV_PART_MAIN);  // 绿色表示成功
+    ESP_LOGI(TAG, "Font from partition applied successfully");
 
-    joystick_timer = lv_timer_create(joystick_update_timer_cb, 50, NULL);
+    lv_obj_center(label);
 
     ESP_LOGI(TAG, "Test UI created successfully");
 }

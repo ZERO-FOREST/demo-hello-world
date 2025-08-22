@@ -112,6 +112,10 @@
 #define LV_FONT_MONTSERRAT_28 1
 #define LV_FONT_DEFAULT &lv_font_montserrat_16
 
+/* Enable dynamic font loading */
+#define LV_FONT_LOAD 1
+#define LV_FS 1
+
 /*==================
  *  TEXT SETTINGS
  *=================*/

@@ -4,14 +4,15 @@
  * @author Your Name
  * @date 2025-08-14
  */
+#include "Mysybmol.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "lv_port_disp.h"
 #include "lv_port_indev.h"
-#include "ui.h"
 #include "theme_manager.h"
+#include "ui.h"
 
 // 动画完成后的回调函数
 static void show_main_menu_cb(void) { ui_main_menu_create(lv_scr_act()); }
@@ -28,6 +29,7 @@ void lvgl_main_task(void* pvParameters) {
 
     // 初始化LVGL
     lv_init();
+    font_init(); // 初始化字体
     lv_port_disp_init();
     lv_port_indev_init();
 

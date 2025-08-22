@@ -5,26 +5,26 @@
  * @LastEditTime: 2025-08-22 17:15:37
  * @FilePath: \demo-hello-world\main\components_init.c
  * @Description: 用于集中初始化必要外设
- * 
- * Copyright (c) 2025 by ${git_name_email}, All Rights Reserved. 
+ *
+ * Copyright (c) 2025 by ${git_name_email}, All Rights Reserved.
  */
 
- #include <dirent.h>
- #include <stdlib.h>
- #include <string.h>
+#include <dirent.h>
+#include <stdlib.h>
+#include <string.h>
 
- #include "esp_err.h"
- #include "esp_log.h"
- #include "esp_spiffs.h"
- #include "nvs_flash.h"
- #include "wifi_manager.h"
+#include "esp_err.h"
+#include "esp_log.h"
+#include "esp_spiffs.h"
+#include "nvs_flash.h"
+#include "wifi_manager.h"
 
- #include "battery_monitor.h"
- #include "calibration_manager.h"
+#include "battery_monitor.h"
+#include "calibration_manager.h"
 
- const char *TAG = "components_init";
+const char* TAG = "components_init";
 
- /**
+/**
  * @brief 初始化SPIFFS文件系统
  * @return esp_err_t ESP_OK成功，其他错误码失败
  */
@@ -32,11 +32,7 @@ esp_err_t spiffs_init(void) {
     ESP_LOGI(TAG, "Initializing SPIFFS");
 
     esp_vfs_spiffs_conf_t conf = {
-        .base_path = "/spiffs",
-        .partition_label = "spiffs",
-        .max_files = 5,
-        .format_if_mount_failed = false 
-    };
+        .base_path = "/spiffs", .partition_label = "spiffs", .max_files = 5, .format_if_mount_failed = false};
 
     // 挂载SPIFFS分区
     esp_err_t ret = esp_vfs_spiffs_register(&conf);
