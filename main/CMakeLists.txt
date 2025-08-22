@@ -1,6 +1,7 @@
 set(MAIN_SRCS
-    "hello_world_main.c"
+    "main.c"
     "task_init.c"
+    "components_init.c"
     "demo/lsm6ds3_demo.c"
     "demo/i2s_tdm_demo.c"
     "demo/serial_display_demo.c"
