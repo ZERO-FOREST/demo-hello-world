@@ -4,9 +4,9 @@
  * @LastEditors: tidycraze 2595256284@qq.com
  * @LastEditTime: 2025-08-21 09:57:19
  * @FilePath: \demo-hello-world\main\hello_world_main.c
- * @Description: 
- * 
- * Copyright (c) 2025 by ${git_name_email}, All Rights Reserved. 
+ * @Description:
+ *
+ * Copyright (c) 2025 by ${git_name_email}, All Rights Reserved.
  */
 
 #include "background_manager.h"
@@ -21,11 +21,13 @@
 #include "nvs_flash.h"
 #include "power_management.h"
 #include "sdkconfig.h"
+#include "spiffs_test_demo.h"
 #include "st7789.h"
 #include "task_init.h"
 #include "wifi_manager.h"
 #include <inttypes.h>
 #include <stdio.h>
+
 
 static const char* TAG = "MAIN";
 
@@ -55,6 +57,15 @@ void app_main(void) {
         ESP_LOGI(TAG, "Battery monitor initialized");
     } else {
         ESP_LOGW(TAG, "Battery monitor init failed: %s", esp_err_to_name(ret));
+    }
+
+    // 运行SPIFFS文件系统测试
+    ESP_LOGI(TAG, "Starting SPIFFS file system test...");
+    ret = run_spiffs_test_suite();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "SPIFFS test failed: %s", esp_err_to_name(ret));
+    } else {
+        ESP_LOGI(TAG, "SPIFFS test completed successfully");
     }
 
     // 使用任务初始化模块统一管理任务

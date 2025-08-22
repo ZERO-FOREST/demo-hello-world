@@ -127,6 +127,7 @@ server_cert.pem
 # firmware/
 # *.bin
 # *.hex
+partition_table/
 others/consultation/
 
 # ========================================
@@ -148,4 +149,10 @@ others/consultation/
 !README.md
 !Kconfig*
 !*.cmake 
+
+# ========================================
+# 字库相关文件
+# ========================================
+!/spiffs/*.*
+
 

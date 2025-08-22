@@ -4,6 +4,7 @@ set(MAIN_SRCS
     "demo/lsm6ds3_demo.c"
     "demo/i2s_tdm_demo.c"
     "demo/serial_display_demo.c"
+    "demo/spiffs_test_demo.c"
     "UI/ui_start_animation.c"
     "UI/ui_main.c"
     "UI/ui_wifi_settings.c"
@@ -39,5 +40,5 @@ endif()
 idf_component_register(
     SRCS ${MAIN_SRCS}
     INCLUDE_DIRS "inc" "UI/inc" "demo" "app/inc" "app/game" "fonts"
-    REQUIRES lvgl esp_timer lvgl_port Peripherals driver
+    REQUIRES lvgl esp_timer lvgl_port Peripherals driver spiffs
 )
