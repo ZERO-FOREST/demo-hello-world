@@ -25,6 +25,10 @@
 - `managed_components/`：通过组件管理器安装的依赖
 - `others/`：其他辅助文件或测试代码
 
+## 开发环境
+
+ESP32-IDF v5.5 和 ESP-ADF库
+
 ## 编译与烧录
 
 1. 安装 ESP-IDF 开发环境（建议使用官方文档步骤）
