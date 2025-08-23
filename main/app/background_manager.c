@@ -44,34 +44,32 @@ static void background_manager_task(void* pvParameters) {
     while (s_task_running) {
         uint64_t current_time_us = esp_timer_get_time();
         
-        // 更新时间（每秒更新一次）
-        if (current_time_us - s_last_time_update >= 1000000) { // 1秒 = 1,000,000微秒
+        // 更新时间（每分钟更新一次）
+        if (current_time_us - s_last_time_update >= 60000000) { // 1分钟 = 60,000,000微秒
             if (xSemaphoreTake(s_data_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
                 // 首先尝试从网络获取时间
                 char time_str[32];
                 if (wifi_manager_get_time_str(time_str, sizeof(time_str))) {
                     // 解析网络时间
-                    int hour, minute, second = 0;
-                    if (sscanf(time_str, "%d:%d:%d", &hour, &minute, &second) >= 2) {
+                    int hour, minute;
+                    if (sscanf(time_str, "%d:%d", &hour, &minute) >= 2) {
                         s_current_time.hour = hour;
                         s_current_time.minute = minute;
-                        s_current_time.second = second;
-                        s_current_time.is_network_time = true;
+                        s_current_time.is_network_synced = true;
                         s_current_time.is_valid = true;
                         s_time_changed = true;
-                        ESP_LOGD(TAG, "Network time updated: %02d:%02d:%02d", hour, minute, second);
+                        ESP_LOGD(TAG, "Network time updated: %02d:%02d", hour, minute);
                     }
                 } else {
                     // 使用本地时间
-                    uint64_t elapsed_seconds = (current_time_us - s_start_time) / 1000000;
-                    s_current_time.hour = (elapsed_seconds / 3600) % 24;
-                    s_current_time.minute = (elapsed_seconds / 60) % 60;
-                    s_current_time.second = elapsed_seconds % 60;
-                    s_current_time.is_network_time = false;
+                    uint64_t elapsed_minutes = (current_time_us - s_start_time) / 60000000;
+                    s_current_time.hour = (elapsed_minutes / 60) % 24;
+                    s_current_time.minute = elapsed_minutes % 60;
+                    s_current_time.is_network_synced = false;
                     s_current_time.is_valid = true;
                     s_time_changed = true;
-                    ESP_LOGD(TAG, "Local time updated: %02d:%02d:%02d", 
-                             s_current_time.hour, s_current_time.minute, s_current_time.second);
+                    ESP_LOGD(TAG, "Local time updated: %02d:%02d", 
+                             s_current_time.hour, s_current_time.minute);
                 }
                 s_last_time_update = current_time_us;
                 xSemaphoreGive(s_data_mutex);
@@ -110,7 +108,7 @@ static void background_manager_task(void* pvParameters) {
         }
         
         // 任务延时
-        vTaskDelay(pdMS_TO_TICKS(100)); // 100ms检查一次
+        vTaskDelay(pdMS_TO_TICKS(1000)); // 1秒检查一次
     }
     
     ESP_LOGI(TAG, "Background manager task stopped");
@@ -263,7 +261,7 @@ esp_err_t background_manager_get_system_info(background_system_info_t* system_in
 }
 
 esp_err_t background_manager_get_time_str(char* time_str, size_t max_len) {
-    if (!s_initialized || !time_str || max_len < 9) {
+    if (!s_initialized || !time_str || max_len < 6) {
         return ESP_ERR_INVALID_ARG;
     }
     
@@ -274,17 +272,17 @@ esp_err_t background_manager_get_time_str(char* time_str, size_t max_len) {
     }
     
     if (time_info.is_valid) {
-        snprintf(time_str, max_len, "%02d:%02d:%02d", 
-                 time_info.hour, time_info.minute, time_info.second);
+        snprintf(time_str, max_len, "%02d:%02d", 
+                 time_info.hour, time_info.minute);
     } else {
-        strncpy(time_str, "00:00:00", max_len);
+        strncpy(time_str, "00:00", max_len);
     }
     
     return ESP_OK;
 }
 
 esp_err_t background_manager_get_battery_str(char* battery_str, size_t max_len) {
-    if (!s_initialized || !battery_str || max_len < 5) {
+    if (!s_initialized || !battery_str || max_len < 4) {
         return ESP_ERR_INVALID_ARG;
     }
     
@@ -295,9 +293,9 @@ esp_err_t background_manager_get_battery_str(char* battery_str, size_t max_len) 
     }
     
     if (battery_info.is_valid) {
-        snprintf(battery_str, max_len, "%d%%", battery_info.percentage);
+        snprintf(battery_str, max_len, "%d", battery_info.percentage);
     } else {
-        strncpy(battery_str, "0%", max_len);
+        strncpy(battery_str, "0", max_len);
     }
     
     return ESP_OK;

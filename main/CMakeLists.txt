@@ -26,7 +26,7 @@ set(MAIN_SRCS
     "app/calibration_manager.c"
     "app/lvgl_main.c"
     "app/power_management.c"
-    "background_manager.c"
+    "app/background_manager.c"
     "fonts/font_init.c"
     "fonts/Mysybmol.c"
 )
