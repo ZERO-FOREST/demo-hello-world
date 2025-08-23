@@ -11,7 +11,6 @@ set(MAIN_SRCS
     "UI/ui_wifi_settings.c"
     "UI/ui_settings.c"
     "UI/ui_image_transfer.c"
-    "UI/ui_p2p_udp_transfer.c"
     "UI/ui_serial_display.c"
     "UI/ui_calibration.c"
     "UI/ui_test.c"
@@ -27,6 +26,7 @@ set(MAIN_SRCS
     "app/lvgl_main.c"
     "app/power_management.c"
     "app/background_manager.c"
+    "app/settings_manager.c"
     "fonts/font_init.c"
     "fonts/Mysybmol.c"
 )

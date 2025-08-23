@@ -9,6 +9,7 @@
 #include "nvs_flash.h"
 #include "theme_manager.h"
 #include "ui.h"
+#include "settings_manager.h" // For transfer mode settings
 
 static const char* TAG = "UI_SETTINGS";
 
@@ -143,27 +144,6 @@ static void about_btn_cb(lv_event_t* e) {
     lv_obj_center(msgbox);
 }
 
-// 主题切换回调
-static void theme_switch_cb(lv_event_t* e) {
-    lv_obj_t* sw = lv_event_get_target(e);
-    bool is_dark = lv_obj_has_state(sw, LV_STATE_CHECKED);
-
-    // 切换主题
-    theme_type_t new_theme = is_dark ? THEME_DARK : THEME_MORANDI;
-    theme_set_current(new_theme);
-
-    // 应用新主题到当前屏幕
-    lv_obj_t* screen = lv_scr_act();
-    theme_apply_to_screen(screen);
-
-    // 显示切换提示
-    const theme_t* theme = theme_get_current_theme();
-    lv_obj_t* msgbox = lv_msgbox_create(screen, "Theme Changed", theme->name, NULL, true);
-    lv_obj_center(msgbox);
-
-    ESP_LOGI(TAG, "Theme switched to: %s", theme->name);
-}
-
 // 主题下拉列表回调
 static void theme_dropdown_cb(lv_event_t* e) {
     lv_obj_t* dropdown = lv_event_get_target(e);
@@ -207,6 +187,11 @@ static void theme_dropdown_cb(lv_event_t* e) {
     ESP_LOGI(TAG, "Theme switched to: %s", theme->name);
 }
 
+// Callbacks for the new transfer mode checkboxes
+static void transfer_mode_tcp_cb(lv_event_t* e);
+static void transfer_mode_udp_cb(lv_event_t* e);
+
+
 // 创建设置界面
 void ui_settings_create(lv_obj_t* parent) {
     // 加载保存的语言设置
@@ -221,10 +206,10 @@ void ui_settings_create(lv_obj_t* parent) {
     lv_obj_t* page_parent_container;
     ui_create_page_parent_container(parent, &page_parent_container);
 
-    // 创建顶部栏容器（包含返回按钮和标题）
+    // 创建顶部栏容器（包含返回按钮和标题, 但不包含设置按钮）
     lv_obj_t* top_bar_container;
     lv_obj_t* title_container;
-    ui_create_top_bar(page_parent_container, text->settings_title, &top_bar_container, &title_container);
+    ui_create_top_bar(page_parent_container, text->settings_title, false, &top_bar_container, &title_container, NULL);
 
     // 创建页面内容容器
     lv_obj_t* content_container;
@@ -310,6 +295,43 @@ void ui_settings_create(lv_obj_t* parent) {
     // 添加下拉列表事件回调
     lv_obj_add_event_cb(theme_dropdown, theme_dropdown_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
+
+    // --- Add Transfer Mode Settings ---
+    lv_obj_t* transfer_mode_label = lv_label_create(content_container);
+    lv_label_set_text(transfer_mode_label, "Transfer Mode:");
+    theme_apply_to_label(transfer_mode_label, false);
+    lv_obj_align_to(transfer_mode_label, theme_dropdown_cont, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 20);
+
+    // Create a container for the checkboxes for better alignment
+    lv_obj_t* cb_container = lv_obj_create(content_container);
+    lv_obj_set_size(cb_container, 220, 40);
+    lv_obj_align_to(cb_container, transfer_mode_label, LV_ALIGN_OUT_BOTTOM_LEFT, -10, 5);
+    lv_obj_set_style_bg_opa(cb_container, LV_OPA_0, 0);
+    lv_obj_set_style_border_width(cb_container, 0, 0);
+    lv_obj_set_style_pad_all(cb_container, 0, 0);
+    lv_obj_set_flex_flow(cb_container, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(cb_container, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+
+    lv_obj_t* udp_checkbox = lv_checkbox_create(cb_container);
+    lv_checkbox_set_text(udp_checkbox, "UDP");
+
+    lv_obj_t* tcp_checkbox = lv_checkbox_create(cb_container);
+    lv_checkbox_set_text(tcp_checkbox, "TCP");
+    
+    // Set initial state from settings manager
+    image_transfer_mode_t current_mode = settings_get_transfer_mode();
+    if (current_mode == IMAGE_TRANSFER_MODE_TCP) {
+        lv_obj_add_state(tcp_checkbox, LV_STATE_CHECKED);
+    } else {
+        lv_obj_add_state(udp_checkbox, LV_STATE_CHECKED);
+    }
+    
+    // Add event callbacks with user data for cross-referencing
+    lv_obj_add_event_cb(tcp_checkbox, transfer_mode_tcp_cb, LV_EVENT_VALUE_CHANGED, udp_checkbox);
+    lv_obj_add_event_cb(udp_checkbox, transfer_mode_udp_cb, LV_EVENT_VALUE_CHANGED, tcp_checkbox);
+
+
     // 关于按钮
     lv_obj_t* about_btn = lv_btn_create(content_container);
     lv_obj_set_size(about_btn, 220, 35);
@@ -329,6 +351,38 @@ void ui_settings_create(lv_obj_t* parent) {
     lv_obj_center(about_label);
 
     ESP_LOGI(TAG, "Settings UI created with language: %s", g_current_language == LANG_CHINESE ? "Chinese" : "English");
+}
+
+static void transfer_mode_tcp_cb(lv_event_t* e) {
+    lv_obj_t* tcp_cb = lv_event_get_target(e);
+    lv_obj_t* udp_cb = (lv_obj_t*)lv_event_get_user_data(e);
+
+    if (lv_obj_has_state(tcp_cb, LV_STATE_CHECKED)) {
+        lv_obj_clear_state(udp_cb, LV_STATE_CHECKED);
+        settings_set_transfer_mode(IMAGE_TRANSFER_MODE_TCP);
+        lv_event_send(lv_scr_act(), UI_EVENT_SETTINGS_CHANGED, NULL);
+    } else {
+        // Prevent unchecking if the other is also unchecked
+        if (!lv_obj_has_state(udp_cb, LV_STATE_CHECKED)) {
+            lv_obj_add_state(tcp_cb, LV_STATE_CHECKED);
+        }
+    }
+}
+
+static void transfer_mode_udp_cb(lv_event_t* e) {
+    lv_obj_t* udp_cb = lv_event_get_target(e);
+    lv_obj_t* tcp_cb = (lv_obj_t*)lv_event_get_user_data(e);
+
+    if (lv_obj_has_state(udp_cb, LV_STATE_CHECKED)) {
+        lv_obj_clear_state(tcp_cb, LV_STATE_CHECKED);
+        settings_set_transfer_mode(IMAGE_TRANSFER_MODE_UDP);
+        lv_event_send(lv_scr_act(), UI_EVENT_SETTINGS_CHANGED, NULL);
+    } else {
+        // Prevent unchecking if the other is also unchecked
+        if (!lv_obj_has_state(tcp_cb, LV_STATE_CHECKED)) {
+            lv_obj_add_state(udp_cb, LV_STATE_CHECKED);
+        }
+    }
 }
 
 // 获取当前语言设置

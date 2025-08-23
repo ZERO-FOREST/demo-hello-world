@@ -359,19 +359,7 @@ static void jpeg_decode_task(void* pvParameters) {
 }
 
 static void handle_decoded_image(uint8_t* img_buf, int width, int height, jpeg_pixel_format_t format) {
-    // This function would typically display the image on a screen
-    // Only log image info on first frame or when dimensions change
-    static int last_w = 0, last_h = 0;
-    static int frame_num = 0;
-    frame_num++;
-
-    if (width != last_w || height != last_h || frame_num == 1) {
-        ESP_LOGI(TAG, "Decoded Image: Width=%d, Height=%d, Format=%d (Frame #%d)", width, height, format, frame_num);
-        last_w = width;
-        last_h = height;
-    }
-
-    // You can add your display logic here, e.g., send to LVGL or an LCD driver
+    // This function now directly calls the UI update function
     ui_image_transfer_set_image_data(img_buf, width, height, format);
 }
 

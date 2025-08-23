@@ -89,8 +89,8 @@ void ui_calibration_create(lv_obj_t* parent);
 void ui_calibration_destroy(void);
 
 // --- P2P UDP图传界面 ---
-void ui_p2p_udp_transfer_create(lv_obj_t* parent);
-void ui_p2p_udp_transfer_destroy(void);
+void ui_image_transfer_create(lv_obj_t* parent);
+void ui_image_transfer_destroy(void);
 
 // 统一的back按钮创建函数
 void ui_create_back_button(lv_obj_t* parent, const char* text);
@@ -102,12 +102,32 @@ void ui_create_page_title(lv_obj_t* parent, const char* title_text);
 // 创建页面父级容器（统一管理整个页面）
 void ui_create_page_parent_container(lv_obj_t* parent, lv_obj_t** page_parent_container);
 
-// 创建顶部栏容器（包含返回按钮和标题）
-void ui_create_top_bar(lv_obj_t* parent, const char* title_text, lv_obj_t** top_bar_container,
-                       lv_obj_t** title_container);
+/**
+ * @brief Creates a standardized top bar with a title, a back button, and an optional settings button.
+ *
+ * @param parent The parent object.
+ * @param title_text The text to display in the title.
+ * @param show_settings_btn If true, a settings button will be created on the right side.
+ * @param top_bar_container Pointer to store the created top bar container.
+ * @param title_container Pointer to store the created title container.
+ * @param settings_btn_out Optional pointer to store the created settings button object. Can be NULL if not needed.
+ */
+void ui_create_top_bar(lv_obj_t* parent, const char* title_text, bool show_settings_btn, lv_obj_t** top_bar_container,
+                       lv_obj_t** title_container, lv_obj_t** settings_btn_out);
 
 // 创建页面内容容器（除开顶部栏的区域）
 void ui_create_page_content_area(lv_obj_t* parent, lv_obj_t** content_container);
+
+// Event enumeration for UI
+typedef enum {
+    UI_EVENT_NONE,
+    UI_EVENT_WIFI_SETTINGS,
+    UI_EVENT_P2P_UDP_TRANSFER,
+    UI_EVENT_SERIAL_DISPLAY,
+    UI_EVENT_CALIBRATION,
+    UI_EVENT_TEST,
+    UI_EVENT_SETTINGS_CHANGED, // Event sent when settings are changed
+} ui_event_t;
 
 #ifdef __cplusplus
 }

@@ -48,20 +48,16 @@ ui_create_page_parent_container(parent, &page_parent_container);
 // 创建顶部栏容器（包含返回按钮和标题）
 lv_obj_t* top_bar_container;
 lv_obj_t* title_container;
-ui_create_top_bar(page_parent_container, "页面标题", &top_bar_container, &title_container);
-```
+lv_obj_t* settings_btn = NULL; // 用于接收按钮指针
+// 第三个参数决定是否显示设置按钮, 最后一个参数接收按钮指针
+ui_create_top_bar(page_parent_container, "页面标题", true, &top_bar_container, &title_container, &settings_btn);
 
-**功能说明：**
-- 创建240x30的顶部栏容器
-- 包含40x30的返回按钮（左侧）
-- 包含200x30的标题容器（右侧）
-- 标题居中显示，字体大小20
-- 返回按钮自动绑定返回主菜单的回调
+// 如果需要，可以为设置按钮添加自定义回调
+if (settings_btn) {
+    // lv_obj_add_event_cb(settings_btn, your_custom_settings_cb, LV_EVENT_CLICKED, NULL);
+}
 
-### 3. 创建页面内容容器
-
-```c
-// 创建页面内容容器
+// 3. 创建页面内容容器
 lv_obj_t* content_container;
 ui_create_page_content_area(page_parent_container, &content_container);
 ```
@@ -87,7 +83,14 @@ void ui_your_page_create(lv_obj_t* parent) {
     // 2. 创建顶部栏容器（包含返回按钮和标题）
     lv_obj_t* top_bar_container;
     lv_obj_t* title_container;
-    ui_create_top_bar(page_parent_container, "页面标题", &top_bar_container, &title_container);
+    lv_obj_t* settings_btn = NULL; // 用于接收按钮指针
+    // 第三个参数决定是否显示设置按钮, 最后一个参数接收按钮指针
+    ui_create_top_bar(page_parent_container, "页面标题", true, &top_bar_container, &title_container, &settings_btn);
+
+    // 如果需要，可以为设置按钮添加自定义回调
+    if (settings_btn) {
+        // lv_obj_add_event_cb(settings_btn, your_custom_settings_cb, LV_EVENT_CLICKED, NULL);
+    }
 
     // 3. 创建页面内容容器
     lv_obj_t* content_container;
@@ -275,20 +278,9 @@ lv_textarea_set_placeholder_text(ta, "请输入文本");
 void ui_create_page_parent_container(lv_obj_t* parent, lv_obj_t** page_parent_container);
 
 // 创建顶部栏容器（包含返回按钮和标题）
-void ui_create_top_bar(lv_obj_t* parent, const char* title_text, lv_obj_t** top_bar_container,
-                       lv_obj_t** title_container);
+void ui_create_top_bar(lv_obj_t* parent, const char* title_text, bool show_settings_btn, lv_obj_t** top_bar_container,
+                       lv_obj_t** title_container, lv_obj_t** settings_btn_out);
 
 // 创建页面内容容器（除开顶部栏的区域）
 void ui_create_page_content_area(lv_obj_t* parent, lv_obj_t** content_container);
 ```
-
-## 参考实现
-
-参考 `main/UI/ui_settings.c` 中的 `ui_settings_create()` 函数，这是一个完整的实现示例。
-
-## 版本信息
-
-- **文档版本**: 1.0
-- **创建日期**: 2025-01-27
-- **适用项目**: ESP32-S3 Demo
-- **屏幕分辨率**: 240x320

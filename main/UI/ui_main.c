@@ -146,13 +146,6 @@ void ui_main_update_wifi_display(void) {
 typedef void (*menu_item_cb_t)(void);
 
 // 示例回调函数（后续扩展时实现）
-static void option1_cb(void) {
-    // TODO: Option 1 Logic
-    lv_obj_t* label = lv_label_create(lv_scr_act());
-    lv_label_set_text(label, "Option 1 Selected");
-    lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);
-}
-
 static void wifi_settings_cb(void) {
     lv_obj_t* screen = lv_scr_act();
     if (screen) {
@@ -272,7 +265,7 @@ static void p2p_udp_transfer_cb(void) {
         g_wifi_label = NULL;
 
         lv_obj_clean(screen);               // 清空当前屏幕
-        ui_p2p_udp_transfer_create(screen); // 加载P2P UDP图传界面
+        ui_image_transfer_create(screen); // 加载P2P UDP图传界面
     }
 }
 
@@ -284,12 +277,10 @@ typedef struct {
 
 // 菜单项数组
 static menu_item_t menu_items[] = {
-    {"Demo", option1_cb},
     {"WiFi Setup", wifi_settings_cb},
     {"Settings", settings_cb},
     {"Game", game_cb},
     {"Image Transfer", image_transfer_cb},
-    {"P2P UDP Transfer", p2p_udp_transfer_cb},
     {"Serial Display", serial_display_cb},
     {"Calibration", calibration_cb},
     {"Test", test_cb},

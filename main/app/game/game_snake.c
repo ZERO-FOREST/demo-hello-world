@@ -22,7 +22,7 @@ void ui_snake_create(lv_obj_t* parent) {
     // 2. 创建顶部栏容器（包含返回按钮和标题）
     lv_obj_t* top_bar_container;
     lv_obj_t* title_container;
-    ui_create_top_bar(page_parent_container, "Snake Game", &top_bar_container, &title_container);
+    ui_create_top_bar(page_parent_container, "Snake Game", false, &top_bar_container, &title_container, NULL);
 
     // 替换顶部栏的返回按钮回调为自定义回调
     lv_obj_t* back_btn = lv_obj_get_child(top_bar_container, 0); // 获取返回按钮
