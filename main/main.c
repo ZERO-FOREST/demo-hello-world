@@ -2,13 +2,11 @@
  * @Author: tidycraze 2595256284@qq.com
  * @Date: 2025-07-28 11:29:59
  * @LastEditors: tidycraze 2595256284@qq.com
- * @LastEditTime: 2025-08-22 17:24:20
+ * @LastEditTime: 2025-08-23 10:13:03
  * @FilePath: \demo-hello-world\main\main.c
- * @Description:
- *
- * Copyright (c) 2025 by ${git_name_email}, All Rights Reserved.
+ * @Description: 主函数入口
+ * 
  */
-
 
 #include "esp_chip_info.h"
 #include "esp_log.h"
