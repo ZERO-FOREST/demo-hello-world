@@ -59,12 +59,11 @@ void ui_test_create(lv_obj_t* parent) {
 
     // 创建测试标签
     lv_obj_t* label = lv_label_create(cont);
-    
 
     lv_font_t* loaded_font = get_loaded_font();
     lv_obj_set_style_text_font(label, loaded_font, LV_PART_MAIN);
     lv_label_set_text(label, "你好,世界!\n字体分区加载成功!");
-    lv_obj_set_style_text_color(label, lv_color_black(), LV_PART_MAIN);  // 绿色表示成功
+    lv_obj_set_style_text_color(label, lv_color_black(), LV_PART_MAIN); // 绿色表示成功
     ESP_LOGI(TAG, "Font from partition applied successfully");
 
     lv_obj_center(label);

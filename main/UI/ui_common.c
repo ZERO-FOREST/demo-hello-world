@@ -32,6 +32,13 @@ static void back_to_game_menu_callback(lv_event_t* e) {
     }
 }
 
+// 设置按钮回调函数
+static void settings_button_callback(lv_event_t* e) {
+    ESP_LOGI(TAG, "Settings button clicked");
+    // TODO: 在这里添加设置页面逻辑
+    // 可以调用设置页面创建函数或显示设置菜单
+}
+
 // 创建统一的back按钮 - 返回到主菜单
 void ui_create_back_button(lv_obj_t* parent, const char* text) {
     (void)text; // 忽略text参数，统一使用符号
@@ -107,24 +114,22 @@ void ui_create_page_parent_container(lv_obj_t* parent, lv_obj_t** page_parent_co
     ESP_LOGI(TAG, "Page parent container created");
 }
 
-// 创建顶部栏容器（包含返回按钮和标题）
+// 创建顶部栏容器（包含返回按钮、标题和设置按钮）
 void ui_create_top_bar(lv_obj_t* parent, const char* title_text, lv_obj_t** top_bar_container,
                        lv_obj_t** title_container) {
     // 创建顶部栏容器 - 240x30
     *top_bar_container = lv_obj_create(parent);
-    lv_obj_set_size(*top_bar_container, 240, 40);
+    lv_obj_set_size(*top_bar_container, 240, 30);
     lv_obj_align(*top_bar_container, LV_ALIGN_TOP_MID, 0, 0);
 
-    // 设置顶部栏容器的样式 - 添加主题颜色以便查看边界
+    // 设置顶部栏容器的样式 - 主题表面色
     lv_obj_set_style_bg_color(*top_bar_container, theme_get_color(theme_get_current_theme()->colors.surface),
                               LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(*top_bar_container, LV_OPA_50, LV_PART_MAIN); // 半透明背景
-    lv_obj_set_style_border_width(*top_bar_container, 1, LV_PART_MAIN);   // 添加边框以便查看边界
-    lv_obj_set_style_border_color(*top_bar_container, theme_get_color(theme_get_current_theme()->colors.border),
-                                  LV_PART_MAIN);
-    lv_obj_set_style_pad_all(*top_bar_container, 0, LV_PART_MAIN); // 无内边距
-    lv_obj_set_style_radius(*top_bar_container, 0, LV_PART_MAIN);  // 无圆角
-    lv_obj_clear_flag(*top_bar_container, LV_OBJ_FLAG_SCROLLABLE); // 禁止滚动
+    lv_obj_set_style_bg_opa(*top_bar_container, LV_OPA_100, LV_PART_MAIN); // 不透明背景
+    lv_obj_set_style_border_width(*top_bar_container, 0, LV_PART_MAIN);    // 无边框
+    lv_obj_set_style_pad_all(*top_bar_container, 0, LV_PART_MAIN);         // 无内边距
+    lv_obj_set_style_radius(*top_bar_container, 0, LV_PART_MAIN);          // 无圆角
+    lv_obj_clear_flag(*top_bar_container, LV_OBJ_FLAG_SCROLLABLE);         // 禁止滚动
 
     // 创建返回按钮 - 左侧放置，大小40x30
     lv_obj_t* back_btn = lv_btn_create(*top_bar_container);
@@ -149,10 +154,33 @@ void ui_create_top_bar(lv_obj_t* parent, const char* title_text, lv_obj_t** top_
     lv_obj_set_style_text_color(back_label, lv_color_hex(0xFFFFFF), 0);
     lv_obj_center(back_label);
 
-    // 创建标题容器 - 除开返回按钮的剩余区域
+    // 创建设置按钮 - 右侧放置，大小40x30
+    lv_obj_t* settings_btn = lv_btn_create(*top_bar_container);
+    lv_obj_set_size(settings_btn, 40, 30);
+    lv_obj_align(settings_btn, LV_ALIGN_RIGHT_MID, 0, 0);
+
+    // 设置设置按钮样式
+    lv_obj_set_style_bg_color(settings_btn, lv_color_hex(0x666666), 0);
+    lv_obj_set_style_bg_opa(settings_btn, LV_OPA_80, 0);
+    lv_obj_set_style_radius(settings_btn, 6, 0);
+    lv_obj_set_style_shadow_width(settings_btn, 2, 0);
+    lv_obj_set_style_shadow_ofs_y(settings_btn, 1, 0);
+    lv_obj_set_style_shadow_opa(settings_btn, LV_OPA_30, 0);
+
+    // 添加设置按钮点击事件
+    lv_obj_add_event_cb(settings_btn, settings_button_callback, LV_EVENT_CLICKED, NULL);
+
+    // 创建设置按钮标签
+    lv_obj_t* settings_label = lv_label_create(settings_btn);
+    lv_label_set_text(settings_label, LV_SYMBOL_SETTINGS);
+    lv_obj_set_style_text_font(settings_label, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(settings_label, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_center(settings_label);
+
+    // 创建标题容器 - 中间区域，大小160x30
     *title_container = lv_obj_create(*top_bar_container);
-    lv_obj_set_size(*title_container, 200, 40);               // 240-40=200宽度
-    lv_obj_align(*title_container, LV_ALIGN_RIGHT_MID, 0, 0); // 右对齐，紧贴返回按钮
+    lv_obj_set_size(*title_container, 160, 30);            // 240-40-40=160宽度
+    lv_obj_align(*title_container, LV_ALIGN_CENTER, 0, 0); // 居中对齐
 
     // 清除标题容器的所有样式
     lv_obj_set_style_bg_opa(*title_container, LV_OPA_0, LV_PART_MAIN); // 透明背景
@@ -176,19 +204,17 @@ void ui_create_top_bar(lv_obj_t* parent, const char* title_text, lv_obj_t** top_
 void ui_create_page_content_area(lv_obj_t* parent, lv_obj_t** content_container) {
     // 创建页面内容容器 - 240x290，从顶部栏下方开始
     *content_container = lv_obj_create(parent);
-    lv_obj_set_size(*content_container, 240, 280);             // 高度为屏幕高度减去顶部栏高度和边距
-    lv_obj_align(*content_container, LV_ALIGN_TOP_MID, 0, 40); // 从顶部栏下方开始 (10+30=40)
+    lv_obj_set_size(*content_container, 240, 290);             // 高度为屏幕高度减去顶部栏高度 (320-30=290)
+    lv_obj_align(*content_container, LV_ALIGN_TOP_MID, 0, 30); // 从顶部栏下方开始
 
-    // 设置内容区域容器的样式 - 添加主题背景色以便查看边界，允许滚动
+    // 设置内容区域容器的样式 - 主题背景色，可滚动
     lv_obj_set_style_bg_color(*content_container, theme_get_color(theme_get_current_theme()->colors.background),
                               LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(*content_container, LV_OPA_30, LV_PART_MAIN); // 半透明背景
-    lv_obj_set_style_border_width(*content_container, 1, LV_PART_MAIN);   // 添加边框以便查看边界
-    lv_obj_set_style_border_color(*content_container, theme_get_color(theme_get_current_theme()->colors.border),
-                                  LV_PART_MAIN);
-    lv_obj_set_style_pad_all(*content_container, 0, LV_PART_MAIN); // 移除内边距，避免横向滚动
-    lv_obj_set_style_radius(*content_container, 0, LV_PART_MAIN);  // 无圆角
-    lv_obj_add_flag(*content_container, LV_OBJ_FLAG_SCROLLABLE);   // 允许滚动
+    lv_obj_set_style_bg_opa(*content_container, LV_OPA_100, LV_PART_MAIN); // 不透明背景
+    lv_obj_set_style_border_width(*content_container, 0, LV_PART_MAIN);    // 无边框
+    lv_obj_set_style_pad_all(*content_container, 0, LV_PART_MAIN);         // 移除内边距，避免横向滚动
+    lv_obj_set_style_radius(*content_container, 0, LV_PART_MAIN);          // 无圆角
+    lv_obj_add_flag(*content_container, LV_OBJ_FLAG_SCROLLABLE);           // 允许滚动
 
     ESP_LOGI(TAG, "Page content area created (scrollable)");
 }
