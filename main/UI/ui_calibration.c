@@ -14,11 +14,12 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "Mysybmol.h"
 #include "calibration_manager.h"
 #include "joystick_adc.h"
 #include "lsm6ds3.h"
-#include "ui.h"
 #include "theme_manager.h"
+#include "ui.h"
 
 static const char* TAG = "UI_CALIBRATION";
 
@@ -175,21 +176,23 @@ static void create_main_menu(lv_obj_t* content_container) {
     if (status) {
         char status_text[256];
         snprintf(status_text, sizeof(status_text),
-                 "Calibration Status:\n"
-                 "Joystick: %s\n"
-                 "Gyroscope: %s\n"
-                 "Accelerometer: %s\n"
-                 "Battery: %s\n"
-                 "Touchscreen: %s",
-                 status->joystick_calibrated ? "✓" : "✗", status->gyroscope_calibrated ? "✓" : "✗",
-                 status->accelerometer_calibrated ? "✓" : "✗", status->battery_calibrated ? "✓" : "✗",
-                 status->touchscreen_calibrated ? "✓" : "✗");
+                 "校准状态:\n"
+                 "摇杆: %s\n"
+                 "陀螺仪: %s\n"
+                 "加速度计: %s\n"
+                 "电池: %s\n"
+                 "触摸屏: %s",
+                 status->joystick_calibrated ? "已校准" : "未校准", status->gyroscope_calibrated ? "已校准" : "未校准",
+                 status->accelerometer_calibrated ? "已校准" : "未校准",
+                 status->battery_calibrated ? "已校准" : "未校准",
+                 status->touchscreen_calibrated ? "已校准" : "未校准");
 
         g_info_label = lv_label_create(content_container);
         lv_label_set_text(g_info_label, status_text);
         theme_apply_to_label(g_info_label, false);
         lv_obj_align(g_info_label, LV_ALIGN_TOP_MID, 0, 10);
-        lv_obj_set_style_text_font(g_info_label, &lv_font_montserrat_14, 0);
+        lv_font_t* loaded_font = get_loaded_font();
+        lv_obj_set_style_text_font(g_info_label, loaded_font, 0);
     }
 
     // 创建菜单按钮

@@ -5,12 +5,12 @@
  * @date 2025-01-27
  */
 
+#include "ui_common.h"
 #include "esp_log.h"
 #include "font/lv_symbol_def.h"
 #include "game.h"
-#include "ui.h"
-#include "ui_common.h"
 #include "settings_manager.h" // Include the new settings manager
+#include "ui.h"
 
 static const char* TAG = "UI_COMMON";
 
@@ -154,8 +154,8 @@ void ui_create_top_bar(lv_obj_t* parent, const char* title_text, bool show_setti
 
     // 创建标题容器
     *title_container = lv_obj_create(*top_bar_container);
-    lv_obj_set_size(*title_container, 200, 30);
-    lv_obj_align(*title_container, LV_ALIGN_RIGHT_MID, 0, 0);
+    lv_obj_set_size(*title_container, 160, 30);
+    lv_obj_align(*title_container, LV_ALIGN_CENTER, 0, 0);
     lv_obj_set_style_bg_opa(*title_container, LV_OPA_0, 0);
     lv_obj_set_style_border_width(*title_container, 0, 0);
     lv_obj_set_style_pad_all(*title_container, 0, 0);
@@ -236,7 +236,7 @@ void ui_create_page_title(lv_obj_t* parent, const char* title_text) {
 // 图传模式设置 - 全局变量
 static lv_obj_t* settings_popup = NULL;
 
-// The unified callback for settings button is now removed. 
+// The unified callback for settings button is now removed.
 // Each page will define its own callback.
 
 // 设置弹出窗口回调函数
@@ -247,8 +247,7 @@ static void settings_popup_close_callback(lv_event_t* e) {
     }
 }
 
-static void tcp_checkbox_callback(lv_event_t* e)
-{
+static void tcp_checkbox_callback(lv_event_t* e) {
     lv_event_code_t code = lv_event_get_code(e);
     lv_obj_t* obj = lv_event_get_target(e);
 
@@ -267,8 +266,7 @@ static void tcp_checkbox_callback(lv_event_t* e)
     }
 }
 
-static void udp_checkbox_callback(lv_event_t* e)
-{
+static void udp_checkbox_callback(lv_event_t* e) {
     lv_event_code_t code = lv_event_get_code(e);
     lv_obj_t* obj = lv_event_get_target(e);
 
@@ -286,7 +284,6 @@ static void udp_checkbox_callback(lv_event_t* e)
         }
     }
 }
-
 
 // 创建设置弹出窗口
 void ui_create_settings_popup(lv_obj_t* parent) {
@@ -323,7 +320,7 @@ void ui_create_settings_popup(lv_obj_t* parent) {
     lv_checkbox_set_text(udp_checkbox, "UDP Mode");
     lv_obj_align(udp_checkbox, LV_ALIGN_LEFT_MID, 15, 15);
     lv_obj_set_style_text_font(udp_checkbox, &lv_font_montserrat_14, 0);
-    
+
     // 创建TCP Checkbox
     lv_obj_t* tcp_checkbox = lv_checkbox_create(dialog);
     lv_checkbox_set_text(tcp_checkbox, "TCP Mode");
