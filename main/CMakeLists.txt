@@ -5,7 +5,6 @@ set(MAIN_SRCS
     "demo/lsm6ds3_demo.c"
     "demo/i2s_tdm_demo.c"
     "demo/serial_display_demo.c"
-    "demo/spiffs_test_demo.c"
     "UI/ui_start_animation.c"
     "UI/ui_main.c"
     "UI/ui_wifi_settings.c"
@@ -16,6 +15,7 @@ set(MAIN_SRCS
     "UI/ui_test.c"
     "UI/theme_manager.c"
     "UI/ui_common.c"
+    "UI/ui_telemetry.c"
     "app/game/game_main.c"
     "app/game/game_tetris.c"
     "app/game/game_snake.c"
@@ -27,6 +27,8 @@ set(MAIN_SRCS
     "app/power_management.c"
     "app/background_manager.c"
     "app/settings_manager.c"
+    "app/Telemetry/src/telemetry_protocol.c"
+    "app/Telemetry/src/telemetry_tcp.c"
     "fonts/font_init.c"
     "fonts/Mysybmol.c"
 )
@@ -41,6 +43,6 @@ endif()
 
 idf_component_register(
     SRCS ${MAIN_SRCS}
-    INCLUDE_DIRS "inc" "UI/inc" "demo" "app/inc" "app/game" "fonts"
+    INCLUDE_DIRS "inc" "UI/inc" "demo" "app/inc" "app/game" "fonts" "app/Telemetry/inc"
     REQUIRES lvgl esp_timer lvgl_port Peripherals driver spiffs spi_flash
 )

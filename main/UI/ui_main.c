@@ -17,6 +17,7 @@
 #include "ui_image_transfer.h"
 #include "ui_serial_display.h"
 #include "ui_test.h"
+#include "ui_telemetry.h" // 添加遥测UI头文件
 #include "wifi_image_transfer.h"
 #include "wifi_manager.h"
 
@@ -248,7 +249,7 @@ static void test_cb(void) {
     }
 }
 
-static void p2p_udp_transfer_cb(void) {
+static void telemetry_cb(void) {
     lv_obj_t* screen = lv_scr_act();
     if (screen) {
         // 先停止时间更新定时器，避免访问已删除的UI元素
@@ -265,7 +266,7 @@ static void p2p_udp_transfer_cb(void) {
         g_wifi_label = NULL;
 
         lv_obj_clean(screen);               // 清空当前屏幕
-        ui_image_transfer_create(screen); // 加载P2P UDP图传界面
+        ui_telemetry_create(screen); // 加载遥测界面
     }
 }
 
@@ -284,7 +285,19 @@ static menu_item_t menu_items[] = {
     {"Serial Display", serial_display_cb},
     {"Calibration", calibration_cb},
     {"Test", test_cb},
+    {"Remote Control", telemetry_cb}, // 添加遥控器菜单项
     // 添加更多项...
+};
+
+static menu_item_t menu_items_zh[] = {
+    {"遥测", telemetry_cb},
+    {"图传", image_transfer_cb},
+    {"串口", serial_display_cb},
+    {"校准", calibration_cb},
+    {"游戏", game_cb},
+    {"WiFi设置", wifi_settings_cb},
+    {"设置", settings_cb},
+    {"测试", test_cb},
 };
 
 static void btn_event_cb(lv_event_t* e) {
