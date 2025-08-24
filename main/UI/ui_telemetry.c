@@ -1,9 +1,10 @@
 #include "ui.h"
 #include "ui_common.h"
 #include "lvgl.h"
+#include "theme_manager.h"
+#include "Mysybmol.h" // 包含字体头文件
 
 // 遥测界面的全局变量
-static lv_obj_t *ui_telemetry_screen;
 static lv_obj_t *throttle_slider;
 static lv_obj_t *direction_slider;
 static lv_obj_t *voltage_label;
@@ -13,26 +14,47 @@ static lv_obj_t *altitude_label;
 static lv_obj_t *gps_label;
 
 // 事件处理函数声明
-static void back_btn_event_handler(lv_event_t *e);
 static void slider_event_handler(lv_event_t *e);
 static void settings_btn_event_handler(lv_event_t *e);
 
 void ui_telemetry_create(lv_obj_t* parent)
 {
     theme_apply_to_screen(parent);
+    
+    // 获取中文字体
+    lv_font_t* font_cn = get_loaded_font();
+    if (!font_cn) {
+        LV_LOG_ERROR("Chinese font not loaded!");
+        return;
+    }
 
     // 1. 创建顶部栏
     lv_obj_t* top_bar = NULL;
     lv_obj_t* title_container = NULL;
     lv_obj_t* settings_btn = NULL; 
     ui_create_top_bar(parent, "遥控器", true, &top_bar, &title_container, &settings_btn);
+    
+    // 为标题设置中文字体
+    if (title_container) {
+        lv_obj_t* title = lv_obj_get_child(title_container, 0);
+        if (title) {
+            lv_obj_set_style_text_font(title, font_cn, 0);
+        }
+    }
+
     if (settings_btn) {
         lv_obj_add_event_cb(settings_btn, settings_btn_event_handler, LV_EVENT_CLICKED, NULL);
     }
 
     // 2. 创建内容容器
     lv_obj_t* content_container;
-    ui_create_page_content_area(ui_telemetry_screen, &content_container);
+    ui_create_page_content_area(parent, &content_container);
+
+    // 设置内容容器的布局，使其子控件垂直排列
+    lv_obj_set_flex_flow(content_container, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_all(content_container, 5, 0);
+    lv_obj_set_style_pad_gap(content_container, 10, 0);
+
 
     // 3. 在内容容器中创建控件
     // 油门/方向 和 遥测状态 区域
@@ -47,10 +69,12 @@ void ui_telemetry_create(lv_obj_t* parent)
     // -- 左侧：油门/方向
     lv_obj_t *title1 = lv_label_create(panel1);
     lv_label_set_text(title1, "油门/方向");
+    lv_obj_set_style_text_font(title1, font_cn, 0); // 设置字体
     lv_obj_set_grid_cell(title1, LV_GRID_ALIGN_START, 0, 1, LV_GRID_ALIGN_START, 0, 1);
 
     lv_obj_t *throttle_label = lv_label_create(panel1);
     lv_label_set_text(throttle_label, "油门:");
+    lv_obj_set_style_text_font(throttle_label, font_cn, 0); // 设置字体
     lv_obj_set_grid_cell(throttle_label, LV_GRID_ALIGN_START, 0, 1, LV_GRID_ALIGN_START, 1, 1);
 
     throttle_slider = lv_slider_create(panel1);
@@ -61,6 +85,7 @@ void ui_telemetry_create(lv_obj_t* parent)
     
     lv_obj_t *direction_label = lv_label_create(panel1);
     lv_label_set_text(direction_label, "方向:");
+    lv_obj_set_style_text_font(direction_label, font_cn, 0); // 设置字体
     lv_obj_set_grid_cell(direction_label, LV_GRID_ALIGN_START, 0, 1, LV_GRID_ALIGN_START, 2, 1);
 
     direction_slider = lv_slider_create(panel1);
@@ -74,14 +99,17 @@ void ui_telemetry_create(lv_obj_t* parent)
     // -- 右侧：遥测状态
     lv_obj_t *title2 = lv_label_create(panel1);
     lv_label_set_text(title2, "遥测状态");
+    lv_obj_set_style_text_font(title2, font_cn, 0); // 设置字体
     lv_obj_set_grid_cell(title2, LV_GRID_ALIGN_START, 1, 1, LV_GRID_ALIGN_START, 0, 1);
     
     voltage_label = lv_label_create(panel1);
     lv_label_set_text(voltage_label, "电压: -- V");
+    lv_obj_set_style_text_font(voltage_label, font_cn, 0); // 设置字体
     lv_obj_set_grid_cell(voltage_label, LV_GRID_ALIGN_START, 1, 1, LV_GRID_ALIGN_START, 1, 1);
 
     current_label = lv_label_create(panel1);
     lv_label_set_text(current_label, "电流: -- A");
+    lv_obj_set_style_text_font(current_label, font_cn, 0); // 设置字体
     lv_obj_set_grid_cell(current_label, LV_GRID_ALIGN_START, 1, 1, LV_GRID_ALIGN_START, 2, 1);
 
 
@@ -97,15 +125,7 @@ void ui_telemetry_create(lv_obj_t* parent)
     lv_obj_set_height(panel3, LV_SIZE_CONTENT);
     lv_obj_t *title4 = lv_label_create(panel3);
     lv_label_set_text(title4, "扩展功能");
-}
-
-static void back_btn_event_handler(lv_event_t *e)
-{
-    lv_event_code_t code = lv_event_get_code(e);
-    if (code == LV_EVENT_CLICKED) {
-        // 返回主屏幕或其他逻辑
-        // ui_screen_load(ui_main_screen, LV_SCR_LOAD_ANIM_FADE_ON, 200, 0);
-    }
+    lv_obj_set_style_text_font(title4, font_cn, 0); // 设置字体
 }
 
 static void settings_btn_event_handler(lv_event_t *e)
