@@ -44,7 +44,8 @@ static TaskHandle_t s_tcp_server_task_handle = NULL;
 static TaskHandle_t s_serial_task_handle = NULL;
 static bool s_server_running = false;
 static bool s_serial_running = false;
-static bool s_stopping = false;  // 添加停止标志
+static bool s_stopping = false;         // 添加停止标志
+static bool s_uart_initialized = false; // 添加UART初始化标志
 
 // 数据缓冲区 - 使用PSRAM
 static uint8_t* s_display_buffer = NULL;
@@ -86,6 +87,12 @@ static void cleanup_psram_buffer(void) {
 
 // 串口初始化
 static esp_err_t serial_init(void) {
+    // 检查UART是否已经初始化
+    if (s_uart_initialized) {
+        ESP_LOGI(TAG, "UART already initialized, skipping");
+        return ESP_OK;
+    }
+
     uart_config_t uart_config = {
         .baud_rate = UART_BAUD_RATE,
         .data_bits = UART_DATA_8_BITS,
@@ -104,18 +111,30 @@ static esp_err_t serial_init(void) {
     ret = uart_param_config(UART_NUM, &uart_config);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "uart_param_config failed: %s", esp_err_to_name(ret));
+        uart_driver_delete(UART_NUM); // 清理已安装的驱动
         return ret;
     }
 
     ret = uart_set_pin(UART_NUM, UART_TX_PIN, UART_RX_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "uart_set_pin failed: %s", esp_err_to_name(ret));
+        uart_driver_delete(UART_NUM); // 清理已安装的驱动
         return ret;
     }
 
+    s_uart_initialized = true;
     ESP_LOGI(TAG, "Serial port initialized: UART%d, TX:%d, RX:%d, Baud:%d", UART_NUM, UART_TX_PIN, UART_RX_PIN,
              UART_BAUD_RATE);
     return ESP_OK;
+}
+
+// 串口反初始化
+static void serial_deinit(void) {
+    if (s_uart_initialized) {
+        uart_driver_delete(UART_NUM);
+        s_uart_initialized = false;
+        ESP_LOGI(TAG, "Serial port deinitialized");
+    }
 }
 
 // 串口发送数据
@@ -223,15 +242,15 @@ static void tcp_server_task(void* pvParameters) {
     while (s_server_running) {
         struct sockaddr_in source_addr;
         socklen_t addr_len = sizeof(source_addr);
-        
+
         // 使用select来设置超时，以便能够及时响应停止信号
         fd_set readfds;
         struct timeval tv;
         FD_ZERO(&readfds);
         FD_SET(listen_sock, &readfds);
-        tv.tv_sec = 1;  // 1秒超时
+        tv.tv_sec = 1; // 1秒超时
         tv.tv_usec = 0;
-        
+
         int select_result = select(listen_sock + 1, &readfds, NULL, NULL, &tv);
         if (select_result < 0) {
             ESP_LOGE(TAG, "Select error: errno %d", errno);
@@ -240,7 +259,7 @@ static void tcp_server_task(void* pvParameters) {
             // 超时，检查是否需要停止
             continue;
         }
-        
+
         int sock = accept(listen_sock, (struct sockaddr*)&source_addr, &addr_len);
         if (sock < 0) {
             ESP_LOGE(TAG, "Unable to accept connection: errno %d", errno);
@@ -261,7 +280,7 @@ static void tcp_server_task(void* pvParameters) {
             if (!s_server_running) {
                 break;
             }
-            
+
             len = recv(sock, rx_buffer, sizeof(rx_buffer), 0);
             if (len < 0) {
                 ESP_LOGE(TAG, "Error occurred during receive: errno %d", errno);
@@ -376,9 +395,9 @@ void serial_display_stop(void) {
         ESP_LOGW(TAG, "Serial display stop already in progress");
         return;
     }
-    
+
     s_stopping = true;
-    
+
     // 停止TCP服务器
     if (s_server_running) {
         s_server_running = false;
@@ -407,7 +426,10 @@ void serial_display_stop(void) {
 
     // 清理PSRAM缓冲区
     cleanup_psram_buffer();
-    
+
+    // 反初始化串口
+    serial_deinit();
+
     // 重置停止标志
     s_stopping = false;
 
