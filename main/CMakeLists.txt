@@ -28,6 +28,7 @@ set(MAIN_SRCS
     "app/settings_manager.c"
     "app/Telemetry/src/telemetry_protocol.c"
     "app/Telemetry/src/telemetry_tcp.c"
+    "app/Telemetry/src/telemetry_data_converter.c"
     "fonts/font_init.c"
     "fonts/Mysybmol.c"
 )
