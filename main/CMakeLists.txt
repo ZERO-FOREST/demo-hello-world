@@ -30,6 +30,7 @@ set(MAIN_SRCS
     "app/Telemetry/src/telemetry_protocol.c"
     "app/Telemetry/src/telemetry_tcp.c"
     "app/Telemetry/src/telemetry_data_converter.c"
+    "app/Telemetry/src/telemetry_main.c"
     "fonts/font_init.c"
     "fonts/Mysybmol.c"
 )

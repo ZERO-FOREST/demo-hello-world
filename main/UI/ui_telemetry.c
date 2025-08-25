@@ -3,6 +3,7 @@
 #include "lvgl.h"
 #include "theme_manager.h"
 #include "Mysybmol.h" // 包含字体头文件
+#include "telemetry_main.h" // 添加遥测服务头文件
 
 // 遥测界面的全局变量
 static lv_obj_t *throttle_slider;
@@ -11,15 +12,27 @@ static lv_obj_t *voltage_label;
 static lv_obj_t *current_label;
 static lv_obj_t *attitude_meter;
 static lv_obj_t *altitude_label;
+static lv_obj_t *service_status_label; // 添加服务状态标签
+static lv_obj_t *start_stop_btn; // 添加启动/停止按钮
+
+// 服务状态标志
+static bool telemetry_service_active = false;
 static lv_obj_t *gps_label;
 
 // 事件处理函数声明
 static void slider_event_handler(lv_event_t *e);
 static void settings_btn_event_handler(lv_event_t *e);
+static void start_stop_btn_event_handler(lv_event_t *e); // 添加启动/停止按钮事件处理
+static void telemetry_data_update_callback(const telemetry_data_t *data); // 添加数据更新回调
 
 void ui_telemetry_create(lv_obj_t* parent)
 {
     theme_apply_to_screen(parent);
+    
+    // 初始化遥测服务
+    if (telemetry_service_init() != 0) {
+        LV_LOG_ERROR("Failed to initialize telemetry service");
+    }
     
     // 获取中文字体
     lv_font_t* font_cn = get_loaded_font();
@@ -42,8 +55,25 @@ void ui_telemetry_create(lv_obj_t* parent)
         }
     }
 
+    // 将右上角的设置按钮改为启动/停止按钮
     if (settings_btn) {
-        lv_obj_add_event_cb(settings_btn, settings_btn_event_handler, LV_EVENT_CLICKED, NULL);
+        start_stop_btn = settings_btn; // 直接使用创建的按钮
+        
+        // 清除原有的事件回调
+        lv_obj_remove_event_cb(start_stop_btn, NULL);
+        
+        // 创建按钮标签
+        lv_obj_t *btn_label = lv_label_create(start_stop_btn);
+        lv_label_set_text(btn_label, "启动");
+        lv_obj_set_style_text_font(btn_label, font_cn, 0);
+        lv_obj_set_style_text_color(btn_label, lv_color_white(), 0);
+        lv_obj_center(btn_label);
+        
+        // 设置按钮样式为绿色
+        lv_obj_set_style_bg_color(start_stop_btn, lv_color_hex(0x00AA00), 0);
+        
+        // 添加启动/停止事件回调
+        lv_obj_add_event_cb(start_stop_btn, start_stop_btn_event_handler, LV_EVENT_CLICKED, NULL);
     }
 
     // 2. 创建内容容器
@@ -109,7 +139,7 @@ void ui_telemetry_create(lv_obj_t* parent)
     lv_obj_t *title2 = lv_label_create(right_container);
     lv_label_set_text(title2, "遥测状态");
     lv_obj_set_style_text_font(title2, font_cn, 0);
-    
+
     // 电压显示
     voltage_label = lv_label_create(right_container);
     lv_label_set_text(voltage_label, "电压: -- V");
@@ -119,13 +149,22 @@ void ui_telemetry_create(lv_obj_t* parent)
     current_label = lv_label_create(right_container);
     lv_label_set_text(current_label, "电流: -- A");
     lv_obj_set_style_text_font(current_label, font_cn, 0);
-
-
+    
     // 姿态显示区域
     lv_obj_t* panel2 = lv_obj_create(content_container);
     lv_obj_set_width(panel2, lv_pct(100));
     lv_obj_set_height(panel2, LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(panel2, LV_FLEX_FLOW_COLUMN); //设置为垂直布局
 
+    // GPS状态显示
+    gps_label = lv_label_create(panel2);
+    lv_label_set_text(gps_label, "GPS: 未连接");
+    lv_obj_set_style_text_font(gps_label, font_cn, 0);
+    
+    // 高度显示
+    altitude_label = lv_label_create(panel2);
+    lv_label_set_text(altitude_label, "高度: -- m");
+    lv_obj_set_style_text_font(altitude_label, font_cn, 0);
 
     // 扩展功能区域
     lv_obj_t* panel3 = lv_obj_create(content_container);
@@ -153,13 +192,121 @@ static void slider_event_handler(lv_event_t *e)
     
     if(slider == throttle_slider)
     {
-        LV_LOG_USER("Throttle slider value: %ld", value);
-        // 在这里可以添加发送TCP命令的逻辑
+        LV_LOG_USER("Throttle slider value: %d", (int)value);
+        // 发送控制命令到遥测服务
+        if (telemetry_service_active) {
+            int32_t direction_value = lv_slider_get_value(direction_slider);
+            telemetry_service_send_control(value, direction_value);
+        }
     }
     else if(slider == direction_slider)
     {
-        LV_LOG_USER("Direction slider value: %ld", value);
-        // 在这里可以添加发送TCP命令的逻辑
+        LV_LOG_USER("Direction slider value: %d", (int)value);
+        // 发送控制命令到遥测服务
+        if (telemetry_service_active) {
+            int32_t throttle_value = lv_slider_get_value(throttle_slider);
+            telemetry_service_send_control(throttle_value, value);
+        }
+    }
+}
+
+static void start_stop_btn_event_handler(lv_event_t *e)
+{
+    lv_event_code_t code = lv_event_get_code(e);
+    if (code == LV_EVENT_CLICKED) {
+        if (!telemetry_service_active) {
+            // 启动遥测服务
+            if (telemetry_service_start(telemetry_data_update_callback) == 0) {
+                telemetry_service_active = true;
+                
+                // 更新按钮文本为"停止"
+                lv_obj_t *btn_label = lv_obj_get_child(start_stop_btn, 0);
+                if (btn_label) {
+                    lv_label_set_text(btn_label, "停止");
+                }
+                
+                // 更改按钮颜色为红色
+                lv_obj_set_style_bg_color(start_stop_btn, lv_color_hex(0xAA0000), 0);
+                
+                // 更新状态显示（如果存在）
+                if (service_status_label) {
+                    lv_label_set_text(service_status_label, "状态: 运行中");
+                }
+                
+                LV_LOG_USER("Telemetry service started");
+            } else {
+                LV_LOG_ERROR("Failed to start telemetry service");
+                if (service_status_label) {
+                    lv_label_set_text(service_status_label, "状态: 启动失败");
+                }
+            }
+        } else {
+            // 停止遥测服务 - 添加防护措施防止重复调用
+            if (telemetry_service_active && telemetry_service_stop() == 0) {
+                telemetry_service_active = false;
+                
+                // 更新按钮文本为"启动"
+                lv_obj_t *btn_label = lv_obj_get_child(start_stop_btn, 0);
+                if (btn_label) {
+                    lv_label_set_text(btn_label, "启动");
+                }
+                
+                // 更改按钮颜色为绿色
+                lv_obj_set_style_bg_color(start_stop_btn, lv_color_hex(0x00AA00), 0);
+                
+                // 更新状态显示（如果存在）
+                if (service_status_label) {
+                    lv_label_set_text(service_status_label, "状态: 已停止");
+                }
+                
+                // 清空数据显示
+                if (voltage_label) {
+                    lv_label_set_text(voltage_label, "电压: -- V");
+                }
+                if (current_label) {
+                    lv_label_set_text(current_label, "电流: -- A");
+                }
+                if (altitude_label) {
+                    lv_label_set_text(altitude_label, "高度: -- m");
+                }
+                if (gps_label) {
+                    lv_label_set_text(gps_label, "GPS: 未连接");
+                }
+                
+                LV_LOG_USER("Telemetry service stopped");
+            } else {
+                // 停止失败或服务已经停止
+                if (!telemetry_service_active) {
+                    LV_LOG_WARN("Telemetry service already stopped");
+                } else {
+                    LV_LOG_ERROR("Failed to stop telemetry service");
+                }
+            }
+        }
+    }
+}
+
+static void telemetry_data_update_callback(const telemetry_data_t *data)
+{
+    if (data == NULL) return;
+    
+    // 更新UI显示的遥测数据
+    if (voltage_label) {
+        lv_label_set_text_fmt(voltage_label, "电压: %.2f V", data->voltage);
+    }
+    if (current_label) {
+        lv_label_set_text_fmt(current_label, "电流: %.2f A", data->current);
+    }
+    if (altitude_label) {
+        lv_label_set_text_fmt(altitude_label, "高度: %.1f m", data->altitude);
+    }
+    if (gps_label) {
+        // 简单的GPS状态模拟
+        if (data->altitude > 0) {
+            lv_label_set_text(gps_label, "GPS: 已连接");
+        } else {
+            lv_label_set_text(gps_label, "GPS: 搜索中");
+        }
     }
 }
 
@@ -169,4 +316,19 @@ void ui_telemetry_update_data(float voltage, float current, float roll, float pi
     lv_label_set_text_fmt(voltage_label, "电压: %.2f V", voltage);
     lv_label_set_text_fmt(current_label, "电流: %.2f A", current);
     // 更新姿态仪和高度等
+}
+
+// 添加UI清理函数
+void ui_telemetry_cleanup(void)
+{
+    // 停止遥测服务
+    if (telemetry_service_active) {
+        telemetry_service_stop();
+        telemetry_service_active = false;
+    }
+    
+    // 反初始化遥测服务
+    telemetry_service_deinit();
+    
+    LV_LOG_USER("Telemetry UI cleanup completed");
 }

@@ -40,4 +40,24 @@ int telemetry_tcp_client_send(const void *data, size_t len);
  */
 bool telemetry_tcp_client_is_connected(void);
 
+/**
+ * @brief 启动TCP服务器
+ *
+ * @param port 服务器监听端口号
+ * @return 成功返回0, 失败返回-1
+ */
+int telemetry_tcp_server_start(int port);
+
+/**
+ * @brief 停止TCP服务器
+ */
+void telemetry_tcp_server_stop(void);
+
+/**
+ * @brief 检查TCP服务器是否正在运行
+ * 
+ * @return true 正在运行, false 未运行
+ */
+bool telemetry_tcp_server_is_running(void);
+
 #endif // TELEMETRY_TCP_H

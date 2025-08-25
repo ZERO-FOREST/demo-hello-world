@@ -1,14 +1,23 @@
-#include "telemetry_tcp.h"
 #include <string.h>
+#include "telemetry_tcp.h"
 #include "esp_log.h"
 #include "lwip/sockets.h"
 #include "lwip/netdb.h"
 
 static const char *TAG = "telemetry_tcp";
 static int sock = -1;
+static int server_sock = -1;
+static bool server_running = false;
 
 void telemetry_tcp_client_init(void) {
-    // 目前不需要特别的初始化
+    ESP_LOGI(TAG, "Initializing telemetry TCP service");
+    
+    // 启动TCP服务器监听6666端口
+    if (telemetry_tcp_server_start(6666) == 0) {
+        ESP_LOGI(TAG, "TCP server started successfully on port 6666");
+    } else {
+        ESP_LOGW(TAG, "Failed to start TCP server on port 6666");
+    }
 }
 
 int telemetry_tcp_client_connect(const char *host, int port) {
@@ -81,4 +90,59 @@ int telemetry_tcp_client_send(const void *data, size_t len) {
 
 bool telemetry_tcp_client_is_connected(void) {
     return sock != -1;
+}
+
+int telemetry_tcp_server_start(int port) {
+    if (server_running) {
+        ESP_LOGW(TAG, "Server already running. Stop it first.");
+        return -1;
+    }
+
+    server_sock = socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
+    if (server_sock < 0) {
+        ESP_LOGE(TAG, "Unable to create socket: errno %d", errno);
+        return -1;
+    }
+
+    int opt = 1;
+    setsockopt(server_sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+
+    struct sockaddr_in dest_addr;
+    dest_addr.sin_addr.s_addr = INADDR_ANY;
+    dest_addr.sin_family = AF_INET;
+    dest_addr.sin_port = htons(port);
+
+    int err = bind(server_sock, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
+    if (err != 0) {
+        ESP_LOGE(TAG, "Socket unable to bind: errno %d", errno);
+        close(server_sock);
+        server_sock = -1;
+        return -1;
+    }
+
+    err = listen(server_sock, 1);
+    if (err != 0) {
+        ESP_LOGE(TAG, "Error occurred during listen: errno %d", errno);
+        close(server_sock);
+        server_sock = -1;
+        return -1;
+    }
+
+    server_running = true;
+    ESP_LOGI(TAG, "Socket listening on port %d", port);
+    return 0;
+}
+
+void telemetry_tcp_server_stop(void) {
+    if (server_sock != -1) {
+        ESP_LOGI(TAG, "Shutting down server socket");
+        shutdown(server_sock, 0);
+        close(server_sock);
+        server_sock = -1;
+    }
+    server_running = false;
+}
+
+bool telemetry_tcp_server_is_running(void) {
+    return server_running;
 }
