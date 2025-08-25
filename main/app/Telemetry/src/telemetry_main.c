@@ -7,6 +7,7 @@
 #include "lwip/sockets.h"
 #include "lwip/netdb.h"
 #include "esp_random.h"
+#include "esp_log.h"
 #include <stdlib.h>
 #include <sys/socket.h>
 
@@ -107,9 +108,6 @@ int telemetry_service_stop(void) {
 
     // 停止TCP服务器
     telemetry_tcp_server_stop();
-
-    // 让任务自然退出而不是强制删除
-    // 任务会检查 service_status 并自行退出
     
     // 等待任务自然退出
     int wait_count = 0;
@@ -210,19 +208,19 @@ static void telemetry_server_task(void *pvParameters) {
     struct sockaddr_in client_addr;
     socklen_t client_addr_len;
 
-    // Server task started
+    ESP_LOGI(TAG, "Server task started");
     while (service_status == TELEMETRY_STATUS_RUNNING) {
-        // 检查服务器是否运行
+        // 检查TCP服务器是否运行
         if (!telemetry_tcp_server_is_running()) {
-            // TCP server not running, waiting...
+            ESP_LOGW(TAG, "TCP server not running, waiting...");
             vTaskDelay(pdMS_TO_TICKS(1000));
             continue;
         }
 
-        // 创建独立的服务器socket用于接受连接
+        // 使用端口6667避免与telemetry_tcp.c的6666端口冲突
         listen_sock = socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
         if (listen_sock < 0) {
-            // Unable to create socket
+            ESP_LOGE(TAG, "Unable to create socket");
             vTaskDelay(pdMS_TO_TICKS(1000));
             continue;
         }
@@ -233,11 +231,11 @@ static void telemetry_server_task(void *pvParameters) {
         struct sockaddr_in dest_addr;
         dest_addr.sin_addr.s_addr = INADDR_ANY;
         dest_addr.sin_family = AF_INET;
-        dest_addr.sin_port = htons(6667); // 使用不同端口避免冲突
+        dest_addr.sin_port = htons(6667); // 使用6667端口避免冲突
 
         int err = bind(listen_sock, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
         if (err != 0) {
-            // Socket unable to bind
+            ESP_LOGE(TAG, "Socket unable to bind");
             lwip_close(listen_sock);
             vTaskDelay(pdMS_TO_TICKS(1000));
             continue;
@@ -245,34 +243,34 @@ static void telemetry_server_task(void *pvParameters) {
 
         err = listen(listen_sock, 1);
         if (err != 0) {
-            // Error occurred during listen
+            ESP_LOGE(TAG, "Error occurred during listen");
             lwip_close(listen_sock);
             vTaskDelay(pdMS_TO_TICKS(1000));
             continue;
         }
 
-        // Socket listening on port 6667
+        ESP_LOGI(TAG, "Socket listening on port 6667");
         while (service_status == TELEMETRY_STATUS_RUNNING) {
             client_addr_len = sizeof(client_addr);
             client_sock = accept(listen_sock, (struct sockaddr *)&client_addr, &client_addr_len);
             
             if (client_sock < 0) {
                 if (service_status == TELEMETRY_STATUS_RUNNING) {
-                    // Unable to accept connection
+                    ESP_LOGW(TAG, "Unable to accept connection");
                 }
                 continue;
             }
 
-            // Client connected
+            ESP_LOGI(TAG, "Client connected");
             handle_client_connection(client_sock);
             lwip_close(client_sock);
-            // Client disconnected
+            ESP_LOGI(TAG, "Client disconnected");
         }
 
         lwip_close(listen_sock);
     }
 
-    // Server task ended - 清空句柄并自行退出
+    ESP_LOGI(TAG, "Server task ended");
     server_task_handle = NULL;
     vTaskDelete(NULL);
 }
@@ -326,32 +324,102 @@ static void handle_client_connection(int client_sock) {
     char rx_buffer[256];
     int len;
     int32_t throttle, direction;
-
+    uint32_t last_heartbeat = 0;
+    uint32_t last_data_send = 0;
+    bool client_ready = false;
+    
     while (service_status == TELEMETRY_STATUS_RUNNING) {
-        len = recv(client_sock, rx_buffer, sizeof(rx_buffer) - 1, 0);
-        if (len < 0) {
-            // recv failed
-            break;
+        // 使用短超时的阻塞接收
+        len = recv(client_sock, rx_buffer, sizeof(rx_buffer) - 1, MSG_DONTWAIT);
+        if (len > 0) {
+            rx_buffer[len] = '\0';
+            
+            // 检查心跳包
+            bool found_heartbeat = false;
+            for (int i = 0; i < len - 8; i++) {
+                if (rx_buffer[i] == 'H' && rx_buffer[i+1] == 'E' && 
+                    rx_buffer[i+2] == 'A' && rx_buffer[i+3] == 'R' && 
+                    rx_buffer[i+4] == 'T' && rx_buffer[i+5] == 'B' &&
+                    rx_buffer[i+6] == 'E' && rx_buffer[i+7] == 'A' && rx_buffer[i+8] == 'T') {
+                    found_heartbeat = true;
+                    break;
+                }
+            }
+            
+            if (found_heartbeat) {
+                // 收到心跳包，标记客户端就绪并发送确认
+                client_ready = true;
+                const char *response = "HEARTBEAT:ACK\n";
+                send(client_sock, response, 14, 0);
+                continue;
+            }
+            
+            // 简单检查客户端确认（查找"READY"字符串）
+            bool found_ready = false;
+            for (int i = 0; i < len - 4; i++) {
+                if (rx_buffer[i] == 'R' && rx_buffer[i+1] == 'E' && 
+                    rx_buffer[i+2] == 'A' && rx_buffer[i+3] == 'D' && rx_buffer[i+4] == 'Y') {
+                    found_ready = true;
+                    break;
+                }
+            }
+            
+            if (found_ready) {
+                client_ready = true;
+            }
+            
+            if (found_ready) {
+                const char *ack = "ACK:START_DATA\n";
+                send(client_sock, ack, 15, 0);
+            }
+            // 解析控制命令
+            else if (parse_control_command(rx_buffer, &throttle, &direction) == 0) {
+                telemetry_service_send_control(throttle, direction);
+                
+                // 发送确认回复
+                const char *response = "OK\n";
+                send(client_sock, response, 3, 0);
+            } else {
+                // 发送错误回复
+                const char *response = "ERROR\n";
+                send(client_sock, response, 6, 0);
+            }
         } else if (len == 0) {
             // Connection closed by client
             break;
         }
-
-        rx_buffer[len] = '\0';
-        // Received command
-
-        // 解析控制命令
-        if (parse_control_command(rx_buffer, &throttle, &direction) == 0) {
-            telemetry_service_send_control(throttle, direction);
-            
-            // 发送确认回复
-            const char *response = "OK\n";
-            send(client_sock, response, 3, 0);  // "OK\n" 的长度是3
-        } else {
-            // 发送错误回复
-            const char *response = "ERROR\n";
-            send(client_sock, response, 6, 0);  // "ERROR\n" 的长度是6
+        
+        uint32_t current_time = xTaskGetTickCount();
+        
+        // 只有在客户端准备好后才发送数据
+        if (!client_ready) {
+            vTaskDelay(pdMS_TO_TICKS(100));
+            continue;
         }
+        
+        // 每5秒发送心跳包
+        if (current_time - last_heartbeat > pdMS_TO_TICKS(5000)) {
+            const char *hb = "HEARTBEAT:ALIVE\n";
+            send(client_sock, hb, 16, 0);
+            last_heartbeat = current_time;
+        }
+        
+        // 每1秒发送遥测数据
+        if (current_time - last_data_send > pdMS_TO_TICKS(1000)) {
+            telemetry_data_t data;
+            if (telemetry_service_get_data(&data) == 0) {
+                // 发送简单的控制值数据（模拟从摇杆来的数据）
+                const char *ctrl_msg = "CTRL:600,450\n";  // 示例固定值
+                send(client_sock, ctrl_msg, 13, 0);
+                
+                // 发送简单的遥测数据
+                const char *telem_msg = "TELEMETRY:12.5,2.1,0.0,0.0,0.0,100.0\n";
+                send(client_sock, telem_msg, 38, 0);
+            }
+            last_data_send = current_time;
+        }
+        
+        vTaskDelay(pdMS_TO_TICKS(100)); // 100ms延时
     }
 }
 

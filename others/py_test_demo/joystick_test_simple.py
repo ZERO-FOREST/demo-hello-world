@@ -12,7 +12,7 @@ from typing import Optional, Dict, Any
 class TelemetryReceiver:
     """遥测数据接收器 - 只负责解析"""
     
-    def __init__(self, esp32_ip='192.168.97.247', port=6666):
+    def __init__(self, esp32_ip='192.168.97.247', port=6667):  # 改为6667端口
         self.esp32_ip = esp32_ip
         self.port = port
         self.socket = None
@@ -119,8 +119,14 @@ class TelemetryReceiver:
             self.running = True
             
             print(f"✅ 已连接到ESP32")
-            print("📥 开始接收数据...")
-            print("💡 如果没有数据，可能需要先启动ESP32的遥测服务")
+            print("� 发送心跳包...")
+            
+            # 发送心跳包来触发服务器
+            heartbeat = "HEARTBEAT\n"
+            self.socket.send(heartbeat.encode('utf-8'))
+            print(f"📤 已发送心跳包: {heartbeat.strip()}")
+            
+            print("� 开始接收数据...")
             print("💡 按 Ctrl+C 退出\n")
             
             # 连接成功后移除超时，改为阻塞接收

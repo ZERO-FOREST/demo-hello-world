@@ -290,17 +290,22 @@ static void telemetry_data_update_callback(const telemetry_data_t *data)
 {
     if (data == NULL) return;
     
+    // 检查关键对象是否有效，如果不是则跳过更新
+    if (!voltage_label || !current_label || !altitude_label) {
+        return;
+    }
+    
     // 更新UI显示的遥测数据
-    if (voltage_label) {
+    if (lv_obj_is_valid(voltage_label)) {
         lv_label_set_text_fmt(voltage_label, "电压: %.2f V", data->voltage);
     }
-    if (current_label) {
+    if (lv_obj_is_valid(current_label)) {
         lv_label_set_text_fmt(current_label, "电流: %.2f A", data->current);
     }
-    if (altitude_label) {
+    if (lv_obj_is_valid(altitude_label)) {
         lv_label_set_text_fmt(altitude_label, "高度: %.1f m", data->altitude);
     }
-    if (gps_label) {
+    if (gps_label && lv_obj_is_valid(gps_label)) {
         // 简单的GPS状态模拟
         if (data->altitude > 0) {
             lv_label_set_text(gps_label, "GPS: 已连接");
