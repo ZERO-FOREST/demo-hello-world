@@ -22,10 +22,6 @@ extern "C" {
 #define JOYSTICK1_ADC_X_CHANNEL ADC1_CHANNEL_0 // IO1
 #define JOYSTICK1_ADC_Y_CHANNEL ADC1_CHANNEL_1 // IO2
 
-// 摇杆2
-#define JOYSTICK2_ADC_X_CHANNEL ADC1_CHANNEL_3 // IO4
-#define JOYSTICK2_ADC_Y_CHANNEL ADC1_CHANNEL_4 // IO5
-
 // ADC衰减配置
 #define JOYSTICK_ADC_ATTEN      ADC_ATTEN_DB_11
 
@@ -47,13 +43,11 @@ typedef struct {
 } joystick_axis_cal_t;
 
 /**
- * @brief 所有摇杆的校准数据
+ * @brief 摇杆的校准数据
  */
 typedef struct {
     joystick_axis_cal_t joy1_x;
     joystick_axis_cal_t joy1_y;
-    joystick_axis_cal_t joy2_x;
-    joystick_axis_cal_t joy2_y;
 } joystick_cal_data_t;
 
 /**
@@ -62,19 +56,13 @@ typedef struct {
 typedef struct {
     int raw_joy1_x;     // 摇杆1 X轴原始值
     int raw_joy1_y;     // 摇杆1 Y轴原始值
-    int raw_joy2_x;     // 摇杆2 X轴原始值
-    int raw_joy2_y;     // 摇杆2 Y轴原始值
 
     int joy1_x_mv;      // 摇杆1 X轴电压 (mV)
     int joy1_y_mv;      // 摇杆1 Y轴电压 (mV)
-    int joy2_x_mv;      // 摇杆2 X轴电压 (mV)
-    int joy2_y_mv;      // 摇杆2 Y轴电压 (mV)
     
     // 归一化后的输出值 (-100 到 100)
     int norm_joy1_x;
     int norm_joy1_y;
-    int norm_joy2_x;
-    int norm_joy2_y;
 } joystick_data_t;
 
 // ========================================

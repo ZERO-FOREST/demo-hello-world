@@ -4,7 +4,6 @@ set(MAIN_SRCS
     "components_init.c"
     "demo/lsm6ds3_demo.c"
     "demo/i2s_tdm_demo.c"
-    "demo/serial_display_demo.c"
     "UI/ui_start_animation.c"
     "UI/ui_main.c"
     "UI/ui_wifi_settings.c"
