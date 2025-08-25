@@ -13,6 +13,7 @@ extern "C" {
 
 #include "lvgl.h"
 #include "theme_manager.h"
+#include "ui_state_manager.h"
 
 // --- LVGL 主任务 ---
 // 这个任务初始化并运行LVGL的主循环
@@ -95,6 +96,9 @@ void ui_image_transfer_destroy(void);
 // 统一的back按钮创建函数
 void ui_create_back_button(lv_obj_t* parent, const char* text);
 void ui_create_game_back_button(lv_obj_t* parent, const char* text);
+
+// 创建支持状态恢复的返回按钮
+void ui_create_stateful_back_button(lv_obj_t* parent);
 
 // 统一的页面标题创建函数
 void ui_create_page_title(lv_obj_t* parent, const char* title_text);

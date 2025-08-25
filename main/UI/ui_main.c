@@ -18,22 +18,18 @@
 #include "ui_serial_display.h"
 #include "ui_test.h"
 #include "ui_telemetry.h" // 添加遥测UI头文件
+#include "ui_state_manager.h" // 添加状态管理器头文件
 #include "wifi_image_transfer.h"
 #include "wifi_manager.h"
-
-
-// 获取莫兰迪颜色的辅助函数
-static lv_color_t get_morandi_color(int index) {
-    if (index >= 0 && index < MORANDI_COLORS_COUNT) {
-        return lv_color_hex(morandi_colors[index].color_hex);
-    }
-    return lv_color_hex(morandi_colors[4].color_hex); // 默认返回背景色
-}
 
 // 全局变量保存时间标签、电池标签和WiFi标签
 static lv_obj_t* g_time_label = NULL;
 static lv_obj_t* g_battery_label = NULL;
 static lv_obj_t* g_wifi_label = NULL;
+
+// 全局变量保存菜单容器和当前选中状态
+static lv_obj_t* g_menu_container = NULL;
+static int g_current_selected_index = 0;
 
 // 函数声明
 void ui_main_update_wifi_display(void);
@@ -148,6 +144,13 @@ typedef void (*menu_item_cb_t)(void);
 
 // 示例回调函数（后续扩展时实现）
 static void wifi_settings_cb(void) {
+    // 保存主菜单状态
+    if (g_menu_container) {
+        int scroll_pos = lv_obj_get_scroll_y(g_menu_container);
+        ui_state_manager_save_main_menu(g_menu_container, g_current_selected_index, scroll_pos);
+        ui_state_manager_save_current_screen(UI_SCREEN_WIFI_SETTINGS);
+    }
+
     lv_obj_t* screen = lv_scr_act();
     if (screen) {
         // 先停止时间更新定时器，避免访问已删除的UI元素
@@ -156,6 +159,7 @@ static void wifi_settings_cb(void) {
         g_time_label = NULL;
         g_battery_label = NULL;
         g_wifi_label = NULL;
+        g_menu_container = NULL;
 
         lv_obj_clean(screen);            // 清空当前屏幕
         ui_wifi_settings_create(screen); // 加载WiFi设置界面
@@ -163,6 +167,13 @@ static void wifi_settings_cb(void) {
 }
 
 static void settings_cb(void) {
+    // 保存主菜单状态
+    if (g_menu_container) {
+        int scroll_pos = lv_obj_get_scroll_y(g_menu_container);
+        ui_state_manager_save_main_menu(g_menu_container, g_current_selected_index, scroll_pos);
+        ui_state_manager_save_current_screen(UI_SCREEN_SETTINGS);
+    }
+
     lv_obj_t* screen = lv_scr_act();
     if (screen) {
         // 先停止时间更新定时器，避免访问已删除的UI元素
@@ -177,6 +188,7 @@ static void settings_cb(void) {
         g_time_label = NULL;
         g_battery_label = NULL;
         g_wifi_label = NULL;
+        g_menu_container = NULL;
 
         lv_obj_clean(screen);       // 清空当前屏幕
         ui_settings_create(screen); // 加载系统设置界面
@@ -184,22 +196,55 @@ static void settings_cb(void) {
 }
 
 static void game_cb(void) {
+    // 保存主菜单状态
+    if (g_menu_container) {
+        int scroll_pos = lv_obj_get_scroll_y(g_menu_container);
+        ui_state_manager_save_main_menu(g_menu_container, g_current_selected_index, scroll_pos);
+        ui_state_manager_save_current_screen(UI_SCREEN_GAME);
+    }
+
     lv_obj_t* screen = lv_scr_act();
     if (screen) {
+        // 重置全局UI指针
+        g_time_label = NULL;
+        g_battery_label = NULL;
+        g_wifi_label = NULL;
+        g_menu_container = NULL;
+
         lv_obj_clean(screen);        // 清空当前屏幕
         ui_game_menu_create(screen); // 加载游戏子菜单界面
     }
 }
 
 static void image_transfer_cb(void) {
+    // 保存主菜单状态
+    if (g_menu_container) {
+        int scroll_pos = lv_obj_get_scroll_y(g_menu_container);
+        ui_state_manager_save_main_menu(g_menu_container, g_current_selected_index, scroll_pos);
+        ui_state_manager_save_current_screen(UI_SCREEN_IMAGE_TRANSFER);
+    }
+
     lv_obj_t* screen = lv_scr_act();
     if (screen) {
+        // 重置全局UI指针
+        g_time_label = NULL;
+        g_battery_label = NULL;
+        g_wifi_label = NULL;
+        g_menu_container = NULL;
+
         lv_obj_clean(screen);             // 清空当前屏幕
         ui_image_transfer_create(screen); // 加载图传界面
     }
 }
 
 static void serial_display_cb(void) {
+    // 保存主菜单状态
+    if (g_menu_container) {
+        int scroll_pos = lv_obj_get_scroll_y(g_menu_container);
+        ui_state_manager_save_main_menu(g_menu_container, g_current_selected_index, scroll_pos);
+        ui_state_manager_save_current_screen(UI_SCREEN_SERIAL_DISPLAY);
+    }
+
     lv_obj_t* screen = lv_scr_act();
     if (screen) {
         // 先停止时间更新定时器，避免访问已删除的UI元素
@@ -214,6 +259,7 @@ static void serial_display_cb(void) {
         g_time_label = NULL;
         g_battery_label = NULL;
         g_wifi_label = NULL;
+        g_menu_container = NULL;
 
         lv_obj_clean(screen);             // 清空当前屏幕
         ui_serial_display_create(screen); // 加载串口显示界面
@@ -221,14 +267,34 @@ static void serial_display_cb(void) {
 }
 
 static void calibration_cb(void) {
+    // 保存主菜单状态
+    if (g_menu_container) {
+        int scroll_pos = lv_obj_get_scroll_y(g_menu_container);
+        ui_state_manager_save_main_menu(g_menu_container, g_current_selected_index, scroll_pos);
+        ui_state_manager_save_current_screen(UI_SCREEN_CALIBRATION);
+    }
+
     lv_obj_t* screen = lv_scr_act();
     if (screen) {
+        // 重置全局UI指针
+        g_time_label = NULL;
+        g_battery_label = NULL;
+        g_wifi_label = NULL;
+        g_menu_container = NULL;
+
         lv_obj_clean(screen);          // 清空当前屏幕
         ui_calibration_create(screen); // 加载校准界面
     }
 }
 
 static void test_cb(void) {
+    // 保存主菜单状态
+    if (g_menu_container) {
+        int scroll_pos = lv_obj_get_scroll_y(g_menu_container);
+        ui_state_manager_save_main_menu(g_menu_container, g_current_selected_index, scroll_pos);
+        ui_state_manager_save_current_screen(UI_SCREEN_TEST);
+    }
+
     lv_obj_t* screen = lv_scr_act();
     if (screen) {
         // 先停止时间更新定时器，避免访问已删除的UI元素
@@ -243,6 +309,7 @@ static void test_cb(void) {
         g_time_label = NULL;
         g_battery_label = NULL;
         g_wifi_label = NULL;
+        g_menu_container = NULL;
 
         lv_obj_clean(screen);   // 清空当前屏幕
         ui_test_create(screen); // 加载测试界面
@@ -250,6 +317,13 @@ static void test_cb(void) {
 }
 
 static void telemetry_cb(void) {
+    // 保存主菜单状态
+    if (g_menu_container) {
+        int scroll_pos = lv_obj_get_scroll_y(g_menu_container);
+        ui_state_manager_save_main_menu(g_menu_container, g_current_selected_index, scroll_pos);
+        ui_state_manager_save_current_screen(UI_SCREEN_TELEMETRY);
+    }
+
     lv_obj_t* screen = lv_scr_act();
     if (screen) {
         // 先停止时间更新定时器，避免访问已删除的UI元素
@@ -264,6 +338,7 @@ static void telemetry_cb(void) {
         g_time_label = NULL;
         g_battery_label = NULL;
         g_wifi_label = NULL;
+        g_menu_container = NULL;
 
         lv_obj_clean(screen);               // 清空当前屏幕
         ui_telemetry_create(screen); // 加载遥测界面
@@ -301,12 +376,31 @@ static menu_item_t menu_items_zh[] = {
 };
 
 static void btn_event_cb(lv_event_t* e) {
+    lv_obj_t* btn = lv_event_get_target(e);
     menu_item_cb_t cb = (menu_item_cb_t)lv_event_get_user_data(e);
+    
+    // 获取按钮在菜单中的索引
+    if (g_menu_container) {
+        uint32_t child_count = lv_obj_get_child_cnt(g_menu_container);
+        for (uint32_t i = 0; i < child_count; i++) {
+            if (lv_obj_get_child(g_menu_container, i) == btn) {
+                g_current_selected_index = i;
+                break;
+            }
+        }
+    }
+    
     if (cb)
         cb();
 }
 
 void ui_main_menu_create(lv_obj_t* parent) {
+    // 标记当前屏幕类型
+    ui_state_manager_save_current_screen(UI_SCREEN_MAIN_MENU);
+    
+    // 检查是否需要恢复状态
+    ui_main_menu_state_t* saved_state = ui_state_manager_get_main_menu_state();
+    
     // 应用当前主题到屏幕
     theme_apply_to_screen(parent);
 
@@ -382,18 +476,18 @@ void ui_main_menu_create(lv_obj_t* parent) {
     int num_items = sizeof(menu_items) / sizeof(menu_item_t);
 
     // 创建菜单按钮容器
-    lv_obj_t* menu_container = lv_obj_create(parent);
-    lv_obj_set_size(menu_container, 220, 220);
-    lv_obj_align(menu_container, LV_ALIGN_CENTER, 0, 44); // 调整位置，避开状态栏和标题
-    lv_obj_set_style_bg_opa(menu_container, LV_OPA_0, 0);
-    lv_obj_set_style_border_width(menu_container, 0, 0);
-    lv_obj_set_style_pad_all(menu_container, 0, 0);
-    lv_obj_set_style_width(menu_container, 0, LV_PART_SCROLLBAR);
-    lv_obj_set_style_opa(menu_container, LV_OPA_0, LV_PART_SCROLLBAR);
+    g_menu_container = lv_obj_create(parent);
+    lv_obj_set_size(g_menu_container, 220, 220);
+    lv_obj_align(g_menu_container, LV_ALIGN_CENTER, 0, 44); // 调整位置，避开状态栏和标题
+    lv_obj_set_style_bg_opa(g_menu_container, LV_OPA_0, 0);
+    lv_obj_set_style_border_width(g_menu_container, 0, 0);
+    lv_obj_set_style_pad_all(g_menu_container, 0, 0);
+    lv_obj_set_style_width(g_menu_container, 0, LV_PART_SCROLLBAR);
+    lv_obj_set_style_opa(g_menu_container, LV_OPA_0, LV_PART_SCROLLBAR);
 
     // 创建按钮 - 使用莫兰迪色系
     for (int i = 0; i < num_items; i++) {
-        lv_obj_t* btn = lv_obj_create(menu_container);
+        lv_obj_t* btn = lv_obj_create(g_menu_container);
         lv_obj_set_size(btn, 200, 54);                       // 增加按钮高度到60像素
         lv_obj_align(btn, LV_ALIGN_CENTER, 0, -80 + i * 70); // 调整间距，每个按钮间隔70像素
         lv_obj_add_event_cb(btn, btn_event_cb, LV_EVENT_CLICKED, menu_items[i].callback);
@@ -449,6 +543,32 @@ void ui_main_menu_create(lv_obj_t* parent) {
 
     // 初始化WiFi状态显示
     ui_main_update_wifi_display();
+
+    // 恢复状态（如果有保存的状态）
+    if (saved_state) {
+        // 恢复选中的菜单项索引
+        g_current_selected_index = saved_state->selected_index;
+        
+        // 恢复滚动位置
+        lv_obj_scroll_to_y(g_menu_container, saved_state->scroll_position, LV_ANIM_OFF);
+        
+        ESP_LOGI("UI_MAIN", "Main menu state restored: selected=%d, scroll=%d", 
+                 saved_state->selected_index, saved_state->scroll_position);
+        
+        // 可选：高亮显示之前选中的菜单项
+        if (saved_state->selected_index >= 0 && saved_state->selected_index < num_items) {
+            lv_obj_t* selected_btn = lv_obj_get_child(g_menu_container, saved_state->selected_index);
+            if (selected_btn) {
+                // 可以添加一些视觉效果来表示这是之前选中的项目
+                // 例如：稍微改变按钮的透明度或边框
+                lv_obj_set_style_bg_opa(selected_btn, LV_OPA_90, LV_PART_MAIN);
+            }
+        }
+    } else {
+        // 如果没有保存的状态，初始化为默认值
+        g_current_selected_index = 0;
+        ESP_LOGI("UI_MAIN", "Main menu created with default state");
+    }
 
     ESP_LOGI("UI_MAIN", "Main menu created with background manager support");
 

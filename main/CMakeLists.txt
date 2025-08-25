@@ -15,6 +15,7 @@ set(MAIN_SRCS
     "UI/theme_manager.c"
     "UI/ui_common.c"
     "UI/ui_telemetry.c"
+    "UI/ui_state_manager.c"
     "app/game/game_main.c"
     "app/game/game_tetris.c"
     "app/game/game_snake.c"

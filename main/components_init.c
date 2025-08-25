@@ -2,7 +2,7 @@
  * @Author: tidycraze 2595256284@qq.com
  * @Date: 2025-08-22 16:32:04
  * @LastEditors: tidycraze 2595256284@qq.com
- * @LastEditTime: 2025-08-22 17:15:37
+ * @LastEditTime: 2025-08-25 17:36:22
  * @FilePath: \demo-hello-world\main\components_init.c
  * @Description: 用于集中初始化必要外设
  *
@@ -21,6 +21,7 @@
 
 #include "battery_monitor.h"
 #include "calibration_manager.h"
+#include "ui_state_manager.h" // 添加状态管理器头文件
 
 const char* TAG = "components_init";
 
@@ -119,6 +120,10 @@ esp_err_t components_init(void) {
     } else {
         ESP_LOGW(TAG, "Battery monitor init failed: %s", esp_err_to_name(ret));
     }
+
+    // 初始化UI状态管理器
+    ui_state_manager_init();
+    ESP_LOGI(TAG, "UI state manager initialized");
 
     // 其他组件初始化可以在这里添加
 

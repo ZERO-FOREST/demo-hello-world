@@ -9,8 +9,9 @@
 #include "esp_log.h"
 #include "font/lv_symbol_def.h"
 #include "game.h"
-#include "settings_manager.h" // Include the new settings manager
+#include "settings_manager.h"
 #include "ui.h"
+#include "ui_state_manager.h"
 
 static const char* TAG = "UI_COMMON";
 
@@ -360,3 +361,30 @@ void ui_create_settings_popup(lv_obj_t* parent) {
 // image_transfer_mode_t ui_get_image_transfer_mode(void) {
 //     return g_image_transfer_mode;
 // }
+
+// 创建支持状态恢复的返回按钮
+void ui_create_stateful_back_button(lv_obj_t* parent) {
+    // 创建back按钮 - 统一放置在左上角，与页面标题对齐
+    lv_obj_t* back_btn = lv_btn_create(parent);
+    lv_obj_set_size(back_btn, 40, 40);                 // 使用符号后可以更小
+    lv_obj_align(back_btn, LV_ALIGN_TOP_LEFT, 10, 10); // 左上角，与标题区域对齐
+
+    // 设置按钮样式
+    lv_obj_set_style_bg_color(back_btn, lv_color_hex(0x666666), 0); // 灰色背景
+    lv_obj_set_style_bg_opa(back_btn, LV_OPA_80, 0);
+    lv_obj_set_style_radius(back_btn, 6, 0);       // 圆角
+    lv_obj_set_style_shadow_width(back_btn, 2, 0); // 轻微阴影
+    lv_obj_set_style_shadow_ofs_y(back_btn, 1, 0);
+    lv_obj_set_style_shadow_opa(back_btn, LV_OPA_30, 0);
+
+    // 添加点击事件 - 使用支持状态恢复的回调
+    lv_obj_add_event_cb(back_btn, back_button_callback, LV_EVENT_CLICKED, NULL);
+
+    // 创建按钮标签
+    lv_obj_t* back_label = lv_label_create(back_btn);
+    lv_label_set_text(back_label, LV_SYMBOL_LEFT);
+    lv_obj_set_style_text_font(back_label, &lv_font_montserrat_16, 0);  // 符号字体稍大一些
+    lv_obj_set_style_text_color(back_label, lv_color_hex(0xFFFFFF), 0); // 白色文字
+    lv_obj_center(back_label);
+
+}
