@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-简化版摇杆遥控数据测试脚本
-专门用于测试摇杆转换的遥控命令
+ESP32 遥测数据接收工具
+专门用于接收和解析ESP32发送的遥测数据（文本格式）
 """
 
 import socket
@@ -9,17 +9,16 @@ import struct
 import time
 from typing import Optional, Dict, Any
 
-class SimpleJoystickTester:
-    """简单摇杆测试器"""
+class TelemetryReceiver:
+    """遥测数据接收器 - 只负责解析"""
     
-    FRAME_HEADER = b'\xAA\x55'
-    
-    def __init__(self, host='0.0.0.0', port=8080):
-        self.host = host
+    def __init__(self, esp32_ip='192.168.97.247', port=6666):
+        self.esp32_ip = esp32_ip
         self.port = port
         self.socket = None
-        self.client = None
-        
+        self.connected = False
+        self.running = False
+    
     def crc16_modbus(self, data: bytes) -> int:
         """计算Modbus CRC16校验"""
         crc = 0xFFFF
@@ -32,83 +31,47 @@ class SimpleJoystickTester:
                     crc >>= 1
         return crc
     
-    def parse_rc_frame(self, data: bytes) -> Optional[Dict[str, Any]]:
-        """解析遥控命令帧"""
-        if len(data) < 6 or data[:2] != self.FRAME_HEADER:
-            return None
+    def parse_simple_command(self, data: str) -> Optional[Dict[str, Any]]:
+        """解析简单的文本命令格式: CTRL:throttle,direction"""
+        try:
+            data = data.strip()
+            if not data.startswith('CTRL:'):
+                return None
             
-        frame_len = data[2]
-        frame_type = data[3]
-        
-        if frame_type != 0x01:  # 只处理遥控命令
-            return None
+            # 解析 CTRL:throttle,direction 格式
+            params = data[5:].split(',')
+            if len(params) != 2:
+                return None
+                
+            throttle = int(params[0])
+            direction = int(params[1])
             
-        if len(data) < 3 + frame_len:
+            return {
+                'throttle': throttle,
+                'direction': direction,
+                'throttle_percent': throttle / 10.0,
+                'direction_offset': (direction - 500) / 5.0
+            }
+        except:
             return None
-        
-        # 提取负载
-        payload_end = 3 + frame_len - 2
-        payload = data[4:payload_end]
-        
-        # 验证CRC
-        crc_data = data[2:payload_end]
-        received_crc = struct.unpack('<H', data[payload_end:payload_end + 2])[0]
-        calculated_crc = self.crc16_modbus(crc_data)
-        
-        if received_crc != calculated_crc:
-            print(f"❌ CRC错误: 接收{received_crc:04X} vs 计算{calculated_crc:04X}")
-            return None
-        
-        # 解析遥控命令
-        if len(payload) < 1:
-            return None
-            
-        channel_count = payload[0]
-        channels = []
-        
-        for i in range(min(channel_count, (len(payload) - 1) // 2)):
-            offset = 1 + i * 2
-            if offset + 2 <= len(payload):
-                channel_value = struct.unpack('<H', payload[offset:offset + 2])[0]
-                channels.append(channel_value)
-        
-        return {
-            'channel_count': channel_count,
-            'channels': channels,
-            'raw_data': data.hex()
-        }
     
-    def display_joystick_data(self, rc_data: Dict[str, Any]):
-        """显示摇杆数据"""
-        channels = rc_data['channels']
+    def display_control_data(self, cmd_data: Dict[str, Any]):
+        """显示控制数据"""
+        throttle = cmd_data['throttle']
+        direction = cmd_data['direction']
+        throttle_percent = cmd_data['throttle_percent']
+        direction_offset = cmd_data['direction_offset']
         
-        print(f"\n🎮 摇杆遥控数据:")
-        print(f"  通道数: {rc_data['channel_count']}")
+        print(f"\n🎮 遥控命令数据:")
+        print(f"  🚁 油门: {throttle:4d}/1000 ({throttle_percent:5.1f}%)")
+        print(f"  🧭 方向: {direction:4d}/1000 ({direction_offset:+6.1f}%)")
         
-        if len(channels) >= 2:
-            throttle = channels[0]  # CH1: 油门 (摇杆Y轴)
-            direction = channels[1]  # CH2: 方向 (摇杆X轴)
-            
-            # 转换为百分比和方向
-            throttle_percent = throttle / 10.0  # 0-1000 -> 0-100%
-            direction_offset = (direction - 500) / 5.0  # 500为中位，±100%
-            
-            print(f"  🚁 油门(Y轴): {throttle:4d}/1000 ({throttle_percent:5.1f}%)")
-            print(f"  🧭 方向(X轴): {direction:4d}/1000 ({direction_offset:+6.1f}%)")
-            
-            # 显示摇杆位置图形
-            self.draw_joystick_position(direction_offset, throttle_percent)
-            
-            # 显示其他通道
-            for i, ch in enumerate(channels[2:], 3):
-                ch_percent = ch / 10.0
-                print(f"  📡 CH{i}: {ch:4d}/1000 ({ch_percent:5.1f}%)")
-        else:
-            print("  ❌ 通道数不足")
+        # 显示控制位置图形
+        self.draw_control_position(direction_offset, throttle_percent)
     
-    def draw_joystick_position(self, direction_percent: float, throttle_percent: float):
-        """绘制摇杆位置图形"""
-        print(f"\n  📍 摇杆位置图:")
+    def draw_control_position(self, direction_percent: float, throttle_percent: float):
+        """绘制控制位置图形"""
+        print(f"\n  📍 控制位置图:")
         
         # 限制范围
         x = max(-100, min(100, direction_percent))  # 方向 (-100% 到 +100%)
@@ -122,7 +85,7 @@ class SimpleJoystickTester:
             line = "    "
             for col in range(21):
                 if row == grid_y and col == grid_x:
-                    line += "●"  # 摇杆位置
+                    line += "●"  # 控制位置
                 elif col == 10:  # 中心线
                     line += "|"
                 elif row == 10:  # 底线
@@ -142,67 +105,78 @@ class SimpleJoystickTester:
         
         print("    ←-100%  中心  +100%→ 方向")
     
-    def start_listening(self):
-        """开始监听ESP32数据"""
-        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        
+    def connect_to_esp32(self):
+        """连接到ESP32作为客户端"""
         try:
-            self.socket.bind((self.host, self.port))
-            self.socket.listen(1)
+            self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.socket.settimeout(10)  # 连接超时
             
-            print(f"🚀 摇杆测试服务器启动")
-            print(f"📡 监听: {self.host}:{self.port}")
-            print(f"⏳ 等待ESP32连接...")
-            print("=" * 50)
+            print(f"🚀 遥测接收器启动")
+            print(f"📡 正在连接ESP32: {self.esp32_ip}:{self.port}")
             
-            self.client, addr = self.socket.accept()
-            print(f"✅ ESP32已连接: {addr}")
-            print("🎮 开始接收摇杆数据...\n")
+            self.socket.connect((self.esp32_ip, self.port))
+            self.connected = True
+            self.running = True
             
-            buffer = bytearray()
+            print(f"✅ 已连接到ESP32")
+            print("📥 开始接收数据...")
+            print("💡 如果没有数据，可能需要先启动ESP32的遥测服务")
+            print("💡 按 Ctrl+C 退出\n")
+            
+            # 连接成功后移除超时，改为阻塞接收
+            self.socket.settimeout(None)
+            
+            buffer = ""
             frame_count = 0
             
-            while True:
-                data = self.client.recv(1024)
-                if not data:
-                    print("🔌 ESP32断开连接")
+            while self.running and self.connected:
+                try:
+                    data = self.socket.recv(1024)
+                    if not data:
+                        print("🔌 ESP32断开连接")
+                        break
+                    
+                    print(f"📨 接收到 {len(data)} 字节数据: {data[:50]}{'...' if len(data) > 50 else ''}")
+                    
+                    # 解码为文本
+                    try:
+                        text_data = data.decode('utf-8')
+                        buffer += text_data
+                        
+                        # 按行分割处理
+                        lines = buffer.split('\n')
+                        buffer = lines[-1]  # 保留最后不完整的行
+                        
+                        for line in lines[:-1]:
+                            line = line.strip()
+                            if line:
+                                print(f"📝 处理行: '{line}'")
+                                cmd_data = self.parse_simple_command(line)
+                                if cmd_data:
+                                    frame_count += 1
+                                    print(f"📦 命令 #{frame_count:04d} {time.strftime('%H:%M:%S')}")
+                                    self.display_control_data(cmd_data)
+                                    print("─" * 50)
+                                else:
+                                    print(f"❓ 无法解析的数据: '{line}'")
+                    
+                    except UnicodeDecodeError as e:
+                        print(f"❌ 文本解码错误: {e}")
+                        print(f"   原始数据: {data.hex()}")
+                        continue
+                        
+                except socket.timeout:
+                    continue  # 继续等待
+                except socket.error as e:
+                    print(f"❌ 接收数据错误: {e}")
                     break
                 
-                buffer.extend(data)
-                
-                # 查找并解析帧
-                while len(buffer) >= 6:
-                    # 查找帧头
-                    header_pos = buffer.find(self.FRAME_HEADER)
-                    if header_pos == -1:
-                        buffer.clear()
-                        break
-                    
-                    if header_pos > 0:
-                        buffer = buffer[header_pos:]
-                    
-                    if len(buffer) < 4:
-                        break
-                    
-                    frame_len = buffer[2]
-                    total_len = 3 + frame_len
-                    
-                    if len(buffer) < total_len:
-                        break
-                    
-                    # 提取帧
-                    frame_data = bytes(buffer[:total_len])
-                    buffer = buffer[total_len:]
-                    
-                    # 解析遥控帧
-                    rc_data = self.parse_rc_frame(frame_data)
-                    if rc_data:
-                        frame_count += 1
-                        print(f"📦 帧 #{frame_count:04d} {time.strftime('%H:%M:%S')}")
-                        self.display_joystick_data(rc_data)
-                        print("─" * 50)
-                
+        except socket.timeout:
+            print(f"❌ 连接超时: {self.esp32_ip}:{self.port}")
+            print("💡 请检查ESP32是否在线并且遥测服务已启动")
+        except socket.error as e:
+            print(f"❌ 连接失败: {e}")
+            print("💡 请检查网络连接和ESP32 IP地址")
         except KeyboardInterrupt:
             print("\n👋 用户中断")
         except Exception as e:
@@ -211,24 +185,29 @@ class SimpleJoystickTester:
             self.stop()
     
     def stop(self):
-        """停止服务器"""
-        if self.client:
-            self.client.close()
+        """停止接收器"""
+        self.running = False
+        self.connected = False
         if self.socket:
             self.socket.close()
-        print("🛑 服务器已停止")
+        print("🛑 接收器已停止")
 
 def main():
     """主函数"""
     print("=" * 50)
-    print("   ESP32 摇杆数据测试工具")
-    print("   专门测试摇杆→遥控命令转换")
+    print("   ESP32 遥测数据接收工具")
+    print("   专门接收和解析遥测数据")
     print("=" * 50)
     
-    tester = SimpleJoystickTester()
+    # 获取ESP32 IP地址
+    esp32_ip = input("请输入ESP32 IP地址 (默认: 192.168.97.247): ").strip()
+    if not esp32_ip:
+        esp32_ip = "192.168.97.247"
+    
+    receiver = TelemetryReceiver(esp32_ip=esp32_ip)
     
     try:
-        tester.start_listening()
+        receiver.connect_to_esp32()
     except KeyboardInterrupt:
         print("\n👋 测试结束")
     except Exception as e:
