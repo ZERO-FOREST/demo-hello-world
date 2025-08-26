@@ -435,14 +435,6 @@ void ui_serial_display_create(lv_obj_t* parent) {
     lv_obj_t* content_container;
     ui_create_page_content_area(page_parent_container, &content_container);
 
-    // 4. 在content_container中添加页面内容
-    // 创建状态标签 - 简化显示，移除auto信息
-    g_status_label = lv_label_create(content_container);
-    lv_obj_align(g_status_label, LV_ALIGN_TOP_RIGHT, -5, 2);
-    lv_obj_set_style_text_font(g_status_label, &lv_font_montserrat_12, 0); // 使用更小的字体
-    lv_obj_set_style_text_color(g_status_label, theme_get_color(theme_get_current_theme()->colors.text_secondary), 0);
-    lv_label_set_text(g_status_label, "TCP:8080 | Lines: 0/1024");
-
     // 创建文本区域 - 直接占满整个内容区域
     g_text_area = lv_textarea_create(content_container);
     lv_obj_set_size(g_text_area, 240, 290);            // 占满整个内容区域
@@ -451,7 +443,7 @@ void ui_serial_display_create(lv_obj_t* parent) {
     lv_obj_set_style_radius(g_text_area, 0, 0);        // 移除圆角
     lv_obj_set_style_pad_all(g_text_area, 5, 0);       // 添加少量内边距
     lv_obj_set_style_bg_color(g_text_area, theme_get_color(theme_get_current_theme()->colors.surface), 0);
-    lv_obj_set_style_text_font(g_text_area, &lv_font_montserrat_12, 0); // 使用更小的字体
+    lv_obj_set_style_text_font(g_text_area, &lv_font_montserrat_14, 0); // 使用更小的字体
     lv_obj_set_style_text_color(g_text_area, theme_get_color(theme_get_current_theme()->colors.text_primary), 0);
     lv_obj_set_style_bg_color(g_text_area, theme_get_color(theme_get_current_theme()->colors.surface), 0);
     lv_textarea_set_placeholder_text(g_text_area, "Waiting for data...");
