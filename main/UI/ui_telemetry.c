@@ -1,32 +1,40 @@
 #include "Mysybmol.h" // 包含字体头文件
 #include "lvgl.h"
-#include "telemetry_main.h" // 添加遥测服务头文件
+#include "telemetry_data_converter.h" // Resolve undeclared identifiers
+#include "telemetry_main.h"           // 添加遥测服务头文件
 #include "theme_manager.h"
 #include "ui.h"
 #include "ui_common.h"
 
 // 遥测界面的全局变量
-static lv_obj_t* throttle_slider;
-static lv_obj_t* direction_slider;
-static lv_obj_t* voltage_label;
-static lv_obj_t* current_label;
-static lv_obj_t* roll_label;  // 新增：横滚角标签
-static lv_obj_t* pitch_label; // 新增：俯仰角标签
-static lv_obj_t* yaw_label;   // 新增：偏航角标签
-static lv_obj_t* altitude_label;
-static lv_obj_t* service_status_label; // 添加服务状态标签
-static lv_obj_t* start_stop_btn;       // 添加启动/停止按钮
+static lv_obj_t* throttle_slider;      // 油门滑动条
+static lv_obj_t* direction_slider;     // 方向滑动条
+static lv_obj_t* voltage_label;        // 电压标签
+static lv_obj_t* current_label;        // 电流标签
+static lv_obj_t* roll_label;           // 横滚角标签
+static lv_obj_t* pitch_label;          // 俯仰角标签
+static lv_obj_t* yaw_label;            // 偏航角标签
+static lv_obj_t* altitude_label;       // 高度标签
+static lv_obj_t* service_status_label; // 服务状态标签
+static lv_obj_t* start_stop_btn;       // 启动/停止按钮
 
 // 服务状态标志
 static bool telemetry_service_active = false;
-static lv_obj_t* gps_label;
+static lv_obj_t* gps_label;               // GPS状态标签
+static lv_timer_t* local_ui_update_timer; // 本地UI更新定时器
 
 // 事件处理函数声明
 static void slider_event_handler(lv_event_t* e);
 static void settings_btn_event_handler(lv_event_t* e);
-static void start_stop_btn_event_handler(lv_event_t* e);                  // 添加启动/停止按钮事件处理
-static void telemetry_data_update_callback(const telemetry_data_t* data); // 添加数据更新回调
+static void start_stop_btn_event_handler(lv_event_t* e);
+static void telemetry_data_update_callback(const telemetry_data_t* data);
+static void local_ui_update_task(lv_timer_t* timer);
 
+/**
+ * @brief 创建遥测界面
+ *
+ * @param parent 父对象,为活动页面
+ */
 void ui_telemetry_create(lv_obj_t* parent) {
     theme_apply_to_screen(parent);
 
@@ -58,12 +66,10 @@ void ui_telemetry_create(lv_obj_t* parent) {
 
     // 将右上角的设置按钮改为启动/停止按钮
     if (settings_btn) {
-        start_stop_btn = settings_btn; // 直接使用创建的按钮
+        start_stop_btn = settings_btn;
 
-        // 清除原有的事件回调
         lv_obj_remove_event_cb(start_stop_btn, NULL);
 
-        // 创建按钮标签
         lv_obj_t* btn_label = lv_label_create(start_stop_btn);
         lv_label_set_text(btn_label, "启动");
         lv_obj_set_style_text_font(btn_label, font_cn, 0);
@@ -154,9 +160,9 @@ void ui_telemetry_create(lv_obj_t* parent) {
     lv_obj_t* panel2 = lv_obj_create(content_container);
     lv_obj_set_width(panel2, lv_pct(100));
     lv_obj_set_height(panel2, LV_SIZE_CONTENT);
-    lv_obj_set_flex_flow(panel2, LV_FLEX_FLOW_COLUMN); // 设置为垂直布局
-    lv_obj_set_style_pad_all(panel2, 10, 0);           // 添加一些内边距
-    lv_obj_set_style_pad_gap(panel2, 8, 0);            // 添加一些间距
+    lv_obj_set_flex_flow(panel2, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_all(panel2, 10, 0);
+    lv_obj_set_style_pad_gap(panel2, 8, 0);
 
     // 在 panel2 中创建一个水平布局容器用于姿态角
     lv_obj_t* attitude_row = lv_obj_create(panel2);
@@ -198,8 +204,16 @@ void ui_telemetry_create(lv_obj_t* parent) {
     lv_obj_t* title4 = lv_label_create(panel3);
     lv_label_set_text(title4, "扩展功能");
     lv_obj_set_style_text_font(title4, font_cn, 0); // 设置字体
+
+    // 创建一个定时器，用于定期更新本地控制UI
+    local_ui_update_timer = lv_timer_create(local_ui_update_task, 50, NULL);
 }
 
+/**
+ * @brief 设置按钮事件处理，暂时没有用
+ *
+ * @param e 事件
+ */
 static void settings_btn_event_handler(lv_event_t* e) {
     lv_event_code_t code = lv_event_get_code(e);
     if (code == LV_EVENT_CLICKED) {
@@ -208,6 +222,11 @@ static void settings_btn_event_handler(lv_event_t* e) {
     }
 }
 
+/**
+ * @brief 摇杆事件处理
+ *
+ * @param e 事件
+ */
 static void slider_event_handler(lv_event_t* e) {
     lv_obj_t* slider = lv_event_get_target(e);
     int32_t value = lv_slider_get_value(slider);
@@ -228,7 +247,9 @@ static void slider_event_handler(lv_event_t* e) {
         }
     }
 }
-
+/**
+ * @brief 启动/停止按钮事件处理
+ */
 static void start_stop_btn_event_handler(lv_event_t* e) {
     lv_event_code_t code = lv_event_get_code(e);
     if (code == LV_EVENT_CLICKED) {
@@ -259,7 +280,7 @@ static void start_stop_btn_event_handler(lv_event_t* e) {
                 }
             }
         } else {
-            // 停止遥测服务 - 添加防护措施防止重复调用
+            // 停止遥测服务
             if (telemetry_service_active && telemetry_service_stop() == 0) {
                 telemetry_service_active = false;
 
@@ -272,7 +293,7 @@ static void start_stop_btn_event_handler(lv_event_t* e) {
                 // 更改按钮颜色为绿色
                 lv_obj_set_style_bg_color(start_stop_btn, lv_color_hex(0x00AA00), 0);
 
-                // 更新状态显示（如果存在）
+                // 更新状态显示
                 if (service_status_label) {
                     lv_label_set_text(service_status_label, "状态: 已停止");
                 }
@@ -313,6 +334,39 @@ static void start_stop_btn_event_handler(lv_event_t* e) {
     }
 }
 
+/**
+ * @brief 解耦，将摇杆原始值(-100~100)转换为UI滑动条值(0~1000)
+ */
+static int32_t convert_joystick_to_slider(int16_t joystick_value) {
+    // 摇杆值范围: -100 ~ 100
+    // 滑动条值范围: 0 ~ 1000 (500为中位)
+    // 转换: -100->0, 0->500, 100->1000
+    return (int32_t)((joystick_value + 100) * 5);
+}
+
+/**
+ * @brief 本地UI更新任务
+ *
+ * @param timer 定时器
+ */
+static void local_ui_update_task(lv_timer_t* timer) {
+    local_sensor_data_t sensor_data;
+    if (telemetry_data_converter_get_sensor_data(&sensor_data) == ESP_OK) {
+        if (sensor_data.joystick.valid) {
+            // 更新油门滑动条
+            if (throttle_slider && lv_obj_is_valid(throttle_slider)) {
+                int32_t throttle_val = convert_joystick_to_slider(sensor_data.joystick.joy_y);
+                lv_slider_set_value(throttle_slider, throttle_val, LV_ANIM_OFF);
+            }
+            // 更新方向滑动条
+            if (direction_slider && lv_obj_is_valid(direction_slider)) {
+                int32_t direction_val = convert_joystick_to_slider(sensor_data.joystick.joy_x);
+                lv_slider_set_value(direction_slider, direction_val, LV_ANIM_OFF);
+            }
+        }
+    }
+}
+
 static void telemetry_data_update_callback(const telemetry_data_t* data) {
     if (data == NULL)
         return;
@@ -323,7 +377,6 @@ static void telemetry_data_update_callback(const telemetry_data_t* data) {
     }
 
     // 更新UI显示的遥测数据
-    // 为避免可变参数函数中的浮点数问题，手动转换为整数进行打印
     if (lv_obj_is_valid(voltage_label)) {
         int voltage_int = (int)(data->voltage);
         int voltage_frac = (int)((data->voltage - voltage_int) * 100);
@@ -374,6 +427,12 @@ void ui_telemetry_update_data(float voltage, float current, float roll, float pi
 
 // 添加UI清理函数
 void ui_telemetry_cleanup(void) {
+    // 删除UI更新定时器
+    if (local_ui_update_timer) {
+        lv_timer_del(local_ui_update_timer);
+        local_ui_update_timer = NULL;
+    }
+
     // 停止遥测服务
     if (telemetry_service_active) {
         telemetry_service_stop();
