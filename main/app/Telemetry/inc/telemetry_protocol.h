@@ -1,8 +1,9 @@
 #ifndef TELEMETRY_PROTOCOL_H
 #define TELEMETRY_PROTOCOL_H
 
-#include <stdint.h>
+#include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #define FRAME_HEADER_1 0xAA
 #define FRAME_HEADER_2 0x55
@@ -62,8 +63,15 @@ typedef struct {
     uint8_t params[];
 } ext_command_payload_t;
 
-
 #pragma pack(pop)
+
+// 结构体用于存放解析后的帧数据
+typedef struct {
+    telemetry_header_t header;
+    const uint8_t* payload;
+    size_t payload_len;
+    bool crc_ok;
+} parsed_frame_t;
 
 /**
  * @brief 编码遥控命令帧
@@ -74,7 +82,18 @@ typedef struct {
  * @param channels 通道值数组 (0-1000)
  * @return 编码后的帧长度, 失败返回0
  */
-size_t telemetry_encode_rc_command(uint8_t *buffer, size_t buffer_size, uint8_t channel_count, const uint16_t *channels);
+size_t telemetry_protocol_create_rc_frame(uint8_t* buffer, size_t buffer_size, uint8_t channel_count,
+                                          const uint16_t* channels);
+
+/**
+ * @brief 编码心跳帧
+ *
+ * @param buffer 用于存储编码后数据的缓冲区
+ * @param buffer_size 缓冲区大小
+ * @param device_status 设备状态
+ * @return 编码后的帧长度, 失败返回0
+ */
+size_t telemetry_protocol_create_heartbeat_frame(uint8_t* buffer, size_t buffer_size, uint8_t device_status);
 
 /**
  * @brief 编码扩展命令帧
@@ -86,6 +105,17 @@ size_t telemetry_encode_rc_command(uint8_t *buffer, size_t buffer_size, uint8_t 
  * @param param_len 参数长度
  * @return 编码后的帧长度, 失败返回0
  */
-size_t telemetry_encode_ext_command(uint8_t *buffer, size_t buffer_size, uint8_t cmd_id, const uint8_t *params, uint8_t param_len);
+size_t telemetry_protocol_create_ext_command(uint8_t* buffer, size_t buffer_size, uint8_t cmd_id, const uint8_t* params,
+                                             uint8_t param_len);
+
+/**
+ * @brief 解析收到的数据帧
+ *
+ * @param buffer 接收到的数据流
+ * @param len 数据流长度
+ * @param frame 解析结果
+ * @return 如果成功解析出一个完整的帧，返回该帧的总长度；否则返回0.
+ */
+size_t telemetry_protocol_parse_frame(const uint8_t* buffer, size_t len, parsed_frame_t* frame);
 
 #endif // TELEMETRY_PROTOCOL_H
