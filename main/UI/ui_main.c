@@ -6,7 +6,7 @@
  */
 
 #include "../app/game/game.h"
-#include "Mysybmol.h"
+#include "my_font.h"
 #include "background_manager.h"
 #include "color.h"
 #include "esp_log.h"
@@ -130,9 +130,9 @@ void ui_main_update_wifi_display(void) {
 
     // 根据连接状态更新WiFi符号
     if (wifi_connected) {
-        lv_label_set_text(g_wifi_label, LV_SYMBOL_WIFI);
+        lv_label_set_text(g_wifi_label, MYSYMBOL_WIFI);
     } else {
-        lv_label_set_text(g_wifi_label, MYSYBMOL_NO_WIFI);
+        lv_label_set_text(g_wifi_label, MYSYMBOL_NO_WIFI);
     }
 
     // 更新上一次的连接状态
@@ -422,9 +422,9 @@ void ui_main_menu_create(lv_obj_t* parent) {
 
     // ==== WiFi符号 ====
     g_wifi_label = lv_label_create(status_bar);
-    lv_obj_set_style_text_font(g_wifi_label, &Mysybmol, 0);               // 使用自定义字体
+    lv_obj_set_style_text_font(g_wifi_label, &Mysymbol, 0);               // 使用自定义字体
     lv_obj_set_style_text_color(g_wifi_label, lv_color_hex(0x000000), 0); // 黑色
-    lv_label_set_text(g_wifi_label, MYSYBMOL_NO_WIFI);                    // 默认显示未连接
+    lv_label_set_text(g_wifi_label, MYSYMBOL_NO_WIFI);                    // 默认显示未连接
     lv_obj_align(g_wifi_label, LV_ALIGN_RIGHT_MID, -45, 0);               // 在电池左边
 
     // ==== 电池图标（外壳 + 小凸起 + 电量文字） ====

@@ -14,7 +14,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "Mysybmol.h"
+#include "my_font.h"
 #include "calibration_manager.h"
 #include "joystick_adc.h"
 #include "lsm6ds3.h"

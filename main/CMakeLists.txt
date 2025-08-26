@@ -34,7 +34,7 @@ set(MAIN_SRCS
     "app/Telemetry/src/telemetry_receiver.c"
     "app/Telemetry/src/telemetry_sender.c"
     "fonts/font_init.c"
-    "fonts/Mysybmol.c"
+    "fonts/symbol.c"
 )
 
 if(NOT IDF_TARGET STREQUAL "esp32s3")

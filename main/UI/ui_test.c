@@ -10,7 +10,7 @@
 #include "theme_manager.h"
 #include "ui.h"
 
-#include "Mysybmol.h"
+#include "my_font.h"
 
 static const char* TAG = "UI_TEST";
 

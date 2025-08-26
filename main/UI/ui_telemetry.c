@@ -1,4 +1,4 @@
-#include "Mysybmol.h" // 包含字体头文件
+#include "my_font.h" // 包含字体头文件
 #include "lvgl.h"
 #include "telemetry_data_converter.h" // Resolve undeclared identifiers
 #include "telemetry_main.h"           // 添加遥测服务头文件
