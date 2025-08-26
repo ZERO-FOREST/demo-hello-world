@@ -1,5 +1,6 @@
 set(PERIPHERALS_SRCS
     "src/st7789.c"
+    "src/st7789_esp_lcd.c"
     "src/xpt2046.c"
     "src/ws2812.c"
     "src/lsm6ds3.c"
@@ -13,5 +14,5 @@ set(PERIPHERALS_SRCS
 idf_component_register(
     SRCS ${PERIPHERALS_SRCS}
     INCLUDE_DIRS "inc"
-    REQUIRES lvgl log esp_wifi esp_event esp_netif nvs_flash driver
+    REQUIRES lvgl log esp_wifi esp_event esp_netif nvs_flash driver esp_lcd
 )
