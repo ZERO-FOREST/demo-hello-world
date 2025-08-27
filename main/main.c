@@ -5,8 +5,31 @@
  * @LastEditTime: 2025-08-23 10:13:03
  * @FilePath: \demo-hello-world\main\main.c
  * @Description: 主函数入口
- * 
+ *
  */
+
+#if EN_RECEIVER_MODE
+
+#include "esp_log.h"
+#include "esp_system.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "test.h"
+#include <inttypes.h>
+#include <stdio.h>
+
+
+static const char* TAG = "MAIN";
+
+void app_main(void) {
+    test();
+    while (1) {
+        ESP_LOGI(TAG, "Main loop: System running normally, free heap: %lu bytes",
+                 (unsigned long)esp_get_free_heap_size());
+        vTaskDelay(pdMS_TO_TICKS(30000));
+    }
+}
+#else
 
 #include "esp_chip_info.h"
 #include "esp_log.h"
@@ -17,7 +40,6 @@
 #include "task_init.h"
 #include <inttypes.h>
 #include <stdio.h>
-
 
 static const char* TAG = "MAIN";
 
@@ -50,3 +72,5 @@ void app_main(void) {
         vTaskDelay(pdMS_TO_TICKS(30000)); // 30秒打印一次状态
     }
 }
+
+#endif

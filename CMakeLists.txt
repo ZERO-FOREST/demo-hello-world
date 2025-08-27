@@ -2,6 +2,7 @@
 # CMakeLists in this exact order for cmake to work correctly
 cmake_minimum_required(VERSION 3.5)
 
+# 编译模式，ON为接收模式，OFF为发射模式
 option(EN_RECEIVER_MODE "Enable receiver mode (minimal build)" OFF)
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
