@@ -98,7 +98,6 @@ static ui_language_t load_language_setting(void) {
     uint8_t lang = LANG_ENGLISH;
     esp_err_t err = nvs_open("ui_settings", NVS_READONLY, &nvs_handle);
     if (err == ESP_OK) {
-        size_t required_size = sizeof(uint8_t);
         err = nvs_get_u8(nvs_handle, "language", &lang);
         nvs_close(nvs_handle);
         if (err == ESP_OK) {
@@ -122,15 +121,6 @@ static void language_switch_cb(lv_event_t* e) {
     lv_obj_center(msgbox);
 
     ESP_LOGI(TAG, "Language switched to: %s", is_chinese ? "Chinese" : "English");
-}
-
-// 返回按钮回调
-static void back_btn_cb(lv_event_t* e) {
-    lv_obj_t* screen = lv_scr_act();
-    if (screen) {
-        lv_obj_clean(screen);
-        ui_main_menu_create(screen); // 返回主菜单
-    }
 }
 
 // WiFi设置按钮回调
@@ -211,7 +201,6 @@ void ui_settings_create(lv_obj_t* parent) {
     // 加载保存的语言设置
     g_current_language = load_language_setting();
     const ui_text_t* text = get_current_text();
-    const lv_font_t* font = get_current_font();
 
     // 应用当前主题到屏幕
     theme_apply_to_screen(parent);
@@ -229,44 +218,64 @@ void ui_settings_create(lv_obj_t* parent) {
     lv_obj_t* content_container;
     ui_create_page_content_area(page_parent_container, &content_container);
 
-    // 语言设置
-    lv_obj_t* lang_label = lv_label_create(content_container);
-    lv_label_set_text(lang_label, text->language_label);
-    theme_apply_to_label(lang_label, false); // 应用主题到标签
-    lv_obj_align(lang_label, LV_ALIGN_TOP_LEFT, 10, 10);
+    // 设置内容容器为可滚动列表布局
+    lv_obj_set_flex_flow(content_container, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(content_container, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START);
+    lv_obj_set_style_pad_all(content_container, 10, 0);
+    lv_obj_set_style_pad_gap(content_container, 25, 0);
 
-    lv_obj_t* lang_switch = lv_switch_create(content_container);
-    lv_obj_align(lang_switch, LV_ALIGN_TOP_RIGHT, -10, 10);
-    theme_apply_to_switch(lang_switch); // 应用主题到开关
+    // --- 语言设置 ---
+    lv_obj_t* lang_group = lv_obj_create(content_container);
+    lv_obj_set_width(lang_group, lv_pct(100));
+    lv_obj_set_height(lang_group, LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(lang_group, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_bg_opa(lang_group, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(lang_group, 0, 0);
+    lv_obj_set_style_pad_all(lang_group, 0, 0);
+    lv_obj_set_style_pad_gap(lang_group, 5, 0);
+
+    lv_obj_t* lang_row = lv_obj_create(lang_group);
+    lv_obj_set_width(lang_row, lv_pct(100));
+    lv_obj_set_height(lang_row, LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(lang_row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(lang_row, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_bg_opa(lang_row, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(lang_row, 0, 0);
+    lv_obj_set_style_pad_all(lang_row, 0, 0);
+
+    lv_obj_t* lang_label = lv_label_create(lang_row);
+    lv_label_set_text(lang_label, text->language_label);
+    theme_apply_to_label(lang_label, false);
+
+    lv_obj_t* lang_switch = lv_switch_create(lang_row);
+    theme_apply_to_switch(lang_switch);
     if (g_current_language == LANG_CHINESE) {
         lv_obj_add_state(lang_switch, LV_STATE_CHECKED);
     }
     lv_obj_add_event_cb(lang_switch, language_switch_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
-    // 语言状态标签
-    lv_obj_t* lang_status = lv_label_create(content_container);
+    lv_obj_t* lang_status = lv_label_create(lang_group);
     lv_label_set_text(lang_status, g_current_language == LANG_CHINESE ? text->chinese_text : text->english_text);
-    theme_apply_to_label(lang_status, false); // 应用主题到标签
-    lv_obj_align_to(lang_status, lang_label, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 5);
+    theme_apply_to_label(lang_status, false);
 
-    // 主题设置
-    lv_obj_t* theme_label = lv_label_create(content_container);
+    // --- 主题设置 ---
+    lv_obj_t* theme_group = lv_obj_create(content_container);
+    lv_obj_set_width(theme_group, lv_pct(100));
+    lv_obj_set_height(theme_group, LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(theme_group, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_bg_opa(theme_group, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(theme_group, 0, 0);
+    lv_obj_set_style_pad_all(theme_group, 0, 0);
+    lv_obj_set_style_pad_gap(theme_group, 10, 0);
+
+    lv_obj_t* theme_label = lv_label_create(theme_group);
     lv_label_set_text(theme_label, text->theme_label);
-    theme_apply_to_label(theme_label, false); // 应用主题到标签
-    lv_obj_align_to(theme_label, lang_status, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 20);
+    theme_apply_to_label(theme_label, false);
 
-    // 创建主题下拉列表容器
-    lv_obj_t* theme_dropdown_cont = lv_obj_create(content_container);
-    lv_obj_set_size(theme_dropdown_cont, 200, 40);
-    lv_obj_align_to(theme_dropdown_cont, theme_label, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 5);
-    lv_obj_set_style_bg_opa(theme_dropdown_cont, LV_OPA_0, 0);
-    lv_obj_set_style_border_width(theme_dropdown_cont, 0, 0);
-    lv_obj_set_style_pad_all(theme_dropdown_cont, 0, 0);
-
-    // 创建主题下拉列表
-    lv_obj_t* theme_dropdown = lv_dropdown_create(theme_dropdown_cont);
-    lv_obj_set_size(theme_dropdown, 200, 35);
-    lv_obj_align(theme_dropdown, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_t* theme_dropdown = lv_dropdown_create(theme_group);
+    lv_obj_set_width(theme_dropdown, lv_pct(100));
+    lv_dropdown_set_options(theme_dropdown, "Morandi\nDark\nLight\nBlue\nGreen");
+    lv_obj_add_event_cb(theme_dropdown, theme_dropdown_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
     // 设置下拉列表样式
     lv_obj_set_style_radius(theme_dropdown, 8, LV_PART_MAIN);
@@ -278,99 +287,59 @@ void ui_settings_create(lv_obj_t* parent) {
                                 LV_PART_MAIN);
     lv_obj_set_style_text_font(theme_dropdown, &lv_font_montserrat_14, LV_PART_MAIN);
 
-    // 设置下拉列表选项
-    lv_dropdown_set_options(theme_dropdown, "Morandi\nDark\nLight\nBlue\nGreen");
-
-    // 设置当前选中的主题
     theme_type_t current_theme_type = theme_get_current();
     int selected_index = 0;
     switch (current_theme_type) {
-    case THEME_MORANDI:
-        selected_index = 0;
-        break;
-    case THEME_DARK:
-        selected_index = 1;
-        break;
-    case THEME_LIGHT:
-        selected_index = 2;
-        break;
-    case THEME_BLUE:
-        selected_index = 3;
-        break;
-    case THEME_GREEN:
-        selected_index = 4;
-        break;
-    default:
-        selected_index = 0;
-        break;
+    case THEME_MORANDI: selected_index = 0; break;
+    case THEME_DARK: selected_index = 1; break;
+    case THEME_LIGHT: selected_index = 2; break;
+    case THEME_BLUE: selected_index = 3; break;
+    case THEME_GREEN: selected_index = 4; break;
+    default: selected_index = 0; break;
     }
     lv_dropdown_set_selected(theme_dropdown, selected_index);
 
-    // 添加下拉列表事件回调
-    lv_obj_add_event_cb(theme_dropdown, theme_dropdown_cb, LV_EVENT_VALUE_CHANGED, NULL);
+    // --- 传输模式设置 ---
+    lv_obj_t* transfer_mode_group = lv_obj_create(content_container);
+    lv_obj_set_width(transfer_mode_group, lv_pct(100));
+    lv_obj_set_height(transfer_mode_group, LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(transfer_mode_group, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_bg_opa(transfer_mode_group, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(transfer_mode_group, 0, 0);
+    lv_obj_set_style_pad_all(transfer_mode_group, 0, 0);
+    lv_obj_set_style_pad_gap(transfer_mode_group, 10, 0);
 
-    // --- Add Transfer Mode Settings ---
-    lv_obj_t* transfer_mode_label = lv_label_create(content_container);
+    lv_obj_t* transfer_mode_label = lv_label_create(transfer_mode_group);
     lv_label_set_text(transfer_mode_label, "Transfer Mode:");
     theme_apply_to_label(transfer_mode_label, false);
-    lv_obj_align_to(transfer_mode_label, theme_dropdown_cont, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 20);
 
-    // Create a container for the checkboxes for better alignment
-    lv_obj_t* cb_container = lv_obj_create(content_container);
-    lv_obj_set_size(cb_container, 220, 40);
-    lv_obj_align_to(cb_container, transfer_mode_label, LV_ALIGN_OUT_BOTTOM_LEFT, -10, 5);
-    lv_obj_set_style_bg_opa(cb_container, LV_OPA_0, 0);
-    lv_obj_set_style_border_width(cb_container, 0, 0);
-    lv_obj_set_style_pad_all(cb_container, 0, 0);
+    lv_obj_t* cb_container = lv_obj_create(transfer_mode_group);
+    lv_obj_set_width(cb_container, lv_pct(100));
+    lv_obj_set_height(cb_container, LV_SIZE_CONTENT);
     lv_obj_set_flex_flow(cb_container, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(cb_container, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_bg_opa(cb_container, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(cb_container, 0, 0);
+    lv_obj_set_style_pad_all(cb_container, 0, 0);
 
     lv_obj_t* udp_checkbox = lv_checkbox_create(cb_container);
     lv_checkbox_set_text(udp_checkbox, "UDP");
-
     lv_obj_t* tcp_checkbox = lv_checkbox_create(cb_container);
     lv_checkbox_set_text(tcp_checkbox, "TCP");
 
-    // Set initial state from settings manager
     image_transfer_mode_t current_mode = settings_get_transfer_mode();
     if (current_mode == IMAGE_TRANSFER_MODE_TCP) {
         lv_obj_add_state(tcp_checkbox, LV_STATE_CHECKED);
     } else {
         lv_obj_add_state(udp_checkbox, LV_STATE_CHECKED);
     }
-
-    // Add event callbacks with user data for cross-referencing
     lv_obj_add_event_cb(tcp_checkbox, transfer_mode_tcp_cb, LV_EVENT_VALUE_CHANGED, udp_checkbox);
     lv_obj_add_event_cb(udp_checkbox, transfer_mode_udp_cb, LV_EVENT_VALUE_CHANGED, tcp_checkbox);
 
-    // 关于按钮
-    lv_obj_t* about_btn = lv_btn_create(content_container);
-    lv_obj_set_size(about_btn, 220, 35);
-    lv_obj_align(about_btn, LV_ALIGN_BOTTOM_MID, 0, -10);
-
-    // 设置关于按钮样式
-    lv_obj_set_style_radius(about_btn, 6, LV_PART_MAIN);
-    lv_obj_set_style_shadow_width(about_btn, 3, LV_PART_MAIN);
-    lv_obj_set_style_shadow_opa(about_btn, LV_OPA_30, LV_PART_MAIN);
-
-    theme_apply_to_button(about_btn, true); // 应用主题到按钮（只改变颜色）
-    lv_obj_add_event_cb(about_btn, about_btn_cb, LV_EVENT_CLICKED, NULL);
-
-    lv_obj_t* about_label = lv_label_create(about_btn);
-    lv_label_set_text(about_label, text->about_label);
-    theme_apply_to_label(about_label, false); // 应用主题到标签
-    lv_obj_center(about_label);
-
-    // WiFi设置按钮
+    // --- WiFi设置 ---
     lv_obj_t* wifi_btn = lv_btn_create(content_container);
-    lv_obj_set_size(wifi_btn, 220, 35);
-    lv_obj_align_to(wifi_btn, about_btn, LV_ALIGN_OUT_TOP_MID, 0, -10); // 放置在“关于”按钮上方
-
-    // 设置WiFi设置按钮样式
-    lv_obj_set_style_radius(wifi_btn, 6, LV_PART_MAIN);
-    lv_obj_set_style_shadow_width(wifi_btn, 3, LV_PART_MAIN);
-    lv_obj_set_style_shadow_opa(wifi_btn, LV_OPA_30, LV_PART_MAIN);
-
+    lv_obj_set_width(wifi_btn, lv_pct(100));
+    lv_obj_set_height(wifi_btn, 40);
     theme_apply_to_button(wifi_btn, true);
     lv_obj_add_event_cb(wifi_btn, wifi_settings_btn_cb, LV_EVENT_CLICKED, NULL);
 
@@ -378,6 +347,18 @@ void ui_settings_create(lv_obj_t* parent) {
     lv_label_set_text(wifi_label, text->wifi_settings_label);
     theme_apply_to_label(wifi_label, false);
     lv_obj_center(wifi_label);
+
+    // --- 关于 ---
+    lv_obj_t* about_btn = lv_btn_create(content_container);
+    lv_obj_set_width(about_btn, lv_pct(100));
+    lv_obj_set_height(about_btn, 40);
+    theme_apply_to_button(about_btn, true);
+    lv_obj_add_event_cb(about_btn, about_btn_cb, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t* about_label = lv_label_create(about_btn);
+    lv_label_set_text(about_label, text->about_label);
+    theme_apply_to_label(about_label, false);
+    lv_obj_center(about_label);
 
     ESP_LOGI(TAG, "Settings UI created with language: %s", g_current_language == LANG_CHINESE ? "Chinese" : "English");
 }

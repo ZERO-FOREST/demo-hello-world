@@ -125,47 +125,18 @@ void ui_main_update_wifi_display(void) {
     wifi_manager_info_t wifi_info = wifi_manager_get_info();
     bool wifi_connected = (wifi_info.state == WIFI_STATE_CONNECTED);
 
-    // 静态变量记录上一次的连接状态
-    static bool last_wifi_connected = false;
-
     // 根据连接状态更新WiFi符号
     if (wifi_connected) {
         lv_label_set_text(g_wifi_label, MYSYMBOL_WIFI);
     } else {
         lv_label_set_text(g_wifi_label, MYSYMBOL_NO_WIFI);
     }
-
-    // 更新上一次的连接状态
-    last_wifi_connected = wifi_connected;
 }
 
 // 菜单项回调函数类型
 typedef void (*menu_item_cb_t)(void);
 
 // 示例回调函数（后续扩展时实现）
-static void wifi_settings_cb(void) {
-    // 保存主菜单状态
-    if (g_menu_container) {
-        int scroll_pos = lv_obj_get_scroll_y(g_menu_container);
-        ui_state_manager_save_main_menu(g_menu_container, g_current_selected_index, scroll_pos);
-        ui_state_manager_save_current_screen(UI_SCREEN_WIFI_SETTINGS);
-    }
-
-    lv_obj_t* screen = lv_scr_act();
-    if (screen) {
-        // 先停止时间更新定时器，避免访问已删除的UI元素
-
-        // 重置全局UI指针
-        g_time_label = NULL;
-        g_battery_label = NULL;
-        g_wifi_label = NULL;
-        g_menu_container = NULL;
-
-        lv_obj_clean(screen);            // 清空当前屏幕
-        ui_wifi_settings_create(screen); // 加载WiFi设置界面
-    }
-}
-
 static void settings_cb(void) {
     // 保存主菜单状态
     if (g_menu_container) {
@@ -353,7 +324,6 @@ typedef struct {
 
 // 菜单项数组
 static menu_item_t menu_items[] = {
-    {"WiFi Setup", wifi_settings_cb},
     {"Settings", settings_cb},
     {"Game", game_cb},
     {"Image Transfer", image_transfer_cb},
@@ -370,7 +340,6 @@ static menu_item_t menu_items_zh[] = {
     {"串口", serial_display_cb},
     {"校准", calibration_cb},
     {"游戏", game_cb},
-    {"WiFi设置", wifi_settings_cb},
     {"设置", settings_cb},
     {"测试", test_cb},
 };
@@ -472,8 +441,11 @@ void ui_main_menu_create(lv_obj_t* parent) {
     theme_apply_to_label(title, true);                // 应用主题到标题
     lv_obj_clear_flag(title, LV_OBJ_FLAG_SCROLLABLE); // 禁止滚动
 
-    // 计算按钮数量
-    int num_items = sizeof(menu_items) / sizeof(menu_item_t);
+    // 根据当前语言选择菜单项
+    ui_language_t current_language = ui_get_current_language();
+    menu_item_t* current_menu_items = (current_language == LANG_CHINESE) ? menu_items_zh : menu_items;
+    int num_items = (current_language == LANG_CHINESE) ? (sizeof(menu_items_zh) / sizeof(menu_item_t))
+                                                       : (sizeof(menu_items) / sizeof(menu_item_t));
 
     // 创建菜单按钮容器
     g_menu_container = lv_obj_create(parent);
@@ -490,7 +462,7 @@ void ui_main_menu_create(lv_obj_t* parent) {
         lv_obj_t* btn = lv_obj_create(g_menu_container);
         lv_obj_set_size(btn, 200, 54);                       // 增加按钮高度到60像素
         lv_obj_align(btn, LV_ALIGN_CENTER, 0, -80 + i * 70); // 调整间距，每个按钮间隔70像素
-        lv_obj_add_event_cb(btn, btn_event_cb, LV_EVENT_CLICKED, menu_items[i].callback);
+        lv_obj_add_event_cb(btn, btn_event_cb, LV_EVENT_CLICKED, current_menu_items[i].callback);
 
         // 设置按钮样式（圆角、阴影等）
         lv_obj_set_style_radius(btn, 15, LV_PART_MAIN);
@@ -504,7 +476,7 @@ void ui_main_menu_create(lv_obj_t* parent) {
         theme_apply_to_button(btn, true);
 
         lv_obj_t* label = lv_label_create(btn);
-        lv_label_set_text(label, menu_items[i].text);
+        lv_label_set_text(label, current_menu_items[i].text);
         theme_apply_to_label(label, false); // 应用主题到标签
         lv_obj_center(label);
     }
