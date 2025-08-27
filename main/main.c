@@ -18,7 +18,6 @@
 #include <inttypes.h>
 #include <stdio.h>
 
-
 static const char* TAG = "MAIN";
 
 void app_main(void) {

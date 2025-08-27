@@ -2,13 +2,70 @@
 #include "wifi_manager.h" // 引入WiFi管理器头文件
 #include <stdio.h>        // 为了使用 snprintf
 
-// 为了实现返回功能，需要前向声明主菜单的创建函数
-void ui_main_menu_create(lv_obj_t* parent);
+// 为了实现返回功能，需要前向声明设置菜单的创建函数
+void ui_settings_create(lv_obj_t* parent);
+
+// 语言文本定义
+typedef struct {
+    const char* title;
+    const char* enable_wifi;
+    const char* tx_power;
+    const char* saved_networks;
+    const char* details_button;
+    const char* details_title;
+    const char* status_label;
+    const char* ssid_label;
+    const char* ip_label;
+    const char* mac_label;
+    const char* status_disabled;
+    const char* status_disconnected;
+    const char* status_connecting;
+    const char* status_connected;
+} wifi_text_t;
+
+// 英文文本
+static const wifi_text_t wifi_english_text = {
+    .title = "WiFi Settings",
+    .enable_wifi = "Enable WiFi",
+    .tx_power = "Tx Power",
+    .saved_networks = "Saved Networks",
+    .details_button = "Details",
+    .details_title = "Network Details",
+    .status_label = "Status",
+    .ssid_label = "SSID",
+    .ip_label = "IP",
+    .mac_label = "MAC",
+    .status_disabled = "Disabled",
+    .status_disconnected = "Disconnected",
+    .status_connecting = "Connecting...",
+    .status_connected = "Connected",
+};
+
+// 中文文本
+static const wifi_text_t wifi_chinese_text = {
+    .title = "无线网络设置",
+    .enable_wifi = "启用无线网络",
+    .tx_power = "发射功率",
+    .saved_networks = "已存网络",
+    .details_button = "详细信息",
+    .details_title = "网络详情",
+    .status_label = "状态",
+    .ssid_label = "名称",
+    .ip_label = "IP地址",
+    .mac_label = "MAC地址",
+    .status_disabled = "已禁用",
+    .status_disconnected = "已断开",
+    .status_connecting = "连接中...",
+    .status_connected = "已连接",
+};
+
+// 获取当前语言文本
+static const wifi_text_t* get_wifi_text(void) {
+    return (ui_get_current_language() == LANG_CHINESE) ? &wifi_chinese_text : &wifi_english_text;
+}
 
 // UI元素句柄
 static lv_obj_t* g_status_label;
-static lv_obj_t* g_ip_label;
-static lv_obj_t* g_mac_label;
 static lv_obj_t* g_ssid_label; // 新增SSID标签
 static lv_timer_t* g_update_timer;
 static bool g_wifi_ui_initialized = false;
@@ -23,34 +80,28 @@ static void update_wifi_info(void) {
         return;
     }
 
+    const wifi_text_t* text = get_wifi_text();
     wifi_manager_info_t info = wifi_manager_get_info();
 
     switch (info.state) {
     case WIFI_STATE_DISABLED:
-        lv_label_set_text(g_status_label, "Status: Disabled");
+        lv_label_set_text_fmt(g_status_label, "%s: %s", text->status_label, text->status_disabled);
         break;
     case WIFI_STATE_DISCONNECTED:
-        lv_label_set_text(g_status_label, "Status: Disconnected");
+        lv_label_set_text_fmt(g_status_label, "%s: %s", text->status_label, text->status_disconnected);
         break;
     case WIFI_STATE_CONNECTING:
-        lv_label_set_text(g_status_label, "Status: Connecting...");
+        lv_label_set_text_fmt(g_status_label, "%s: %s", text->status_label, text->status_connecting);
         break;
     case WIFI_STATE_CONNECTED:
-        lv_label_set_text(g_status_label, "Status: Connected");
+        lv_label_set_text_fmt(g_status_label, "%s: %s", text->status_label, text->status_connected);
         break;
     }
 
-    lv_label_set_text_fmt(g_ip_label, "IP Address: %s", info.ip_addr);
-
-    char mac_str[24];
-    snprintf(mac_str, sizeof(mac_str), "MAC: %02X:%02X:%02X:%02X:%02X:%02X", info.mac_addr[0], info.mac_addr[1],
-             info.mac_addr[2], info.mac_addr[3], info.mac_addr[4], info.mac_addr[5]);
-    lv_label_set_text(g_mac_label, mac_str);
-
     if (info.state == WIFI_STATE_CONNECTED) {
-        lv_label_set_text_fmt(g_ssid_label, "SSID: %s", info.ssid);
+        lv_label_set_text_fmt(g_ssid_label, "%s: %s", text->ssid_label, info.ssid);
     } else {
-        lv_label_set_text(g_ssid_label, "SSID: N/A");
+        lv_label_set_text_fmt(g_ssid_label, "%s: N/A", text->ssid_label);
     }
 }
 
@@ -80,9 +131,55 @@ static void back_btn_event_cb(lv_event_t* e) {
         // 标记界面已销毁
         g_wifi_ui_initialized = false;
 
-        lv_obj_clean(screen);        // 清空当前屏幕的所有内容
-        ui_main_menu_create(screen); // 重新创建主菜单
+        lv_obj_clean(screen);       // 清空当前屏幕的所有内容
+        ui_settings_create(screen); // 重新创建设置菜单
     }
+}
+
+/**
+ * @brief “详细信息”按钮回调
+ * @param e
+ */
+static void details_btn_event_cb(lv_event_t* e) {
+    lv_obj_t* screen = lv_scr_act();
+    wifi_manager_info_t info = wifi_manager_get_info();
+    const wifi_text_t* text = get_wifi_text();
+
+    char msg_buffer[200];
+    char mac_str[24];
+    snprintf(mac_str, sizeof(mac_str), "%02X:%02X:%02X:%02X:%02X:%02X", info.mac_addr[0], info.mac_addr[1],
+             info.mac_addr[2], info.mac_addr[3], info.mac_addr[4], info.mac_addr[5]);
+
+    const char* status_str;
+    switch (info.state) {
+    case WIFI_STATE_DISABLED:
+        status_str = text->status_disabled;
+        break;
+    case WIFI_STATE_DISCONNECTED:
+        status_str = text->status_disconnected;
+        break;
+    case WIFI_STATE_CONNECTING:
+        status_str = text->status_connecting;
+        break;
+    case WIFI_STATE_CONNECTED:
+        status_str = text->status_connected;
+        break;
+    default:
+        status_str = "Unknown";
+        break;
+    }
+
+    snprintf(msg_buffer, sizeof(msg_buffer),
+             "%s: %s\n"
+             "%s: %s\n"
+             "%s: %s\n"
+             "%s: %s",
+             text->status_label, status_str, text->ssid_label,
+             info.state == WIFI_STATE_CONNECTED ? (char*)info.ssid : "N/A", text->ip_label, info.ip_addr,
+             text->mac_label, mac_str);
+
+    lv_obj_t* msgbox = lv_msgbox_create(screen, text->details_title, msg_buffer, NULL, true);
+    lv_obj_center(msgbox);
 }
 
 /**
@@ -121,6 +218,8 @@ void ui_wifi_settings_create(lv_obj_t* parent) {
     // 标记界面已初始化
     g_wifi_ui_initialized = true;
 
+    const wifi_text_t* text = get_wifi_text();
+
     // 应用当前主题到屏幕
     theme_apply_to_screen(parent);
 
@@ -131,7 +230,7 @@ void ui_wifi_settings_create(lv_obj_t* parent) {
     // 2. 创建顶部栏容器（包含返回按钮和标题）
     lv_obj_t* top_bar_container;
     lv_obj_t* title_container;
-    ui_create_top_bar(page_parent_container, "WiFi Settings", false, &top_bar_container, &title_container, NULL);
+    ui_create_top_bar(page_parent_container, text->title, false, &top_bar_container, &title_container, NULL);
 
     // 替换顶部栏的返回按钮回调为自定义回调
     lv_obj_t* back_btn = lv_obj_get_child(top_bar_container, 0); // 获取返回按钮
@@ -161,7 +260,7 @@ void ui_wifi_settings_create(lv_obj_t* parent) {
     lv_obj_set_flex_align(switch_cont, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
     lv_obj_t* wifi_label = lv_label_create(switch_cont);
-    lv_label_set_text(wifi_label, "Enable WiFi");
+    lv_label_set_text(wifi_label, text->enable_wifi);
     theme_apply_to_label(wifi_label, false);
 
     lv_obj_t* wifi_switch = lv_switch_create(switch_cont);
@@ -175,7 +274,7 @@ void ui_wifi_settings_create(lv_obj_t* parent) {
     lv_obj_set_flex_align(slider_cont, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
 
     lv_obj_t* power_val_label = lv_label_create(slider_cont);
-    lv_label_set_text(power_val_label, "Tx Power: 20 dBm");
+    lv_label_set_text(power_val_label, "Tx Power: 20 dBm"); // TODO: i18n
     theme_apply_to_label(power_val_label, false);
 
     lv_obj_t* power_slider = lv_slider_create(slider_cont);
@@ -190,7 +289,7 @@ void ui_wifi_settings_create(lv_obj_t* parent) {
     lv_obj_set_flex_align(dropdown_cont, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
 
     lv_obj_t* dropdown_label = lv_label_create(dropdown_cont);
-    lv_label_set_text(dropdown_label, "Saved Networks");
+    lv_label_set_text(dropdown_label, text->saved_networks);
     theme_apply_to_label(dropdown_label, false);
 
     lv_obj_t* wifi_dropdown = lv_dropdown_create(dropdown_cont);
@@ -224,14 +323,20 @@ void ui_wifi_settings_create(lv_obj_t* parent) {
     g_status_label = lv_label_create(info_cont);
     theme_apply_to_label(g_status_label, false);
 
-    g_ip_label = lv_label_create(info_cont);
-    theme_apply_to_label(g_ip_label, false);
-
-    g_mac_label = lv_label_create(info_cont);
-    theme_apply_to_label(g_mac_label, false);
-
     g_ssid_label = lv_label_create(info_cont); // 创建SSID标签
     theme_apply_to_label(g_ssid_label, false);
+
+    // "详细信息"按钮
+    lv_obj_t* details_btn = lv_btn_create(info_cont);
+    lv_obj_set_width(details_btn, 180);
+    lv_obj_align(details_btn, LV_ALIGN_CENTER, 0, 0);
+    theme_apply_to_button(details_btn, false);
+    lv_obj_add_event_cb(details_btn, details_btn_event_cb, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t* details_label = lv_label_create(details_btn);
+    lv_label_set_text(details_label, text->details_button);
+    theme_apply_to_label(details_label, false);
+    lv_obj_center(details_label);
 
     // 初始化WiFi状态和信息
     wifi_manager_info_t current_info = wifi_manager_get_info();
@@ -255,8 +360,7 @@ void ui_wifi_settings_create(lv_obj_t* parent) {
     update_wifi_info();
 }
 
-static void wifi_dropdown_event_cb(lv_event_t* e)
-{
+static void wifi_dropdown_event_cb(lv_event_t* e) {
     lv_obj_t* dropdown = lv_event_get_target(e);
     uint16_t selected_index = lv_dropdown_get_selected(dropdown);
     wifi_manager_connect_to_index(selected_index);
