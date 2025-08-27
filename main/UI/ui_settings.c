@@ -5,11 +5,12 @@
  * @date 2025-08-14
  */
 #include "esp_log.h"
+#include "my_font.h"
 #include "nvs.h"
 #include "nvs_flash.h"
+#include "settings_manager.h" // For transfer mode settings
 #include "theme_manager.h"
 #include "ui.h"
-#include "settings_manager.h" // For transfer mode settings
 
 static const char* TAG = "UI_SETTINGS";
 
@@ -31,6 +32,7 @@ typedef struct {
     const char* dark_theme;
     const char* version_info;
     const char* language_changed;
+    const char* wifi_settings_label; // 新增WiFi设置标签
 } ui_text_t;
 
 // 英文文本
@@ -44,7 +46,8 @@ static const ui_text_t english_text = {.settings_title = "SETTINGS",
                                        .light_theme = "Light",
                                        .dark_theme = "Dark",
                                        .version_info = "ESP32-S3 Demo v1.0.0",
-                                       .language_changed = "Language Changed!"};
+                                       .language_changed = "Language Changed!",
+                                       .wifi_settings_label = "WiFi Settings"};
 
 // 中文文本（需要中文字体支持）
 static const ui_text_t chinese_text = {.settings_title = "设置",
@@ -57,7 +60,8 @@ static const ui_text_t chinese_text = {.settings_title = "设置",
                                        .light_theme = "浅色",
                                        .dark_theme = "深色",
                                        .version_info = "ESP32-S3 演示 v1.0.0",
-                                       .language_changed = "语言已切换!"};
+                                       .language_changed = "语言已切换!",
+                                       .wifi_settings_label = "无线网络设置"};
 
 // 获取当前语言文本
 static const ui_text_t* get_current_text(void) {
@@ -68,7 +72,9 @@ static const ui_text_t* get_current_text(void) {
 static const lv_font_t* get_current_font(void) {
     if (g_current_language == LANG_CHINESE) {
         // 如果有中文字体，返回中文字体
-        // return &ui_font_chinese_16;
+        if (is_font_loaded()) {
+            return get_loaded_font();
+        }
         return &lv_font_montserrat_16; // 临时使用英文字体
     }
     return &lv_font_montserrat_16;
@@ -124,6 +130,15 @@ static void back_btn_cb(lv_event_t* e) {
     if (screen) {
         lv_obj_clean(screen);
         ui_main_menu_create(screen); // 返回主菜单
+    }
+}
+
+// WiFi设置按钮回调
+static void wifi_settings_btn_cb(lv_event_t* e) {
+    lv_obj_t* screen = lv_scr_act();
+    if (screen) {
+        lv_obj_clean(screen);
+        ui_wifi_settings_create(screen); // 跳转到WiFi设置页面
     }
 }
 
@@ -190,7 +205,6 @@ static void theme_dropdown_cb(lv_event_t* e) {
 // Callbacks for the new transfer mode checkboxes
 static void transfer_mode_tcp_cb(lv_event_t* e);
 static void transfer_mode_udp_cb(lv_event_t* e);
-
 
 // 创建设置界面
 void ui_settings_create(lv_obj_t* parent) {
@@ -295,7 +309,6 @@ void ui_settings_create(lv_obj_t* parent) {
     // 添加下拉列表事件回调
     lv_obj_add_event_cb(theme_dropdown, theme_dropdown_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
-
     // --- Add Transfer Mode Settings ---
     lv_obj_t* transfer_mode_label = lv_label_create(content_container);
     lv_label_set_text(transfer_mode_label, "Transfer Mode:");
@@ -312,13 +325,12 @@ void ui_settings_create(lv_obj_t* parent) {
     lv_obj_set_flex_flow(cb_container, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(cb_container, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
-
     lv_obj_t* udp_checkbox = lv_checkbox_create(cb_container);
     lv_checkbox_set_text(udp_checkbox, "UDP");
 
     lv_obj_t* tcp_checkbox = lv_checkbox_create(cb_container);
     lv_checkbox_set_text(tcp_checkbox, "TCP");
-    
+
     // Set initial state from settings manager
     image_transfer_mode_t current_mode = settings_get_transfer_mode();
     if (current_mode == IMAGE_TRANSFER_MODE_TCP) {
@@ -326,11 +338,10 @@ void ui_settings_create(lv_obj_t* parent) {
     } else {
         lv_obj_add_state(udp_checkbox, LV_STATE_CHECKED);
     }
-    
+
     // Add event callbacks with user data for cross-referencing
     lv_obj_add_event_cb(tcp_checkbox, transfer_mode_tcp_cb, LV_EVENT_VALUE_CHANGED, udp_checkbox);
     lv_obj_add_event_cb(udp_checkbox, transfer_mode_udp_cb, LV_EVENT_VALUE_CHANGED, tcp_checkbox);
-
 
     // 关于按钮
     lv_obj_t* about_btn = lv_btn_create(content_container);
@@ -349,6 +360,24 @@ void ui_settings_create(lv_obj_t* parent) {
     lv_label_set_text(about_label, text->about_label);
     theme_apply_to_label(about_label, false); // 应用主题到标签
     lv_obj_center(about_label);
+
+    // WiFi设置按钮
+    lv_obj_t* wifi_btn = lv_btn_create(content_container);
+    lv_obj_set_size(wifi_btn, 220, 35);
+    lv_obj_align_to(wifi_btn, about_btn, LV_ALIGN_OUT_TOP_MID, 0, -10); // 放置在“关于”按钮上方
+
+    // 设置WiFi设置按钮样式
+    lv_obj_set_style_radius(wifi_btn, 6, LV_PART_MAIN);
+    lv_obj_set_style_shadow_width(wifi_btn, 3, LV_PART_MAIN);
+    lv_obj_set_style_shadow_opa(wifi_btn, LV_OPA_30, LV_PART_MAIN);
+
+    theme_apply_to_button(wifi_btn, true);
+    lv_obj_add_event_cb(wifi_btn, wifi_settings_btn_cb, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t* wifi_label = lv_label_create(wifi_btn);
+    lv_label_set_text(wifi_label, text->wifi_settings_label);
+    theme_apply_to_label(wifi_label, false);
+    lv_obj_center(wifi_label);
 
     ESP_LOGI(TAG, "Settings UI created with language: %s", g_current_language == LANG_CHINESE ? "Chinese" : "English");
 }
