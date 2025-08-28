@@ -6,4 +6,6 @@ cmake_minimum_required(VERSION 3.5)
 option(EN_RECEIVER_MODE "Enable receiver mode (minimal build)" OFF)
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
+
+
 project(demo-hello-world)
