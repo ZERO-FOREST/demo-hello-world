@@ -18,7 +18,6 @@ else()
         "main.c"
         "task_init.c"
         "components_init.c"
-        "demo/lsm6ds3_demo.c"
         "demo/i2s_tdm_demo.c"
         "UI/ui_start_animation.c"
         "UI/ui_main.c"
@@ -43,12 +42,14 @@ else()
         "app/power_management.c"
         "app/background_manager.c"
         "app/settings_manager.c"
+        "app/lsm6ds_control.c"
         "app/Telemetry/src/telemetry_protocol.c"
         "app/Telemetry/src/telemetry_tcp.c"
         "app/Telemetry/src/telemetry_data_converter.c"
         "app/Telemetry/src/telemetry_main.c"
         "app/Telemetry/src/telemetry_receiver.c"
         "app/Telemetry/src/telemetry_sender.c"
+        
         "fonts/font_init.c"
         "fonts/symbol.c"
     )

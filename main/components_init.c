@@ -2,7 +2,7 @@
  * @Author: tidycraze 2595256284@qq.com
  * @Date: 2025-08-22 16:32:04
  * @LastEditors: tidycraze 2595256284@qq.com
- * @LastEditTime: 2025-08-25 17:36:22
+ * @LastEditTime: 2025-08-28 14:36:28
  * @FilePath: \demo-hello-world\main\components_init.c
  * @Description: 用于集中初始化必要外设
  *
@@ -21,9 +21,10 @@
 
 #include "battery_monitor.h"
 #include "calibration_manager.h"
-#include "ui_state_manager.h" // 添加状态管理器头文件
+#include "ui_state_manager.h"
+#include "lsm6ds3.h"
 
-const char* TAG = "components_init";
+static char* TAG = "components_init";
 
 /**
  * @brief 初始化SPIFFS文件系统
@@ -119,6 +120,14 @@ esp_err_t components_init(void) {
         ESP_LOGI(TAG, "Battery monitor initialized");
     } else {
         ESP_LOGW(TAG, "Battery monitor init failed: %s", esp_err_to_name(ret));
+    }
+
+    // 初始化LSM6DS3传感器
+    ret = lsm6ds3_init();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "LSM6DS3 initialization failed: %s", esp_err_to_name(ret));
+    } else {
+        ESP_LOGI(TAG, "LSM6DS3 initialized successfully");
     }
 
     // 初始化UI状态管理器

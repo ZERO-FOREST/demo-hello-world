@@ -7,7 +7,7 @@
 // 引入各模块头文件
 #include "background_manager.h"
 #include "battery_monitor.h"
-#include "lsm6ds3_demo.h"
+#include "lsm6ds_control.h"
 #include "i2s_tdm_demo.h"
 #include "joystick_adc.h"
 #include "lvgl_main.h"
@@ -399,7 +399,11 @@ esp_err_t init_all_tasks(void) {
         return ret;
     }
 
-    start_lsm6ds3_demo();
+    ret = init_lsm6ds3_control_task();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to init LSM6DS3 control task");
+        return ret;
+    }
 
     ESP_LOGI(TAG, "All tasks initialized successfully");
     return ESP_OK;
@@ -454,6 +458,14 @@ esp_err_t stop_all_tasks(void) {
         s_wifi_task_handle = NULL;
         ESP_LOGI(TAG, "WiFi manager task stopped");
     }
+
+    if (s_lsm6ds3_control_task != NULL)
+    {
+        vTaskDelete(s_lsm6ds3_control_task);
+        s_lsm6ds3_control_task = NULL;
+        ESP_LOGI(TAG, "LSM6DS3 control task stopped");
+    }
+    
 
     // 停止 I2S TDM 演示
     i2s_tdm_demo_deinit();
