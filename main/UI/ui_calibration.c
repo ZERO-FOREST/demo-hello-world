@@ -136,19 +136,8 @@ static void test_btn_event_cb(lv_event_t* e) {
         
         // 发送停止消息到测试任务
         test_msg_t msg = {.type = MSG_STOP_TEST};
-        xQueueSend(g_test_queue, &msg, pdMS_TO_TICKS(100));
-        
-        // 等待任务停止
-        if (g_test_task_handle) {
-            vTaskDelay(pdMS_TO_TICKS(200));
-            g_test_task_handle = NULL;
-        }
-        
-        // 停止UI更新任务
-        if (g_ui_task_handle) {
-            vTaskDelete(g_ui_task_handle);
-            g_ui_task_handle = NULL;
-        }
+        xQueueSend(g_test_queue, &msg, pdMS_TO_TICKS(100)); // 通知 test_task
+        xQueueSend(g_test_queue, &msg, pdMS_TO_TICKS(100)); // 通知 ui_update_task
 
         lv_obj_t* btn = lv_event_get_target(e);
         lv_obj_t* label = lv_obj_get_child(btn, 0);
