@@ -7,6 +7,7 @@
 // 引入各模块头文件
 #include "background_manager.h"
 #include "battery_monitor.h"
+#include "lsm6ds3_demo.h"
 #include "i2s_tdm_demo.h"
 #include "joystick_adc.h"
 #include "lvgl_main.h"
@@ -397,6 +398,8 @@ esp_err_t init_all_tasks(void) {
         ESP_LOGE(TAG, "Failed to init LVGL task");
         return ret;
     }
+
+    start_lsm6ds3_demo();
 
     ESP_LOGI(TAG, "All tasks initialized successfully");
     return ESP_OK;

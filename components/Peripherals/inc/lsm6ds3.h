@@ -15,8 +15,7 @@ extern "C" {
 #include "driver/gpio.h"
 #include "driver/i2c.h"
 #include "driver/spi_master.h"
-#include <stdbool.h>
-#include <stdint.h>
+#include "driver/i2c_master.h"
 
 // ========================================
 // 硬件连接配置 (可根据实际连接修改)
@@ -163,14 +162,31 @@ typedef struct {
     lsm6ds3_temp_data_t temp;
 } lsm6ds3_data_t;
 
+/**
+ * @brief 通信模式
+ */
+typedef enum {
+    LSM6DS3_COMM_MODE_I2C,
+    LSM6DS3_COMM_MODE_SPI,
+} lsm6ds3_comm_mode_t;
+
+// ========================================
+// 结构体和枚举
+// ========================================
+
+/**
+ * @brief LSM6DS3设备句柄
+ */
 typedef struct {
-    bool is_initialized;
-    uint8_t accel_fs;
-    uint8_t gyro_fs;
-    float accel_scale;
-    float gyro_scale;
-    i2c_port_t i2c_port;
-    spi_device_handle_t spi_handle;
+    lsm6ds3_comm_mode_t comm_mode;      // 通信模式 (I2C/SPI)
+    i2c_port_t i2c_port;                // I2C端口号
+    i2c_master_bus_handle_t i2c_bus_handle; // I2C总线句柄
+    i2c_master_dev_handle_t i2c_dev_handle; // I2C设备句柄
+    spi_host_device_t spi_host;         // SPI主机
+    spi_device_handle_t spi_handle;     // SPI设备句柄
+    uint8_t accel_fs;                   // 加速度计量程
+    uint8_t gyro_fs;                    // 陀螺仪量程
+    bool is_initialized;                // 是否已初始化
 } lsm6ds3_handle_t;
 
 // ========================================
