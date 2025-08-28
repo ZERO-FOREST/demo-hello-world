@@ -62,6 +62,13 @@ esp_err_t wifi_manager_stop(void);
 esp_err_t wifi_manager_set_power(int8_t power_dbm);
 
 /**
+ * @brief 获取WiFi发射功率
+ * @param power_dbm 指向int8_t的指针，用于存储获取到的功率值 (单位dBm)
+ * @return esp_err_t
+ */
+esp_err_t wifi_manager_get_power(int8_t* power_dbm);
+
+/**
  * @brief 获取当前的WiFi信息
  * @return wifi_manager_info_t 包含当前状态、IP和MAC地址的结构体
  */

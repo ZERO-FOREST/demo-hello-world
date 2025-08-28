@@ -234,6 +234,19 @@ esp_err_t wifi_manager_set_power(int8_t power_dbm) {
     return err;
 }
 
+esp_err_t wifi_manager_get_power(int8_t* power_dbm) {
+    if (power_dbm == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    int8_t power_val = 0;
+    esp_err_t err = esp_wifi_get_max_tx_power(&power_val);
+    if (err == ESP_OK) {
+        *power_dbm = power_val / 4; // Convert from 0.25dBm units to dBm
+        ESP_LOGI(TAG, "WiFi Tx Power get: %d dBm", *power_dbm);
+    }
+    return err;
+}
+
 wifi_manager_info_t wifi_manager_get_info(void) { return g_wifi_info; }
 
 /**
