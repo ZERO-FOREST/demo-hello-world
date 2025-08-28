@@ -16,6 +16,9 @@ extern "C" {
 #include <stdbool.h>
 #include "driver/spi_master.h"
 #include "driver/gpio.h"
+#include "driver/ledc.h" // 新增头文件
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 // ========================================
 // 硬件连接配置 (可根据实际连接修改)
@@ -172,10 +175,10 @@ void st7789_set_rotation(uint8_t rotation);
 void st7789_display_enable(bool enable);
 
 /**
- * @brief 控制背光
- * @param enable true=开启背光, false=关闭背光
+ * @brief 控制背光亮度
+ * @param brightness 亮度值 (0-100)
  */
-void st7789_backlight_enable(bool enable);
+void st7789_set_backlight(uint8_t brightness);
 
 /**
  * @brief 控制电源

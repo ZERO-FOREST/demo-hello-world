@@ -11,6 +11,7 @@
 #include "settings_manager.h" // For transfer mode settings
 #include "theme_manager.h"
 #include "ui.h"
+#include "st7789.h" // For backlight control
 
 static const char* TAG = "UI_SETTINGS";
 
@@ -33,6 +34,7 @@ typedef struct {
     const char* version_info;
     const char* language_changed;
     const char* wifi_settings_label; // 新增WiFi设置标签
+    const char* backlight_label;     // 新增背光标签
 } ui_text_t;
 
 // 英文文本
@@ -47,7 +49,8 @@ static const ui_text_t english_text = {.settings_title = "SETTINGS",
                                        .dark_theme = "Dark",
                                        .version_info = "ESP32-S3 Demo v1.0.0",
                                        .language_changed = "Language Changed!",
-                                       .wifi_settings_label = "WiFi Settings"};
+                                       .wifi_settings_label = "WiFi Settings",
+                                       .backlight_label = "Backlight:"};
 
 // 中文文本（需要中文字体支持）
 static const ui_text_t chinese_text = {.settings_title = "设置",
@@ -61,7 +64,8 @@ static const ui_text_t chinese_text = {.settings_title = "设置",
                                        .dark_theme = "深色",
                                        .version_info = "ESP32-S3 演示 v1.0.0",
                                        .language_changed = "语言已切换!",
-                                       .wifi_settings_label = "无线网络设置"};
+                                       .wifi_settings_label = "无线网络设置",
+                                       .backlight_label = "背光:"};
 
 // 获取当前语言文本
 static const ui_text_t* get_current_text(void) {
@@ -192,6 +196,20 @@ static void theme_dropdown_cb(lv_event_t* e) {
     ESP_LOGI(TAG, "Theme switched to: %s", theme->name);
 }
 
+// 背光滑块回调
+static void backlight_slider_cb(lv_event_t* e) {
+    lv_obj_t* slider = lv_event_get_target(e);
+    lv_obj_t* label = (lv_obj_t*)lv_event_get_user_data(e);
+    
+    int32_t brightness = lv_slider_get_value(slider);
+    lv_label_set_text_fmt(label, "%ld%%", brightness);
+    
+    // Set and save backlight
+    st7789_set_backlight((uint8_t)brightness);
+    settings_set_backlight((uint8_t)brightness);
+}
+
+
 // Callbacks for the new transfer mode checkboxes
 static void transfer_mode_tcp_cb(lv_event_t* e);
 static void transfer_mode_udp_cb(lv_event_t* e);
@@ -257,6 +275,41 @@ void ui_settings_create(lv_obj_t* parent) {
     lv_obj_t* lang_status = lv_label_create(lang_group);
     lv_label_set_text(lang_status, g_current_language == LANG_CHINESE ? text->chinese_text : text->english_text);
     theme_apply_to_label(lang_status, false);
+
+    // --- 背光设置 ---
+    lv_obj_t* backlight_group = lv_obj_create(content_container);
+    lv_obj_set_width(backlight_group, lv_pct(100));
+    lv_obj_set_height(backlight_group, LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(backlight_group, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_bg_opa(backlight_group, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(backlight_group, 0, 0);
+    lv_obj_set_style_pad_all(backlight_group, 0, 0);
+    lv_obj_set_style_pad_gap(backlight_group, 10, 0);
+
+    lv_obj_t* backlight_row = lv_obj_create(backlight_group);
+    lv_obj_set_width(backlight_row, lv_pct(100));
+    lv_obj_set_height(backlight_row, LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(backlight_row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(backlight_row, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_bg_opa(backlight_row, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(backlight_row, 0, 0);
+    lv_obj_set_style_pad_all(backlight_row, 0, 0);
+    
+    lv_obj_t* backlight_label = lv_label_create(backlight_row);
+    lv_label_set_text(backlight_label, text->backlight_label);
+    theme_apply_to_label(backlight_label, false);
+
+    lv_obj_t* backlight_value_label = lv_label_create(backlight_row);
+    uint8_t current_backlight = settings_get_backlight();
+    lv_label_set_text_fmt(backlight_value_label, "%u%%", current_backlight);
+    theme_apply_to_label(backlight_value_label, false);
+
+    lv_obj_t* backlight_slider = lv_slider_create(backlight_group);
+    lv_obj_set_width(backlight_slider, lv_pct(100));
+    lv_slider_set_range(backlight_slider, 10, 100);
+    lv_slider_set_value(backlight_slider, current_backlight, LV_ANIM_OFF);
+    lv_obj_add_event_cb(backlight_slider, backlight_slider_cb, LV_EVENT_VALUE_CHANGED, backlight_value_label);
+
 
     // --- 主题设置 ---
     lv_obj_t* theme_group = lv_obj_create(content_container);

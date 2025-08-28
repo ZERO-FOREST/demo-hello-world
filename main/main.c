@@ -14,14 +14,12 @@
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "test.h"
 #include <inttypes.h>
 #include <stdio.h>
 
 static const char* TAG = "MAIN";
 
 void app_main(void) {
-    test();
     while (1) {
         ESP_LOGI(TAG, "Main loop: System running normally, free heap: %lu bytes",
                  (unsigned long)esp_get_free_heap_size());

@@ -45,7 +45,6 @@ static void anim_status_text_timer_cb(lv_timer_t* timer) {
 }
 
 static void all_anims_finished_cb(lv_anim_t* a) {
-    // 关键修复：在删除对象前，先停止所有关联的动画和定时器
     if (g_anim_arc) {
         lv_anim_del(g_anim_arc, NULL);
         g_anim_arc = NULL;
@@ -87,7 +86,7 @@ void ui_start_animation_create(lv_obj_t* parent, ui_start_anim_finished_cb_t fin
 
     // 副标题
     lv_obj_t* subtitle = lv_label_create(parent);
-    lv_label_set_text(subtitle, "DEMO SYSTEM");
+    lv_label_set_text(subtitle, "Smart Terminal");
     lv_obj_set_style_text_font(subtitle, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(subtitle, lv_color_hex(0x666666), 0); // 中灰色
     lv_obj_align_to(subtitle, logo, LV_ALIGN_OUT_BOTTOM_MID, 0, 5);
@@ -110,7 +109,7 @@ void ui_start_animation_create(lv_obj_t* parent, ui_start_anim_finished_cb_t fin
     lv_obj_set_style_arc_width(arc, 6, LV_PART_INDICATOR);
     lv_obj_set_style_arc_rounded(arc, true, LV_PART_INDICATOR);
 
-    // 内层光环 - 简化设计避免闪烁
+    // 内层光环
     lv_obj_t* arc2 = lv_arc_create(parent);
     lv_obj_set_size(arc2, 130, 130);
     lv_arc_set_rotation(arc2, 0); // 设为0，通过动画旋转
@@ -144,7 +143,7 @@ void ui_start_animation_create(lv_obj_t* parent, ui_start_anim_finished_cb_t fin
 
     // 5. 创建版本信息
     lv_obj_t* version_label = lv_label_create(parent);
-    lv_label_set_text(version_label, "v1.0.0");
+    lv_label_set_text(version_label, "v2.6.2");
     lv_obj_set_style_text_color(version_label, lv_color_hex(0x999999), 0); // 浅灰色
     lv_obj_align(version_label, LV_ALIGN_BOTTOM_RIGHT, -10, -10);
 

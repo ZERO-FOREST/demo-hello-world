@@ -17,14 +17,14 @@
 #include "esp_log.h"
 #include "esp_spiffs.h"
 #include "nvs_flash.h"
-#include "wifi_manager.h"
 
 #include "battery_monitor.h"
 #include "calibration_manager.h"
 #include "ui_state_manager.h"
 #include "lsm6ds3.h"
+#include "settings_manager.h"
 
-static char* TAG = "components_init";
+static const char* TAG = "COMPONENTS_INIT";
 
 /**
  * @brief 初始化SPIFFS文件系统
@@ -133,6 +133,10 @@ esp_err_t components_init(void) {
     // 初始化UI状态管理器
     ui_state_manager_init();
     ESP_LOGI(TAG, "UI state manager initialized");
+
+    // 初始化设置管理器
+    settings_manager_init();
+    ESP_LOGI(TAG, "Settings manager initialized.");
 
     // 其他组件初始化可以在这里添加
 

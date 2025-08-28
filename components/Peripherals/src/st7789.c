@@ -19,6 +19,11 @@
 static const char *TAG = "ST7789";
 static st7789_handle_t g_st7789_handle = {0};
 
+// 定义PWM参数 - st7789_set_backlight需要这些
+#define BLK_PWM_TIMER LEDC_TIMER_0
+#define BLK_PWM_CHANNEL LEDC_CHANNEL_0
+#define BLK_PWM_RESOLUTION LEDC_TIMER_10_BIT
+
 // ========================================
 // 私有函数声明
 // ========================================
@@ -30,6 +35,7 @@ static void st7789_write_data_buf(const uint8_t *data, size_t length);
 static void st7789_hardware_reset(void);
 static void st7789_init_sequence(void);
 static void st7789_write_bytes_async(const uint8_t *data, size_t size);
+static void st7789_backlight_pwm_init(void);
 
 // ========================================
 // SPI传输相关函数
@@ -116,6 +122,35 @@ static esp_err_t st7789_gpio_init(void)
     
     ESP_LOGI(TAG, "GPIO initialized successfully");
     return ESP_OK;
+}
+
+/**
+ * @brief 初始化背光PWM
+ */
+static void st7789_backlight_pwm_init(void)
+{
+    // 配置LEDC定时器
+    ledc_timer_config_t ledc_timer = {
+        .speed_mode = LEDC_LOW_SPEED_MODE,
+        .duty_resolution = BLK_PWM_RESOLUTION,
+        .timer_num = BLK_PWM_TIMER,
+        .freq_hz = 5000,
+        .clk_cfg = LEDC_AUTO_CLK
+    };
+    ledc_timer_config(&ledc_timer);
+
+    // 配置LEDC通道
+    ledc_channel_config_t ledc_channel = {
+        .gpio_num = ST7789_PIN_BLK,
+        .speed_mode = LEDC_LOW_SPEED_MODE,
+        .channel = BLK_PWM_CHANNEL,
+        .intr_type = LEDC_INTR_DISABLE,
+        .timer_sel = BLK_PWM_TIMER,
+        .duty = 0,
+        .hpoint = 0
+    };
+    ledc_channel_config(&ledc_channel);
+    ESP_LOGI(TAG, "Backlight PWM initialized");
 }
 
 /**
@@ -405,6 +440,9 @@ esp_err_t st7789_init(void)
         return ret;
     }
     
+    // 初始化背光PWM
+    st7789_backlight_pwm_init();
+    
     // 打开屏幕电源
     gpio_set_level(ST7789_PIN_POWER, 1);
     ESP_LOGI(TAG, "Display power enabled");
@@ -416,11 +454,11 @@ esp_err_t st7789_init(void)
     // 初始化序列
     st7789_init_sequence();
     
-    // 开启背光
-    st7789_backlight_enable(true);
+    // 在components_init中加载NVS设置后统一设置背光
+    // st7789_set_backlight(100); 
     
-    // 清屏为绿色，测试显示是否存在问题
-    st7789_clear_screen(ST7789_BLACK); // 使用绿色测试显示
+    // 清屏为黑色
+    st7789_clear_screen(ST7789_BLACK);
     
     g_st7789_handle.is_initialized = true;
     ESP_LOGI(TAG, "ST7789 initialized successfully");
@@ -439,7 +477,7 @@ esp_err_t st7789_deinit(void)
     
     // 关闭显示
     st7789_display_enable(false);
-    st7789_backlight_enable(false);
+    st7789_set_backlight(0);
     st7789_power_enable(false);  // 关闭电源
     
     // 释放SPI设备
@@ -587,12 +625,27 @@ void st7789_display_enable(bool enable)
 }
 
 /**
- * @brief 控制背光
+ * @brief 控制背光亮度
  */
-void st7789_backlight_enable(bool enable)
+void st7789_set_backlight(uint8_t brightness)
 {
-    gpio_set_level(ST7789_PIN_BLK, enable ? 1 : 0);
-    ESP_LOGI(TAG, "Backlight %s", enable ? "enabled" : "disabled");
+    if (brightness > 100) {
+        brightness = 100;
+    }
+    else if (brightness < 20) {
+        brightness = 20;
+    }
+
+    // 计算占空比
+    uint32_t duty = (1 << BLK_PWM_RESOLUTION) * brightness / 100;
+    if (brightness == 100) {
+        duty = (1 << BLK_PWM_RESOLUTION) -1;
+    }
+
+
+    ledc_set_duty(LEDC_LOW_SPEED_MODE, BLK_PWM_CHANNEL, duty);
+    ledc_update_duty(LEDC_LOW_SPEED_MODE, BLK_PWM_CHANNEL);
+    ESP_LOGD(TAG, "Backlight set to %d%% (duty: %lu)", brightness, duty);
 }
 
 /**

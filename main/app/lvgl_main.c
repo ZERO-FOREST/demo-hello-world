@@ -4,15 +4,18 @@
  * @author Your Name
  * @date 2025-08-14
  */
-#include "my_font.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "lv_port_disp.h"
 #include "lv_port_indev.h"
+#include "my_font.h"
+#include "settings_manager.h"
 #include "theme_manager.h"
 #include "ui.h"
+#include "st7789.h"
+
 
 // 动画完成后的回调函数
 static void show_main_menu_cb(void) { ui_main_menu_create(lv_scr_act()); }
@@ -27,11 +30,13 @@ void lvgl_main_task(void* pvParameters) {
     const char* TAG = "LVGL_DEMO";
     ESP_LOGI(TAG, "LVGL task started on core %d", xPortGetCoreID());
 
-    // 初始化LVGL
-    lv_init();
+    lv_init();   // 初始化LVGL
     font_init(); // 初始化字体
     lv_port_disp_init();
     lv_port_indev_init();
+
+    // 在屏幕硬件和设置都初始化完成后，应用背光
+    st7789_set_backlight(settings_get_backlight());
 
     // 初始化主题管理器
     theme_manager_init();
