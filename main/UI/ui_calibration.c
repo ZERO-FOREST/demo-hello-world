@@ -14,14 +14,19 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "my_font.h"
 #include "calibration_manager.h"
 #include "joystick_adc.h"
 #include "lsm6ds3.h"
+#include "my_font.h"
 #include "theme_manager.h"
 #include "ui.h"
 
 static const char* TAG = "UI_CALIBRATION";
+
+// 画布定义
+#define CANVAS_WIDTH 120
+#define CANVAS_HEIGHT 120
+static lv_color_t* canvas_buf = NULL;
 
 // 界面状态
 typedef enum {
@@ -37,8 +42,8 @@ static void create_main_menu(lv_obj_t* content_container);
 static void create_joystick_test(lv_obj_t* content_container);
 static void create_gyroscope_test(lv_obj_t* content_container);
 static void create_accelerometer_test(lv_obj_t* content_container);
-static void test_task(void *pvParameter);
-static void ui_update_task(void *pvParameter);
+static void test_task(void* pvParameter);
+static void ui_update_timer_cb(lv_timer_t* timer);
 
 // 全局变量
 static lv_obj_t* g_page_parent_container = NULL;
@@ -51,7 +56,7 @@ static lv_obj_t* g_test_btn = NULL;
 static calibration_state_t g_current_state = CALIBRATION_STATE_MAIN_MENU;
 static bool g_test_running = false;
 static TaskHandle_t g_test_task_handle = NULL;
-static TaskHandle_t g_ui_task_handle = NULL;
+static lv_timer_t* g_ui_update_timer = NULL;
 static QueueHandle_t g_test_queue = NULL;
 
 // 消息类型
@@ -62,6 +67,19 @@ typedef struct {
     lv_obj_t* joystick_indicator;
     lv_obj_t* value_label;
 } joystick_test_data_t;
+
+// 3D点结构体
+typedef struct {
+    float x, y, z;
+} point3d_t;
+
+// 陀螺仪测试数据结构
+typedef struct {
+    lv_obj_t* canvas;
+    lv_obj_t* value_label;
+    point3d_t initial_vertices[8];   // 初始立方体顶点
+    float angle_x, angle_y, angle_z; // 旋转角度
+} gyro_test_data_t;
 
 typedef struct {
     test_msg_type_t type;
@@ -85,6 +103,12 @@ static void calibration_back_btn_callback(lv_event_t* e) {
         test_msg_t msg = {.type = MSG_STOP_TEST};
         xQueueSend(g_test_queue, &msg, pdMS_TO_TICKS(100));
         g_test_running = false;
+
+        // 删除UI更新定时器
+        if (g_ui_update_timer) {
+            lv_timer_del(g_ui_update_timer);
+            g_ui_update_timer = NULL;
+        }
     }
 
     if (g_current_state == CALIBRATION_STATE_MAIN_MENU) {
@@ -133,16 +157,21 @@ static void test_btn_event_cb(lv_event_t* e) {
     if (g_test_running) {
         // 停止测试
         g_test_running = false;
-        
+
         // 发送停止消息到测试任务
         test_msg_t msg = {.type = MSG_STOP_TEST};
-        xQueueSend(g_test_queue, &msg, pdMS_TO_TICKS(100)); // 通知 test_task
-        xQueueSend(g_test_queue, &msg, pdMS_TO_TICKS(100)); // 通知 ui_update_task
+        xQueueSend(g_test_queue, &msg, pdMS_TO_TICKS(100));
+
+        // 删除UI更新定时器
+        if (g_ui_update_timer) {
+            lv_timer_del(g_ui_update_timer);
+            g_ui_update_timer = NULL;
+        }
 
         lv_obj_t* btn = lv_event_get_target(e);
         lv_obj_t* label = lv_obj_get_child(btn, 0);
         lv_label_set_text(label, "Start Test");
-        
+
         ESP_LOGI(TAG, "Test stopped");
     } else {
         // 开始测试
@@ -158,24 +187,13 @@ static void test_btn_event_cb(lv_event_t* e) {
             }
         }
 
-        // 启动UI更新任务
-        if (g_ui_task_handle == NULL) {
-            BaseType_t ret = xTaskCreate(ui_update_task, "ui_update_task", 4096, NULL, 6, &g_ui_task_handle);
-            if (ret != pdPASS) {
-                ESP_LOGE(TAG, "Failed to create UI update task");
-                g_test_running = false;
-                if (g_test_task_handle) {
-                    vTaskDelete(g_test_task_handle);
-                    g_test_task_handle = NULL;
-                }
-                return;
-            }
-        }
+        // 创建UI更新定时器
+        g_ui_update_timer = lv_timer_create(ui_update_timer_cb, 50, g_test_queue); // 50ms刷新率
 
         lv_obj_t* btn = lv_event_get_target(e);
         lv_obj_t* label = lv_obj_get_child(btn, 0);
         lv_label_set_text(label, "Stop Test");
-        
+
         ESP_LOGI(TAG, "Test started");
     }
 }
@@ -258,10 +276,19 @@ static void create_main_menu(lv_obj_t* content_container) {
 void ui_calibration_create(lv_obj_t* parent) {
     g_current_state = CALIBRATION_STATE_MAIN_MENU;
 
+    // 从PSRAM分配画布缓冲区
+    canvas_buf = heap_caps_malloc(LV_CANVAS_BUF_SIZE_TRUE_COLOR(CANVAS_WIDTH, CANVAS_HEIGHT), MALLOC_CAP_SPIRAM);
+    if (!canvas_buf) {
+        ESP_LOGE(TAG, "Failed to allocate canvas buffer in PSRAM");
+        return;
+    }
+
     // 创建消息队列
     g_test_queue = xQueueCreate(10, sizeof(test_msg_t));
     if (!g_test_queue) {
         ESP_LOGE(TAG, "Failed to create test queue");
+        heap_caps_free(canvas_buf); // 如果队列创建失败，则释放缓冲区
+        canvas_buf = NULL;
         return;
     }
 
@@ -338,15 +365,20 @@ void ui_calibration_destroy(void) {
         g_test_task_handle = NULL;
     }
 
-    // 删除UI更新任务
-    if (g_ui_task_handle) {
-        vTaskDelete(g_ui_task_handle);
-        g_ui_task_handle = NULL;
+    // 删除UI更新定时器
+    if (g_ui_update_timer) {
+        lv_timer_del(g_ui_update_timer);
+        g_ui_update_timer = NULL;
     }
 
     // 释放摇杆测试数据内存
     if (g_content_container && g_current_state == CALIBRATION_STATE_JOYSTICK_TEST) {
         joystick_test_data_t* test_data = (joystick_test_data_t*)lv_obj_get_user_data(g_content_container);
+        if (test_data) {
+            lv_mem_free(test_data);
+        }
+    } else if (g_content_container && g_current_state == CALIBRATION_STATE_GYROSCOPE_TEST) {
+        gyro_test_data_t* test_data = (gyro_test_data_t*)lv_obj_get_user_data(g_content_container);
         if (test_data) {
             lv_mem_free(test_data);
         }
@@ -356,6 +388,12 @@ void ui_calibration_destroy(void) {
     if (g_test_queue) {
         vQueueDelete(g_test_queue);
         g_test_queue = NULL;
+    }
+
+    // 释放画布缓冲区
+    if (canvas_buf) {
+        heap_caps_free(canvas_buf);
+        canvas_buf = NULL;
     }
 
     // 清空全局变量
@@ -414,6 +452,68 @@ static void create_joystick_test(lv_obj_t* content_container) {
     ESP_LOGI(TAG, "Joystick test interface created");
 }
 
+// 绘制立方体到画布
+static void draw_cube_on_canvas(lv_obj_t* canvas, point3d_t* initial_vertices, float angle_x, float angle_y,
+                                float angle_z) {
+    lv_canvas_fill_bg(canvas, lv_color_hex(0x34495E), LV_OPA_COVER);
+
+    point3d_t rotated_vertices[8];
+    // 旋转矩阵计算
+    float sin_ax = sinf(angle_x), cos_ax = cosf(angle_x);
+    float sin_ay = sinf(angle_y), cos_ay = cosf(angle_y);
+    float sin_az = sinf(angle_z), cos_az = cosf(angle_z);
+
+    for (int i = 0; i < 8; i++) {
+        point3d_t p = initial_vertices[i];
+
+        // 绕X轴旋转
+        float y = p.y * cos_ax - p.z * sin_ax;
+        float z = p.y * sin_ax + p.z * cos_ax;
+        p.y = y;
+        p.z = z;
+
+        // 绕Y轴旋转
+        float x = p.x * cos_ay + p.z * sin_ay;
+        z = -p.x * sin_ay + p.z * cos_ay;
+        p.x = x;
+        p.z = z;
+
+        // 绕Z轴旋转
+        x = p.x * cos_az - p.y * sin_az;
+        y = p.x * sin_az + p.y * cos_az;
+        p.x = x;
+        p.y = y;
+
+        rotated_vertices[i] = p;
+    }
+
+    // 投影并绘制
+    lv_point_t projected_points[8];
+    for (int i = 0; i < 8; i++) {
+        // 正交投影
+        projected_points[i].x = (int16_t)(rotated_vertices[i].x + CANVAS_WIDTH / 2);
+        projected_points[i].y = (int16_t)(rotated_vertices[i].y + CANVAS_HEIGHT / 2);
+    }
+
+    const int edges[12][2] = {
+        {0, 1}, {1, 2}, {2, 3}, {3, 0}, // 底面
+        {4, 5}, {5, 6}, {6, 7}, {7, 4}, // 顶面
+        {0, 4}, {1, 5}, {2, 6}, {3, 7}  // 侧边
+    };
+
+    lv_draw_line_dsc_t line_dsc;
+    lv_draw_line_dsc_init(&line_dsc);
+    line_dsc.color = lv_color_hex(0x9B59B6);
+    line_dsc.width = 2;
+    line_dsc.round_start = 1;
+    line_dsc.round_end = 1;
+
+    for (int i = 0; i < 12; i++) {
+        lv_point_t line_points[] = {projected_points[edges[i][0]], projected_points[edges[i][1]]};
+        lv_canvas_draw_line(canvas, line_points, 2, &line_dsc);
+    }
+}
+
 // 创建陀螺仪测试界面
 static void create_gyroscope_test(lv_obj_t* content_container) {
     if (!content_container)
@@ -421,30 +521,48 @@ static void create_gyroscope_test(lv_obj_t* content_container) {
 
     lv_obj_clean(content_container);
 
-    // 创建3D立方体显示区域
+    gyro_test_data_t* test_data = lv_mem_alloc(sizeof(gyro_test_data_t));
+    if (!test_data) {
+        ESP_LOGE(TAG, "Failed to allocate memory for gyro test data");
+        return;
+    }
+    lv_obj_set_user_data(content_container, test_data);
+
+    // 创建一个背景容器
     lv_obj_t* cube_area = lv_obj_create(content_container);
-    lv_obj_set_size(cube_area, 200, 200);
+    lv_obj_set_size(cube_area, CANVAS_WIDTH + 20, CANVAS_HEIGHT + 20);
     lv_obj_align(cube_area, LV_ALIGN_CENTER, 0, -20);
     lv_obj_set_style_bg_color(cube_area, lv_color_hex(0x34495E), 0);
     lv_obj_set_style_bg_opa(cube_area, LV_OPA_50, 0);
     lv_obj_set_style_radius(cube_area, 8, 0);
-    lv_obj_set_style_border_width(cube_area, 2, 0);
-    lv_obj_set_style_border_color(cube_area, lv_color_hex(0x95A5A6), 0);
+    lv_obj_set_style_border_width(cube_area, 0, 0);
 
-    // 创建立方体指示器
-    lv_obj_t* cube_indicator = lv_obj_create(cube_area);
-    lv_obj_set_size(cube_indicator, 40, 40);
-    lv_obj_align(cube_indicator, LV_ALIGN_CENTER, 0, 0);
-    lv_obj_set_style_bg_color(cube_indicator, lv_color_hex(0x9B59B6), 0);
-    lv_obj_set_style_radius(cube_indicator, 4, 0);
-    lv_obj_set_user_data(cube_area, cube_indicator);
+    // 创建画布
+    test_data->canvas = lv_canvas_create(cube_area);
+    lv_canvas_set_buffer(test_data->canvas, canvas_buf, CANVAS_WIDTH, CANVAS_HEIGHT, LV_IMG_CF_TRUE_COLOR);
+    lv_obj_center(test_data->canvas);
+
+    // 初始化立方体顶点
+    float size = 30.0f;
+    point3d_t v[8] = {{-size, -size, -size}, {size, -size, -size}, {size, size, -size}, {-size, size, -size},
+                      {-size, -size, size},  {size, -size, size},  {size, size, size},  {-size, size, size}};
+    memcpy(test_data->initial_vertices, v, sizeof(v));
+
+    // 初始化角度
+    test_data->angle_x = 0.0f;
+    test_data->angle_y = 0.0f;
+    test_data->angle_z = 0.0f;
+
+    // 绘制初始状态的立方体
+    draw_cube_on_canvas(test_data->canvas, test_data->initial_vertices, test_data->angle_x, test_data->angle_y,
+                        test_data->angle_z);
 
     // 创建数值显示标签
-    lv_obj_t* value_label = lv_label_create(content_container);
-    lv_label_set_text(value_label, "X: 0.00, Y: 0.00, Z: 0.00");
-    lv_obj_align(value_label, LV_ALIGN_BOTTOM_MID, 0, -60);
-    lv_obj_set_style_text_font(value_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_user_data(content_container, value_label);
+    test_data->value_label = lv_label_create(content_container);
+    lv_label_set_text(test_data->value_label, "X: 0.00, Y: 0.00, Z: 0.00");
+    lv_obj_align(test_data->value_label, LV_ALIGN_BOTTOM_MID, 0, -60);
+    lv_obj_set_style_text_font(test_data->value_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_user_data(content_container, test_data); // 更新user_data
 
     ESP_LOGI(TAG, "Gyroscope test interface created");
 }
@@ -485,10 +603,80 @@ static void create_accelerometer_test(lv_obj_t* content_container) {
 }
 
 // 测试任务实现
-static void test_task(void *pvParameter) {
+static void test_task(void* pvParameter);
+
+static void ui_update_timer_cb(lv_timer_t* timer) {
+    QueueHandle_t test_queue = (QueueHandle_t)timer->user_data;
     test_msg_t msg;
+
+    switch (g_current_state) {
+    case CALIBRATION_STATE_JOYSTICK_TEST: {
+        joystick_test_data_t* test_data = (joystick_test_data_t*)lv_obj_get_user_data(g_content_container);
+        if (test_data) {
+            if (xQueueReceive(test_queue, &msg, 0) == pdPASS) {
+                if (msg.type == MSG_UPDATE_JOYSTICK) {
+                    // 将摇杆值映射到指示器位置
+                    // 假设摇杆值范围是 -1000 到 1000
+                    // 摇杆区域大小是 120x120，中心是 (60, 60)
+                    // 指示器移动范围是 -50 到 50
+                    int16_t indicator_x = (int16_t)lv_map(msg.data.joystick.joy1_x, -1000, 1000, -50, 50);
+                    int16_t indicator_y = (int16_t)lv_map(msg.data.joystick.joy1_y, -1000, 1000, -50, 50);
+                    lv_obj_set_pos(test_data->joystick_indicator, 50 + indicator_x, 50 - indicator_y); // Y轴反向
+
+                    lv_label_set_text_fmt(test_data->value_label, "X: %d  Y: %d", msg.data.joystick.joy1_x, msg.data.joystick.joy1_y);
+                }
+            }
+        }
+        break;
+    }
+    case CALIBRATION_STATE_GYROSCOPE_TEST: {
+        gyro_test_data_t* test_data = (gyro_test_data_t*)lv_obj_get_user_data(g_content_container);
+        if (test_data) {
+            if (xQueueReceive(test_queue, &msg, 0) == pdPASS) {
+                if (msg.type == MSG_UPDATE_GYROSCOPE) {
+                    test_data->angle_x += msg.data.gyro.x * 0.01f; // 假设0.01是比例因子
+                    test_data->angle_y += msg.data.gyro.y * 0.01f;
+                    test_data->angle_z += msg.data.gyro.z * 0.01f;
+
+                    draw_cube_on_canvas(test_data->canvas, test_data->initial_vertices, test_data->angle_x, test_data->angle_y,
+                                        test_data->angle_z);
+                    lv_label_set_text_fmt(test_data->value_label, "X: %.2f, Y: %.2f, Z: %.2f", msg.data.gyro.x, msg.data.gyro.y,
+                                        msg.data.gyro.z);
+                }
+            }
+        }
+        break;
+    }
+    case CALIBRATION_STATE_ACCELEROMETER_TEST: {
+        lv_obj_t* gravity_indicator = (lv_obj_t*)lv_obj_get_user_data(lv_obj_get_child(g_content_container, 0));
+        lv_obj_t* value_label = (lv_obj_t*)lv_obj_get_user_data(g_content_container);
+        if (gravity_indicator && value_label) {
+            if (xQueueReceive(test_queue, &msg, 0) == pdPASS) {
+                if (msg.type == MSG_UPDATE_ACCELEROMETER) {
+                    // 将加速度计值映射到指示器位置
+                    // 假设加速度计值范围是 -1到1G
+                    // 区域大小是 200x200，中心是 (100, 100)
+                    // 指示器移动范围是 -80 到 80
+                    int16_t indicator_x = (int16_t)lv_map((int32_t)(msg.data.accel.x * 100), -100, 100, -80, 80);
+                    int16_t indicator_y = (int16_t)lv_map((int32_t)(msg.data.accel.y * 100), -100, 100, -80, 80);
+                    lv_obj_set_pos(gravity_indicator, 85 + indicator_x, 85 - indicator_y); // Y轴反向
+
+                    lv_label_set_text_fmt(value_label, "X: %.2f, Y: %.2f, Z: %.2f", msg.data.accel.x, msg.data.accel.y,
+                                        msg.data.accel.z);
+                }
+            }
+        }
+        break;
+    }
+    default:
+        break;
+    }
+}
+
+static void test_task(void* pvParameter) {
     TickType_t last_wake_time = xTaskGetTickCount();
     const TickType_t frequency = pdMS_TO_TICKS(100); // 100ms更新一次
+    test_msg_t msg;
 
     ESP_LOGI(TAG, "Test task started");
 
@@ -503,46 +691,46 @@ static void test_task(void *pvParameter) {
 
         if (g_test_running) {
             switch (g_current_state) {
-                case CALIBRATION_STATE_JOYSTICK_TEST: {
-                    joystick_data_t joystick_data;
-                    if (joystick_adc_read(&joystick_data) == ESP_OK) {
-                        test_msg_t update_msg;
-                        update_msg.type = MSG_UPDATE_JOYSTICK;
-                        
-                        // 只使用摇杆1的数据
-                        update_msg.data.joystick.joy1_x = joystick_data.norm_joy1_x;
-                        update_msg.data.joystick.joy1_y = joystick_data.norm_joy1_y;
-                        
-                        xQueueSend(g_test_queue, &update_msg, 0);
-                    }
-                    break;
+            case CALIBRATION_STATE_JOYSTICK_TEST: {
+                joystick_data_t joystick_data;
+                if (joystick_adc_read(&joystick_data) == ESP_OK) {
+                    test_msg_t update_msg;
+                    update_msg.type = MSG_UPDATE_JOYSTICK;
+
+                    // 只使用摇杆1的数据
+                    update_msg.data.joystick.joy1_x = joystick_data.norm_joy1_x;
+                    update_msg.data.joystick.joy1_y = joystick_data.norm_joy1_y;
+
+                    xQueueSend(g_test_queue, &update_msg, 0);
                 }
-                case CALIBRATION_STATE_GYROSCOPE_TEST: {
-                    lsm6ds3_data_t imu_data;
-                    if (lsm6ds3_read_all(&imu_data) == ESP_OK) {
-                        test_msg_t update_msg;
-                        update_msg.type = MSG_UPDATE_GYROSCOPE;
-                        update_msg.data.gyro.x = imu_data.gyro.x;
-                        update_msg.data.gyro.y = imu_data.gyro.y;
-                        update_msg.data.gyro.z = imu_data.gyro.z;
-                        xQueueSend(g_test_queue, &update_msg, 0);
-                    }
-                    break;
+                break;
+            }
+            case CALIBRATION_STATE_GYROSCOPE_TEST: {
+                lsm6ds3_data_t imu_data;
+                if (lsm6ds3_read_all(&imu_data) == ESP_OK) {
+                    test_msg_t update_msg;
+                    update_msg.type = MSG_UPDATE_GYROSCOPE;
+                    update_msg.data.gyro.x = imu_data.gyro.x;
+                    update_msg.data.gyro.y = imu_data.gyro.y;
+                    update_msg.data.gyro.z = imu_data.gyro.z;
+                    xQueueSend(g_test_queue, &update_msg, 0);
                 }
-                case CALIBRATION_STATE_ACCELEROMETER_TEST: {
-                    lsm6ds3_data_t imu_data;
-                    if (lsm6ds3_read_all(&imu_data) == ESP_OK) {
-                        test_msg_t update_msg;
-                        update_msg.type = MSG_UPDATE_ACCELEROMETER;
-                        update_msg.data.accel.x = imu_data.accel.x;
-                        update_msg.data.accel.y = imu_data.accel.y;
-                        update_msg.data.accel.z = imu_data.accel.z;
-                        xQueueSend(g_test_queue, &update_msg, 0);
-                    }
-                    break;
+                break;
+            }
+            case CALIBRATION_STATE_ACCELEROMETER_TEST: {
+                lsm6ds3_data_t imu_data;
+                if (lsm6ds3_read_all(&imu_data) == ESP_OK) {
+                    test_msg_t update_msg;
+                    update_msg.type = MSG_UPDATE_ACCELEROMETER;
+                    update_msg.data.accel.x = imu_data.accel.x;
+                    update_msg.data.accel.y = imu_data.accel.y;
+                    update_msg.data.accel.z = imu_data.accel.z;
+                    xQueueSend(g_test_queue, &update_msg, 0);
                 }
-                default:
-                    break;
+                break;
+            }
+            default:
+                break;
             }
         }
 
@@ -556,13 +744,15 @@ static void test_task(void *pvParameter) {
 
 // 更新摇杆测试界面
 static void update_joystick_test_ui(int16_t joy1_x, int16_t joy1_y) {
-    if (!g_content_container) return;
+    if (!g_content_container)
+        return;
 
     joystick_test_data_t* test_data = (joystick_test_data_t*)lv_obj_get_user_data(g_content_container);
-    if (!test_data) return;
+    if (!test_data)
+        return;
 
     // 更新摇杆指示器位置 (-100 到 100 映射到圆形区域)
-    int16_t joy_pos_x = (joy1_x * 45) / 100; // 45是圆形半径的75%
+    int16_t joy_pos_x = (joy1_x * 45) / 100;  // 45是圆形半径的75%
     int16_t joy_pos_y = -(joy1_y * 45) / 100; // Y轴反向
     lv_obj_align(test_data->joystick_indicator, LV_ALIGN_CENTER, joy_pos_x, joy_pos_y);
 
@@ -574,52 +764,67 @@ static void update_joystick_test_ui(int16_t joy1_x, int16_t joy1_y) {
 
 // 更新陀螺仪测试界面
 static void update_gyroscope_test_ui(float gyro_x, float gyro_y, float gyro_z) {
-    if (!g_content_container) return;
+    if (!g_content_container)
+        return;
 
-    lv_obj_t* value_label = (lv_obj_t*)lv_obj_get_user_data(g_content_container);
-    if (!value_label) return;
+    gyro_test_data_t* test_data = (gyro_test_data_t*)lv_obj_get_user_data(g_content_container);
+    if (!test_data)
+        return;
 
+    // 更新角度 (LSM6DS3输出的是mdps, 即毫度/秒)
+    float dt = 0.1f; // 100ms更新周期
+    test_data->angle_x += (gyro_x / 1000.0f) * dt * (M_PI / 180.0f);
+    test_data->angle_y += (gyro_y / 1000.0f) * dt * (M_PI / 180.0f);
+    test_data->angle_z += (gyro_z / 1000.0f) * dt * (M_PI / 180.0f);
+
+    // 重绘立方体
+    draw_cube_on_canvas(test_data->canvas, test_data->initial_vertices, test_data->angle_x, test_data->angle_y,
+                        test_data->angle_z);
+
+    // 通知LVGL画布内容已改变，需要重绘
+    lv_obj_invalidate(test_data->canvas);
+
+    // 更新数值显示
     char text_buf[64];
     snprintf(text_buf, sizeof(text_buf), "X: %.2f, Y: %.2f, Z: %.2f", gyro_x, gyro_y, gyro_z);
-    lv_label_set_text(value_label, text_buf);
+    lv_label_set_text(test_data->value_label, text_buf);
 }
 
 // 更新加速度计测试界面
 static void update_accelerometer_test_ui(float accel_x, float accel_y, float accel_z) {
-    if (!g_content_container) return;
+    if (!g_content_container)
+        return;
 
     lv_obj_t* value_label = (lv_obj_t*)lv_obj_get_user_data(g_content_container);
-    if (!value_label) return;
+    if (!value_label)
+        return;
 
     char text_buf[64];
     snprintf(text_buf, sizeof(text_buf), "X: %.2f, Y: %.2f, Z: %.2f", accel_x, accel_y, accel_z);
     lv_label_set_text(value_label, text_buf);
 }
 
-// UI更新任务 - 处理测试消息队列
-static void ui_update_task(void *pvParameter) {
+// UI更新定时器回调 - 处理测试消息队列
+static void gyro_update_timer_cb(lv_timer_t* timer) {
+    QueueHandle_t queue = (QueueHandle_t)timer->user_data;
     test_msg_t msg;
 
-    ESP_LOGI(TAG, "UI update task started");
-
-    while (1) {
-        if (xQueueReceive(g_test_queue, &msg, portMAX_DELAY) == pdTRUE) {
-            switch (msg.type) {
-                case MSG_UPDATE_JOYSTICK:
-                    // 更新摇杆UI，只使用摇杆1的数据
-                    update_joystick_test_ui(msg.data.joystick.joy1_x, msg.data.joystick.joy1_y);
-                    break;
-                case MSG_UPDATE_GYROSCOPE:
-                    update_gyroscope_test_ui(msg.data.gyro.x, msg.data.gyro.y, msg.data.gyro.z);
-                    break;
-                case MSG_UPDATE_ACCELEROMETER:
-                    update_accelerometer_test_ui(msg.data.accel.x, msg.data.accel.y, msg.data.accel.z);
-                    break;
-                case MSG_STOP_TEST:
-                    ESP_LOGI(TAG, "UI update task stopping...");
-                    vTaskDelete(NULL);
-                    return;
-            }
+    // 检查队列中是否有消息，非阻塞
+    while (xQueueReceive(queue, &msg, 0) == pdTRUE) {
+        switch (msg.type) {
+        case MSG_UPDATE_JOYSTICK:
+            // 更新摇杆UI，只使用摇杆1的数据
+            update_joystick_test_ui(msg.data.joystick.joy1_x, msg.data.joystick.joy1_y);
+            break;
+        case MSG_UPDATE_GYROSCOPE:
+            update_gyroscope_test_ui(msg.data.gyro.x, msg.data.gyro.y, msg.data.gyro.z);
+            break;
+        case MSG_UPDATE_ACCELEROMETER:
+            update_accelerometer_test_ui(msg.data.accel.x, msg.data.accel.y, msg.data.accel.z);
+            break;
+        case MSG_STOP_TEST:
+            // 收到停止消息时，这个定时器应该已经被删除了，这里不做处理
+            break;
         }
     }
 }
