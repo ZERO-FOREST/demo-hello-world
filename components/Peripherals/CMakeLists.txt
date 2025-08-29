@@ -22,10 +22,12 @@ else()
         "src/battery_monitor.c"
         "src/i2s_tdm.c"
     )
-endif()
 
-idf_component_register(
+    idf_component_register(
     SRCS ${PERIPHERALS_SRCS}
     INCLUDE_DIRS "inc"
     REQUIRES lvgl log esp_wifi esp_event esp_netif nvs_flash driver
-)
+    )
+endif()
+
+

@@ -2,6 +2,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
+#include <unistd.h>
+#include <pthread.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
@@ -15,14 +18,14 @@
 #include "lwip/sys.h"
 #include "lwip/netdb.h"
 
-static const char *TAG = "tcp_client";
+// static const char *TAG = "tcp_client"; // Unused
 
 // ----------------- WiFi事件处理 -----------------
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT      BIT1
 
-static EventGroupHandle_t s_wifi_event_group;
-static int s_retry_num = 0;
+#define ESP32_IP "192.168.97.247"
+#define ESP32_PORT 6667
 
 // ----------------- 全局变量 -----------------
 static int client_socket = -1;
