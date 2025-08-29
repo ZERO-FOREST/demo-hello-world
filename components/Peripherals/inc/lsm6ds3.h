@@ -12,18 +12,17 @@
 extern "C" {
 #endif
 
+#include "bsp_i2c.h"
 #include "driver/gpio.h"
 #include "driver/i2c.h"
-#include "driver/spi_master.h"
 #include "driver/i2c_master.h"
+#include "driver/spi_master.h"
+
 
 // ========================================
 // 硬件连接配置 (可根据实际连接修改)
 // ========================================
-#define LSM6DS3_I2C_SDA_PIN 21     // I2C SDA引脚
-#define LSM6DS3_I2C_SCL_PIN 20     // I2C SCL引脚
-#define LSM6DS3_I2C_FREQ_HZ 400000 // I2C频率 400kHz
-#define LSM6DS3_I2C_PORT I2C_NUM_0 // I2C端口
+// I2C pin definitions are now in bsp_i2c.h
 
 #define LSM6DS3_SPI_HOST SPI3_HOST // 使用SPI3
 #define LSM6DS3_SPI_MOSI_PIN 35    // 使用不同引脚避免冲突
@@ -178,15 +177,15 @@ typedef enum {
  * @brief LSM6DS3设备句柄
  */
 typedef struct {
-    lsm6ds3_comm_mode_t comm_mode;      // 通信模式 (I2C/SPI)
-    i2c_port_t i2c_port;                // I2C端口号
+    lsm6ds3_comm_mode_t comm_mode;          // 通信模式 (I2C/SPI)
+    i2c_port_t i2c_port;                    // I2C端口号
     i2c_master_bus_handle_t i2c_bus_handle; // I2C总线句柄
     i2c_master_dev_handle_t i2c_dev_handle; // I2C设备句柄
-    spi_host_device_t spi_host;         // SPI主机
-    spi_device_handle_t spi_handle;     // SPI设备句柄
-    uint8_t accel_fs;                   // 加速度计量程
-    uint8_t gyro_fs;                    // 陀螺仪量程
-    bool is_initialized;                // 是否已初始化
+    spi_host_device_t spi_host;             // SPI主机
+    spi_device_handle_t spi_handle;         // SPI设备句柄
+    uint8_t accel_fs;                       // 加速度计量程
+    uint8_t gyro_fs;                        // 陀螺仪量程
+    bool is_initialized;                    // 是否已初始化
 } lsm6ds3_handle_t;
 
 // ========================================

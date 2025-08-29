@@ -19,10 +19,13 @@
 #include "nvs_flash.h"
 
 #include "battery_monitor.h"
+#include "bsp_i2c.h"
 #include "calibration_manager.h"
-#include "ui_state_manager.h"
+#include "ft6336g.h"
 #include "lsm6ds3.h"
+#include "lv_port_indev.h" // 包含此头文件以获取宏定义
 #include "settings_manager.h"
+#include "ui_state_manager.h"
 
 static const char* TAG = "COMPONENTS_INIT";
 
@@ -99,6 +102,13 @@ esp_err_t components_init(void) {
     }
     ESP_ERROR_CHECK(ret);
 
+    // 初始化I2C总线
+    ret = bsp_i2c_init();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize I2C bus");
+        return ret;
+    }
+
     // 初始化SPIFFS文件系统
     ret = spiffs_init();
     if (ret != ESP_OK) {
@@ -129,6 +139,16 @@ esp_err_t components_init(void) {
     } else {
         ESP_LOGI(TAG, "LSM6DS3 initialized successfully");
     }
+
+#if USE_FT6336G_TOUCH
+    // 初始化FT6336G触摸控制器
+    ret = ft6336g_init();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "FT6336G initialization failed: %s", esp_err_to_name(ret));
+    } else {
+        ESP_LOGI(TAG, "FT6336G initialized successfully");
+    }
+#endif
 
     // 初始化UI状态管理器
     ui_state_manager_init();
