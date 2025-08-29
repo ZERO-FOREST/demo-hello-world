@@ -3,9 +3,11 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "jpeg_stream_encoder.h"
 #include "tcp_protocol.h"
 #include "tinyusb.h"
 #include <string.h>
+
 
 static const char* TAG = "usb_rx";
 
@@ -13,6 +15,7 @@ static TaskHandle_t s_usb_task = NULL;
 static uint8_t s_rx_chunk[USB_RX_CHUNK_SIZE];
 static uint8_t s_parse_buf[USB_RX_BUFFER_SIZE];
 static size_t s_parse_len = 0;
+static jpeg_stream_handle_t s_jpeg_usb = NULL;
 
 static void parse_and_dispatch(const uint8_t* data, size_t len) {
     if (!data || len < MIN_FRAME_SIZE)
@@ -81,6 +84,10 @@ static void usb_rx_task(void* arg) {
                 s_parse_len += (size_t)n;
             }
             parse_and_dispatch(s_parse_buf, s_parse_len);
+            // 同时将原始流喂给 JPEG 编码器（假设上位机发送的是一帧完整原始像素流）
+            if (s_jpeg_usb) {
+                jpeg_stream_feed(s_jpeg_usb, s_rx_chunk, (size_t)n);
+            }
         } else {
             vTaskDelay(pdMS_TO_TICKS(5));
         }
@@ -118,6 +125,18 @@ esp_err_t usb_receiver_init(void) {
     }
 
     ESP_LOGI(TAG, "USB CDC 初始化完成");
+    // 创建 USB JPEG 编码流（分辨率/格式可据实际数据源调整）
+    jpeg_stream_config_t jcfg = {
+        .width = JPEG_STREAM_WIDTH,
+        .height = JPEG_STREAM_HEIGHT,
+        .src_type = JPEG_STREAM_SRC_FMT,
+        .subsampling = JPEG_STREAM_SUBSAMPLE,
+        .quality = JPEG_STREAM_QUALITY,
+        .stream_id = JPEG_STREAM_ID_USB,
+    };
+    if (jpeg_stream_create(&jcfg, &s_jpeg_usb) != ESP_OK) {
+        ESP_LOGW(TAG, "usb jpeg_stream_create failed");
+    }
     return ESP_OK;
 }
 
@@ -131,6 +150,10 @@ void usb_receiver_stop(void) {
     if (s_usb_task) {
         vTaskDelete(s_usb_task);
         s_usb_task = NULL;
+    }
+    if (s_jpeg_usb) {
+        jpeg_stream_destroy(s_jpeg_usb);
+        s_jpeg_usb = NULL;
     }
     tinyusb_driver_uninstall();
 }

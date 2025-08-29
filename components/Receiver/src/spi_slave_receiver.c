@@ -5,9 +5,9 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "jpeg_stream_encoder.h"
 #include "tcp_protocol.h"
 #include <string.h>
-
 
 static const char* TAG = "spi_rx";
 
@@ -16,6 +16,7 @@ static uint8_t* s_rx_dma_bufs[SPI_RX_QUEUE_SIZE];
 static uint8_t s_parse_buf[SPI_RX_BUFFER_SZ];
 static size_t s_parse_len = 0;
 static TaskHandle_t s_task = NULL;
+static jpeg_stream_handle_t s_jpeg_spi = NULL;
 
 // 解析并回调
 static void spi_parse_and_dispatch(const uint8_t* data, size_t len) {
@@ -113,6 +114,10 @@ static void spi_rx_task(void* arg) {
             }
 
             spi_parse_and_dispatch(s_parse_buf, s_parse_len);
+            // 同步喂给 JPEG 编码器（假设 SPI 主机按帧发送原始像素流）
+            if (s_jpeg_spi) {
+                jpeg_stream_feed(s_jpeg_spi, rxp, bytes);
+            }
         }
 
         // 事务用完后立即重新入队，实现流水线
@@ -158,6 +163,18 @@ esp_err_t spi_receiver_init(void) {
         ESP_LOGE(TAG, "spi_slave_initialize fail: %s", esp_err_to_name(ret));
         return ret;
     }
+    // 创建 SPI JPEG 编码流
+    jpeg_stream_config_t jcfg = {
+        .width = JPEG_STREAM_WIDTH,
+        .height = JPEG_STREAM_HEIGHT,
+        .src_type = JPEG_STREAM_SRC_FMT,
+        .subsampling = JPEG_STREAM_SUBSAMPLE,
+        .quality = JPEG_STREAM_QUALITY,
+        .stream_id = JPEG_STREAM_ID_SPI,
+    };
+    if (jpeg_stream_create(&jcfg, &s_jpeg_spi) != ESP_OK) {
+        ESP_LOGW(TAG, "spi jpeg_stream_create failed");
+    }
     ESP_LOGI(TAG, "SPI 从机初始化完成: host=%d, MOSI=%d MISO=%d SCLK=%d CS=%d", SPI_RX_HOST, SPI_SLAVE_PIN_MOSI,
              SPI_SLAVE_PIN_MISO, SPI_SLAVE_PIN_SCLK, SPI_SLAVE_PIN_CS);
     return ESP_OK;
@@ -175,4 +192,8 @@ void spi_receiver_stop(void) {
         s_task = NULL;
     }
     spi_slave_free(SPI_RX_HOST);
+    if (s_jpeg_spi) {
+        jpeg_stream_destroy(s_jpeg_spi);
+        s_jpeg_spi = NULL;
+    }
 }
