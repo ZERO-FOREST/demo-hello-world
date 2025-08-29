@@ -16,6 +16,15 @@
 
 支持USB和SPI通信
 
+### USB 从设备（CDC-ACM）
+
+- 引脚：`USB_DP`=IO20, `USB_DM`=IO19（ESP32-S3 固定）
+- 供电：建议通过 USB VBUS 5V 供电；板载 3V3 稳压到位
+- 电脑识别：作为串口设备出现（CDC-ACM）。波特率设置不影响全速 USB 实际速率
+- 协议：沿用本组件 `tcp_protocol.h` 帧格式，通过串口原始字节传输
+- 构建：需启用 `tinyusb` 组件依赖（本仓已在 `components/Receiver/CMakeLists.txt` 添加）
+- 使用：接入 PC 后，打开串口发送帧；固件会解析并执行 `handle_*` 回调
+
 ## 编译方式
 
 在顶层的[Cmakelist.txt](../../CMakeLists.txt)文件中修改 `EN_RECEIVER_MODE` 为ON即可

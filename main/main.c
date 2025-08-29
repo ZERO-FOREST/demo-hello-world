@@ -14,15 +14,26 @@
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "spi_slave_receiver.h"
+#include "usb_device_receiver.h"
 #include <inttypes.h>
 #include <stdio.h>
 
 static const char* TAG = "MAIN";
 
 void app_main(void) {
+    // 初始化 USB CDC 从机并启动接收任务
+    if (usb_receiver_init() == ESP_OK) {
+        usb_receiver_start();
+    }
+
+    // 初始化 SPI 从机并启动接收任务
+    if (spi_receiver_init() == ESP_OK) {
+        spi_receiver_start();
+    }
+
     while (1) {
-        ESP_LOGI(TAG, "Main loop: System running normally, free heap: %lu bytes",
-                 (unsigned long)esp_get_free_heap_size());
+        ESP_LOGI(TAG, "Receiver running, free heap: %lu bytes", (unsigned long)esp_get_free_heap_size());
         vTaskDelay(pdMS_TO_TICKS(30000));
     }
 }
