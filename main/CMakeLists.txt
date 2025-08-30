@@ -54,6 +54,9 @@ else()
         "app/Telemetry/src/telemetry_receiver.c"
         "app/Telemetry/src/telemetry_sender.c"
         
+        "UI/ui_audio_receiver.c"
+        "app/audio_receiver.c"
+        
         "fonts/font_init.c"
         "fonts/symbol.c"
     )

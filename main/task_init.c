@@ -405,6 +405,8 @@ esp_err_t init_all_tasks(void) {
         return ret;
     }
 
+    // i2s_tdm_demo_init();
+
     ESP_LOGI(TAG, "All tasks initialized successfully");
     return ESP_OK;
 }
@@ -468,7 +470,7 @@ esp_err_t stop_all_tasks(void) {
     
 
     // 停止 I2S TDM 演示
-    i2s_tdm_demo_deinit();
+    // i2s_tdm_demo_deinit();
 
     ESP_LOGI(TAG, "All tasks stopped");
     return ESP_OK;

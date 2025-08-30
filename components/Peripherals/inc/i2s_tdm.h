@@ -46,6 +46,7 @@ typedef struct {
     i2s_chan_handle_t tx_handle;    // 发送通道句柄 (到MAX98357)
     i2s_chan_handle_t rx_handle;    // 接收通道句柄 (来自麦克风)
     bool is_initialized;             // 初始化状态
+    bool is_started;                 // 通道是否已启动
     uint32_t sample_rate;           // 当前采样率
     uint16_t buffer_size;           // 缓冲区大小
 } i2s_tdm_handle_t;

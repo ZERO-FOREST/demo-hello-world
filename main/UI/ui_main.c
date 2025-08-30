@@ -21,6 +21,7 @@
 #include "ui_state_manager.h" // 添加状态管理器头文件
 #include "wifi_image_transfer.h"
 #include "wifi_manager.h"
+// audio receiver is declared in ui.h (ui_audio_receiver_create)
 
 // 全局变量保存时间标签、电池标签和WiFi标签
 static lv_obj_t* g_time_label = NULL;
@@ -315,6 +316,26 @@ static void telemetry_cb(void) {
         ui_telemetry_create(screen); // 加载遥测界面
     }
 }
+static void audio_cb(void) {
+    // 保存主菜单状态
+    if (g_menu_container) {
+        int scroll_pos = lv_obj_get_scroll_y(g_menu_container);
+        ui_state_manager_save_main_menu(g_menu_container, g_current_selected_index, scroll_pos);
+        ui_state_manager_save_current_screen(UI_SCREEN_AUDIO);
+    }
+
+    lv_obj_t* screen = lv_scr_act();
+    if (screen) {
+        // 重置全局UI指针
+        g_time_label = NULL;
+        g_battery_label = NULL;
+        g_wifi_label = NULL;
+        g_menu_container = NULL;
+
+        lv_obj_clean(screen);                    // 清空当前屏幕
+        ui_audio_receiver_create(screen);        // 加载音频接收界面
+    }
+}
 
 // 可扩展的菜单项结构
 typedef struct {
@@ -331,6 +352,7 @@ static menu_item_t menu_items[] = {
     {"Calibration", calibration_cb},
     {"Test", test_cb},
     {"Remote Control", telemetry_cb}, // 添加遥控器菜单项
+    {"Audio", audio_cb}
     // 添加更多项...
 };
 
@@ -342,6 +364,7 @@ static menu_item_t menu_items_zh[] = {
     {"游戏", game_cb},
     {"设置", settings_cb},
     {"测试", test_cb},
+    {"音频", audio_cb},
 };
 
 static void btn_event_cb(lv_event_t* e) {

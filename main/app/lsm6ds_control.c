@@ -102,8 +102,6 @@ static void lsm6ds3_control_task(void* pvParameters)
                 roll = COMPLEMENTARY_FILTER_ALPHA * (roll + gyro_y_corrected * DT) + (1 - COMPLEMENTARY_FILTER_ALPHA) * roll_acc;
                 xSemaphoreGive(attitude_mutex);
             }
-            
-            ESP_LOGI(TAG, "Pitch: %.2f, Roll: %.2f", pitch, roll);
         }
         //10hz更新频率
         vTaskDelay(pdMS_TO_TICKS(100));

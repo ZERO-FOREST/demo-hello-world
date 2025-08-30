@@ -26,6 +26,7 @@ typedef enum {
     UI_SCREEN_CALIBRATION,
     UI_SCREEN_TEST,
     UI_SCREEN_TELEMETRY,
+    UI_SCREEN_AUDIO,
     UI_SCREEN_MAX
 } ui_screen_type_t;
 

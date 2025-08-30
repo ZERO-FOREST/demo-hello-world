@@ -98,6 +98,9 @@ void ui_telemetry_create(lv_obj_t* parent);
 void ui_telemetry_cleanup(void);
 void ui_telemetry_update_data(float voltage, float current, float roll, float pitch, float yaw, float altitude);
 
+// --- 音频接收界面 ---
+void ui_audio_receiver_create(lv_obj_t* parent);
+
 // 统一的back按钮创建函数
 void ui_create_back_button(lv_obj_t* parent, const char* text);
 void ui_create_game_back_button(lv_obj_t* parent, const char* text);
