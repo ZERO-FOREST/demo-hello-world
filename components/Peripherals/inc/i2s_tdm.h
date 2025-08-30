@@ -32,7 +32,7 @@ extern "C" {
 #define I2S_TDM_SAMPLE_RATE    44100     // 采样率 44.1kHz
 #define I2S_TDM_BITS_PER_SAMPLE 16       // 16位采样
 #define I2S_TDM_CHANNELS       2         // TDM通道数: 扬声器+麦克风
-#define I2S_TDM_SLOT_BIT_WIDTH 16       // 物理时隙宽度（为兼容 MAX98357 建议 32bit/声道）
+#define I2S_TDM_SLOT_BIT_WIDTH 32       // 物理时隙宽度（为兼容 MAX98357 建议 32bit/声道）
 #define I2S_TDM_SLOT_NUM       2         // TDM时隙数量
 
 // TDM时隙分配

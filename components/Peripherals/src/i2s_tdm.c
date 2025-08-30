@@ -52,7 +52,7 @@ esp_err_t i2s_tdm_init(void) {
         .ws_width = 32,
         .ws_pol = false,                           // WS低电平=左声道
         .bit_shift = true,                         // WS边沿后延迟1bit
-        .left_align = false,                       // 右对齐
+        .left_align = true,                       // 右对齐
         .big_endian = false,                       // 小端序
         .bit_order_lsb = false,                    // MSB优先
     };
