@@ -6,15 +6,12 @@
 
 // 引入各模块头文件
 #include "background_manager.h"
-#include "battery_monitor.h"
 #include "lsm6ds_control.h"
-#include "i2s_tdm_demo.h"
 #include "joystick_adc.h"
 #include "lvgl_main.h"
 #include "power_management.h"
 #include "ui.h"
 #include "wifi_manager.h"
-#include "ws2812.h"
 #include <stdint.h>
 
 static const char* TAG = "TASK_INIT";
@@ -22,51 +19,10 @@ static const char* TAG = "TASK_INIT";
 // 任务句柄存储
 static TaskHandle_t s_lvgl_task_handle = NULL;
 static TaskHandle_t s_power_task_handle = NULL;
-static TaskHandle_t s_ws2812_task_handle = NULL;
 static TaskHandle_t s_monitor_task_handle = NULL;
 static TaskHandle_t s_battery_task_handle = NULL;
 static TaskHandle_t s_joystick_task_handle = NULL;
 static TaskHandle_t s_wifi_task_handle = NULL;
-
-// WS2812演示任务
-static void ws2812_demo_task(void* pvParameters) {
-    ESP_LOGI(TAG, "WS2812 Demo Task started on core %d", xPortGetCoreID());
-
-    // 初始化WS2812，只有一个LED
-    esp_err_t ret = ws2812_init(1);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "WS2812 init failed: %s", esp_err_to_name(ret));
-        vTaskDelete(NULL); // 自杀
-        return;
-    }
-
-    ESP_LOGI(TAG, "WS2812 initialized with %d LEDs on GPIO48", ws2812_get_led_count());
-
-    ws2812_color_t breathing_color = WS2812_COLOR_BLACK; // 选择呼吸灯颜色
-
-    while (1) {
-        ws2812_set_all(breathing_color);
-        ws2812_refresh();                 // 刷新显示
-        vTaskDelay(pdMS_TO_TICKS(10000)); // 每10秒更新一次
-        // for (uint8_t j = 0; j < 5; j++) {
-        //     // 亮度渐变：从 0 到 127
-        //     for (int brightness = 0; brightness <= 127; brightness += 5) {
-        //         ws2812_set_brightness(brightness);  // 设置亮度
-        //         ws2812_set_all(breathing_color[j]); // 设置所有LED颜色
-        //         ws2812_refresh();                   // 刷新显示
-        //         vTaskDelay(pdMS_TO_TICKS(50));      // 延时
-        //     }
-
-        //     // 亮度渐变：从 127 到 0
-        //     for (int brightness = 127; brightness >= 0; brightness -= 5) {
-        //         ws2812_set_brightness(brightness);  // 设置亮度
-        //         ws2812_set_all(breathing_color[j]); // 设置所有LED颜色
-        //         ws2812_refresh();                   // 刷新显示
-        //         vTaskDelay(pdMS_TO_TICKS(50));      // 延时
-        //     }
-        // }
-    }
-}
 
 // 摇杆ADC采样任务（200Hz）
 static void joystick_adc_task(void* pvParameters) {
@@ -111,9 +67,6 @@ static void system_monitor_task(void* pvParameters) {
         // 任务状态检查
         if (s_lvgl_task_handle) {
             ESP_LOGI(TAG, "LVGL task: Running");
-        }
-        if (s_ws2812_task_handle) {
-            ESP_LOGI(TAG, "WS2812 task: Running");
         }
         if (s_power_task_handle) {
             ESP_LOGI(TAG, "Power task: Running");
@@ -249,30 +202,6 @@ esp_err_t init_power_management_task(void) {
     return ESP_OK;
 }
 
-esp_err_t init_ws2812_demo_task(void) {
-    if (s_ws2812_task_handle != NULL) {
-        ESP_LOGW(TAG, "WS2812 demo task already running");
-        return ESP_OK;
-    }
-
-    BaseType_t result = xTaskCreatePinnedToCore(ws2812_demo_task,      // 任务函数
-                                                "WS2812_Demo",         // 任务名称
-                                                TASK_STACK_MEDIUM,     // 堆栈大小 (4KB)
-                                                NULL,                  // 参数
-                                                TASK_PRIORITY_NORMAL,  // 低优先级
-                                                &s_ws2812_task_handle, // 任务句柄
-                                                0                      // 绑定到Core 0
-    );
-
-    if (result != pdPASS) {
-        ESP_LOGE(TAG, "Failed to create WS2812 demo task");
-        return ESP_ERR_NO_MEM;
-    }
-
-    ESP_LOGI(TAG, "WS2812 demo task created successfully on Core 0");
-    return ESP_OK;
-}
-
 esp_err_t init_system_monitor_task(void) {
     if (s_monitor_task_handle != NULL) {
         ESP_LOGW(TAG, "System monitor task already running");
@@ -364,13 +293,6 @@ esp_err_t init_all_tasks(void) {
         return ret;
     }
 
-    // 初始化WS2812演示任务
-    ret = init_ws2812_demo_task();
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to init WS2812 demo task");
-        return ret;
-    }
-
     // 初始化电池监测任务
     ret = init_battery_monitor_task();
     if (ret != ESP_OK) {
@@ -431,12 +353,6 @@ esp_err_t stop_all_tasks(void) {
         ESP_LOGI(TAG, "Power management task stopped");
     }
 
-    if (s_ws2812_task_handle) {
-        vTaskDelete(s_ws2812_task_handle);
-        s_ws2812_task_handle = NULL;
-        ESP_LOGI(TAG, "WS2812 demo task stopped");
-    }
-
     if (s_monitor_task_handle) {
         vTaskDelete(s_monitor_task_handle);
         s_monitor_task_handle = NULL;
@@ -480,7 +396,6 @@ void list_running_tasks(void) {
     ESP_LOGI(TAG, "=== Running Tasks ===");
     ESP_LOGI(TAG, "LVGL Task: %s", s_lvgl_task_handle ? "Running" : "Stopped");
     ESP_LOGI(TAG, "Power Task: %s", s_power_task_handle ? "Running" : "Stopped");
-    ESP_LOGI(TAG, "WS2812 Task: %s", s_ws2812_task_handle ? "Running" : "Stopped");
     ESP_LOGI(TAG, "Monitor Task: %s", s_monitor_task_handle ? "Running" : "Stopped");
     ESP_LOGI(TAG, "Joystick Task: %s", s_joystick_task_handle ? "Running" : "Stopped");
     ESP_LOGI(TAG, "Battery Task: %s", s_battery_task_handle ? "Running" : "Stopped");
@@ -491,7 +406,6 @@ void list_running_tasks(void) {
 // 任务句柄获取函数
 TaskHandle_t get_lvgl_task_handle(void) { return s_lvgl_task_handle; }
 TaskHandle_t get_power_task_handle(void) { return s_power_task_handle; }
-TaskHandle_t get_ws2812_task_handle(void) { return s_ws2812_task_handle; }
 TaskHandle_t get_monitor_task_handle(void) { return s_monitor_task_handle; }
 TaskHandle_t get_battery_task_handle(void) { return s_battery_task_handle; }
 TaskHandle_t get_joystick_task_handle(void) { return s_joystick_task_handle; }

@@ -216,11 +216,6 @@ void audio_receiver_stop(void) {
         server_sock = -1;
     }
     
-    // 任务将自行删除
-    // tcp_server_task_handle
-    // tcp_receive_task_handle
-    // playback_task_handle
-    
     if (audio_ringbuf) {
         // 发送一个虚拟项目以唤醒正在等待的 xRingbufferReceive
         xRingbufferSend(audio_ringbuf, & (uint8_t) {0}, 1, pdMS_TO_TICKS(10));
