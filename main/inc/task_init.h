@@ -16,7 +16,7 @@ extern "C" {
 // 任务堆栈大小定义 - 针对不同任务类型优化
 #define TASK_STACK_SMALL        2048   // 2KB - 简单任务
 #define TASK_STACK_MEDIUM       4096   // 4KB - 中等任务  
-#define TASK_STACK_LARGE        6144   // 6KB - LVGL等复杂任务
+#define TASK_STACK_LARGE        12288  // 12KB - LVGL等复杂任务
 #define TASK_STACK_WIFI         8192   // 8KB - WiFi任务专用
 
 // 任务初始化函数

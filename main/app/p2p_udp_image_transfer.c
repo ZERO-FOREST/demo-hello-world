@@ -259,8 +259,12 @@ static esp_err_t wifi_init_p2p(void) {
         set_connection_state(P2P_STATE_AP_STARTING, "Starting AP");
         ESP_LOGI(TAG, "Wi-Fi AP started: %s", wifi_config.ap.ssid);
     } else {
-        // STA模式配置
-        g_netif = esp_netif_create_default_wifi_sta();
+        // STA模式配置 - 使用已存在的网络接口
+        g_netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+        if (g_netif == NULL) {
+            ESP_LOGW(TAG, "Default STA interface not found, creating new one");
+            g_netif = esp_netif_create_default_wifi_sta();
+        }
         ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
         ESP_ERROR_CHECK(esp_wifi_start());
 
