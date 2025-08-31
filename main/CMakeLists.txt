@@ -22,7 +22,6 @@ else()
         "main.c"
         "task_init.c"
         "components_init.c"
-        "demo/i2s_tdm_demo.c"
         "UI/ui_start_animation.c"
         "UI/ui_main.c"
         "UI/ui_wifi_settings.c"
@@ -63,7 +62,7 @@ else()
 
     idf_component_register(
         SRCS ${MAIN_SRCS}
-        INCLUDE_DIRS "inc" "UI/inc" "demo" "app/inc" "app/game" "fonts" "app/Telemetry/inc"
+        INCLUDE_DIRS "inc" "UI/inc" "app/inc" "app/game" "fonts" "app/Telemetry/inc"
         REQUIRES lvgl esp_timer lvgl_port Peripherals driver spiffs spi_flash
     )
     
