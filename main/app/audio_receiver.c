@@ -12,14 +12,15 @@
 #include "i2s_tdm.h"
 #include <stdlib.h>
 #include "esp_heap_caps.h"
+#include <errno.h>
 
 void audio_receiver_stop(void);
 
 static const char* TAG = "AUDIO_RECEIVER";
 
 #define TCP_PORT 7557
-#define BUFFER_SIZE (1024 * 128)  // 每个缓冲区大小
-#define SAMPLE_RATE 44100  // 默认采样率，假设与Python一致
+#define BUFFER_SIZE (1024 * 256)  // 缓冲区大小到256KB
+#define SAMPLE_RATE 44100
 
 static int server_sock = -1;
 static int client_sock = -1;
@@ -33,17 +34,18 @@ static RingbufHandle_t audio_ringbuf = NULL;
 static void i2s_playback_task(void* arg) {
     while (server_running) {
         size_t item_size;
-        const uint8_t* item = xRingbufferReceive(audio_ringbuf, &item_size, portMAX_DELAY);
+        // 使用较短的超时以提高响应性
+        const uint8_t* item = xRingbufferReceive(audio_ringbuf, &item_size, pdMS_TO_TICKS(100));
         if (item) {
             size_t bytes_written = 0;
             esp_err_t ret = i2s_tdm_write((const void*)item, item_size, &bytes_written);
             if (ret != ESP_OK) {
                 ESP_LOGE(TAG, "I2S write failed: %s", esp_err_to_name(ret));
-            } else if (bytes_written > 0) {
-                ESP_LOGD(TAG, "Wrote %d bytes to I2S", bytes_written);
             }
             vRingbufferReturnItem(audio_ringbuf, (void*)item);
         }
+        // 减少任务切换开销
+        vTaskDelay(pdMS_TO_TICKS(1));
     }
     playback_task_handle = NULL;
     vTaskDelete(NULL);
@@ -52,27 +54,37 @@ static void i2s_playback_task(void* arg) {
 // TCP接收任务
 static void tcp_receive_task(void* arg) {
     int sock = (int)(intptr_t)arg;
-    uint8_t* rx_buffer = (uint8_t*)heap_caps_malloc(BUFFER_SIZE, MALLOC_CAP_SPIRAM);
+    int total_received = 0;
+    
+    char *rx_buffer = malloc(BUFFER_SIZE);
     if (!rx_buffer) {
-        ESP_LOGE(TAG, "Failed to allocate rx_buffer for TCP receive task from PSRAM");
+        ESP_LOGE(TAG, "Failed to allocate rx_buffer");
         goto cleanup;
     }
-
+    
     while (server_running && sock >= 0) {
         int len = recv(sock, rx_buffer, BUFFER_SIZE, 0);
         if (len < 0) {
-            ESP_LOGE(TAG, "Recv failed: errno %d", errno);
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                continue;
+            }
             break;
         } else if (len == 0) {
-            ESP_LOGI(TAG, "Connection closed");
             break;
         } else {
+            total_received += len;
+            
             BaseType_t done = pdFALSE;
-            while (done != pdTRUE && server_running) { // 添加server_running检查以允许外部停止
-                done = xRingbufferSend(audio_ringbuf, rx_buffer, len, pdMS_TO_TICKS(100));
+            int retry_count = 0;
+            while (done != pdTRUE && server_running && retry_count < 5) {
+                done = xRingbufferSend(audio_ringbuf, rx_buffer, len, pdMS_TO_TICKS(50));
                 if (!done) {
-                    ESP_LOGW(TAG, "Ringbuffer full, waiting...");
-                    vTaskDelay(pdMS_TO_TICKS(10));
+                    retry_count++;
+                    if (retry_count <= 2) {
+                        vTaskDelay(pdMS_TO_TICKS(5));
+                    }
+                } else {
+                    break;
                 }
             }
         }
@@ -80,9 +92,8 @@ static void tcp_receive_task(void* arg) {
 
 cleanup:
     if (rx_buffer) {
-        heap_caps_free(rx_buffer);
+        free(rx_buffer);
     }
-    ESP_LOGI(TAG, "Client disconnected.");
     close(sock);
     client_sock = -1;
     tcp_receive_task_handle = NULL;
@@ -100,21 +111,18 @@ static void tcp_server_task(void* arg) {
         ESP_LOGE(TAG, "Unable to create socket: errno %d", errno);
         goto error;
     }
-    ESP_LOGI(TAG, "Socket created");
 
     int err = bind(server_sock, (struct sockaddr*)&dest_addr, sizeof(dest_addr));
     if (err != 0) {
         ESP_LOGE(TAG, "Socket unable to bind: errno %d", errno);
         goto error;
     }
-    ESP_LOGI(TAG, "Socket bound, port %d", TCP_PORT);
 
     err = listen(server_sock, 1);
     if (err != 0) {
         ESP_LOGE(TAG, "Error occurred during listen: errno %d", errno);
         goto error;
     }
-    ESP_LOGI(TAG, "Socket listening...");
 
     while (server_running) {
         struct sockaddr_in source_addr;
@@ -122,20 +130,20 @@ static void tcp_server_task(void* arg) {
         client_sock = accept(server_sock, (struct sockaddr*)&source_addr, &addr_len);
         if (client_sock < 0) {
             if (!server_running) {
-                ESP_LOGI(TAG, "Server stopping.");
                 break;
             }
             ESP_LOGE(TAG, "Unable to accept connection: errno %d", errno);
-            break;
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            continue;
         }
-        ESP_LOGI(TAG, "Connection accepted!");
-
-        if (tcp_receive_task_handle != NULL) {
-            ESP_LOGW(TAG, "Closing previous connection to accept new one.");
-            vTaskDelete(tcp_receive_task_handle);
-            tcp_receive_task_handle = NULL;
+        
+        // 创建独立的TCP接收任务来处理这个连接
+        xTaskCreatePinnedToCore(tcp_receive_task, "tcp_receive", 4096, (void*)(intptr_t)client_sock, 5, &tcp_receive_task_handle, 0);
+        
+        // 等待接收任务完成
+        while (tcp_receive_task_handle != NULL && server_running) {
+            vTaskDelay(pdMS_TO_TICKS(100));
         }
-        xTaskCreatePinnedToCore(tcp_receive_task, "tcp_receive", 4096, (void*)(intptr_t)client_sock, 5, &tcp_receive_task_handle, 1);
     }
 
 error:
@@ -149,17 +157,19 @@ error:
 
 esp_err_t audio_receiver_start(void) {
     if (server_running) {
-        ESP_LOGW(TAG, "Server already running");
         return ESP_OK;
     }
     server_running = true;
 
-    // 初始化环形缓冲区（双缓冲效果）- 在PSRAM中
-    audio_ringbuf = xRingbufferCreateWithCaps(BUFFER_SIZE * 2, RINGBUF_TYPE_BYTEBUF, MALLOC_CAP_SPIRAM);
+    // 初始化环形缓冲区 - 1MB缓冲区分配到PSRAM
+    audio_ringbuf = xRingbufferCreateWithCaps(BUFFER_SIZE * 4, RINGBUF_TYPE_BYTEBUF, MALLOC_CAP_SPIRAM);
     if (!audio_ringbuf) {
-        ESP_LOGE(TAG, "Failed to create ring buffer in PSRAM");
-        server_running = false;
-        return ESP_FAIL;
+        audio_ringbuf = xRingbufferCreate(BUFFER_SIZE / 4, RINGBUF_TYPE_BYTEBUF);
+        if (!audio_ringbuf) {
+            ESP_LOGE(TAG, "Failed to create ring buffer");
+            server_running = false;
+            return ESP_FAIL;
+        }
     }
 
     // 初始化I2S
@@ -179,21 +189,18 @@ esp_err_t audio_receiver_start(void) {
         return ret;
     }
 
-    // Pre-fill the DMA buffer with silence to avoid DC offset and speaker heat-up
+    // Pre-fill the DMA buffer with silence
     const size_t silence_buffer_size = 1024;
     uint8_t* silence_buffer = (uint8_t*)calloc(1, silence_buffer_size);
     if (silence_buffer) {
         size_t bytes_written = 0;
         i2s_tdm_write(silence_buffer, silence_buffer_size, &bytes_written);
         free(silence_buffer);
-        ESP_LOGI(TAG, "I2S TX buffer pre-filled with %d bytes of silence.", (int)bytes_written);
-    } else {
-        ESP_LOGE(TAG, "Failed to allocate silence buffer.");
     }
 
-    // 创建播放任务
+    // 创建播放任务（高优先级，专用于音频播放）
     if (playback_task_handle == NULL) {
-        xTaskCreatePinnedToCore(i2s_playback_task, "i2s_playback", 4096, NULL, 5, &playback_task_handle, 1);
+        xTaskCreatePinnedToCore(i2s_playback_task, "i2s_playback", 4096, NULL, 6, &playback_task_handle, 1);
     }
 
     // 创建TCP服务器任务
@@ -201,7 +208,6 @@ esp_err_t audio_receiver_start(void) {
         xTaskCreatePinnedToCore(tcp_server_task, "tcp_server", 4096, NULL, 5, &tcp_server_task_handle, 1);
     }
 
-    ESP_LOGI(TAG, "Audio receiver service started");
     return ESP_OK;
 }
 
@@ -226,5 +232,4 @@ void audio_receiver_stop(void) {
 
     i2s_tdm_stop();
     i2s_tdm_deinit();
-    ESP_LOGI(TAG, "Audio receiver stopped");
 }

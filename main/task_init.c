@@ -1,18 +1,21 @@
-#include "task_init.h"
+// ESP-IDF 核心头文件
 #include "esp_log.h"
-#include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
-// 引入各模块头文件
+// 项目本地头文件  
+#include "task_init.h"
 #include "background_manager.h"
-#include "lsm6ds_control.h"
+#include "lsm6ds_control.h" 
 #include "joystick_adc.h"
 #include "lvgl_main.h"
 #include "power_management.h"
-#include "ui.h"
 #include "wifi_manager.h"
-#include <stdint.h>
+#include "serial_display.h"
+
+// 声明音频接收函数
+extern esp_err_t audio_receiver_start(void);
+extern void audio_receiver_stop(void);
 
 static const char* TAG = "TASK_INIT";
 
@@ -23,6 +26,8 @@ static TaskHandle_t s_monitor_task_handle = NULL;
 static TaskHandle_t s_battery_task_handle = NULL;
 static TaskHandle_t s_joystick_task_handle = NULL;
 static TaskHandle_t s_wifi_task_handle = NULL;
+static TaskHandle_t s_audio_receiver_task_handle = NULL;
+static TaskHandle_t s_serial_display_task_handle = NULL;
 
 // 摇杆ADC采样任务（200Hz）
 static void joystick_adc_task(void* pvParameters) {
@@ -274,10 +279,120 @@ esp_err_t init_battery_monitor_task(void) {
     return ESP_OK;
 }
 
+// 音频接收任务包装
+static void audio_receiver_task(void* pvParameters) {
+    ESP_LOGI(TAG, "Audio Receiver Task started on core %d", xPortGetCoreID());
+    
+    // 等待WiFi连接
+    vTaskDelay(pdMS_TO_TICKS(5000));
+    
+    esp_err_t ret = audio_receiver_start();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to start audio receiver: %s", esp_err_to_name(ret));
+    } else {
+        ESP_LOGI(TAG, "Audio receiver started successfully on TCP port 7557");
+    }
+    
+    // 任务保持运行，监控音频接收状态
+    while (1) {
+        vTaskDelay(pdMS_TO_TICKS(30000)); // 30秒检查一次
+        ESP_LOGI(TAG, "Audio receiver running normally");
+    }
+}
+
+// 串口显示任务包装
+static void serial_display_task(void* pvParameters) {
+    ESP_LOGI(TAG, "Serial Display Task started on core %d", xPortGetCoreID());
+    
+    // 等待WiFi连接
+    vTaskDelay(pdMS_TO_TICKS(5000));
+    
+    esp_err_t ret = serial_display_init();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to init serial display: %s", esp_err_to_name(ret));
+        vTaskDelete(NULL);
+        return;
+    }
+    
+    if (!serial_display_start(8080)) {
+        ESP_LOGE(TAG, "Failed to start serial display server on port 8080");
+        vTaskDelete(NULL);
+        return;
+    }
+    
+    ESP_LOGI(TAG, "Serial display server started successfully on TCP port 8080");
+    
+    // 任务保持运行，监控串口显示状态
+    while (1) {
+        vTaskDelay(pdMS_TO_TICKS(30000)); // 30秒检查一次
+        if (serial_display_is_running()) {
+            ESP_LOGI(TAG, "Serial display server running normally");
+        } else {
+            ESP_LOGW(TAG, "Serial display server stopped, attempting restart");
+            serial_display_start(8080);
+        }
+    }
+}
+
+esp_err_t init_audio_receiver_task(void) {
+    if (s_audio_receiver_task_handle != NULL) {
+        ESP_LOGW(TAG, "Audio receiver task already running");
+        return ESP_OK;
+    }
+
+    BaseType_t result = xTaskCreatePinnedToCore(audio_receiver_task,            // 任务函数
+                                                "Audio_Receiver",               // 任务名称
+                                                TASK_STACK_LARGE,               // 堆栈大小 (8KB)
+                                                NULL,                           // 参数
+                                                TASK_PRIORITY_NORMAL,           // 普通优先级
+                                                &s_audio_receiver_task_handle,  // 任务句柄
+                                                1                               // 绑定到Core 1
+    );
+
+    if (result != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create audio receiver task");
+        return ESP_ERR_NO_MEM;
+    }
+
+    ESP_LOGI(TAG, "Audio receiver task created successfully on Core 1");
+    return ESP_OK;
+}
+
+esp_err_t init_serial_display_task(void) {
+    if (s_serial_display_task_handle != NULL) {
+        ESP_LOGW(TAG, "Serial display task already running");
+        return ESP_OK;
+    }
+
+    BaseType_t result = xTaskCreatePinnedToCore(serial_display_task,            // 任务函数
+                                                "Serial_Display",               // 任务名称
+                                                TASK_STACK_MEDIUM,              // 堆栈大小 (4KB)
+                                                NULL,                           // 参数
+                                                TASK_PRIORITY_NORMAL,           // 普通优先级
+                                                &s_serial_display_task_handle,  // 任务句柄
+                                                0                               // 绑定到Core 0
+    );
+
+    if (result != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create serial display task");
+        return ESP_ERR_NO_MEM;
+    }
+
+    ESP_LOGI(TAG, "Serial display task created successfully on Core 0");
+    return ESP_OK;
+}
+
 esp_err_t init_all_tasks(void) {
     ESP_LOGI(TAG, "Initializing all tasks...");
 
     esp_err_t ret;
+
+    // 初始化LVGL任务
+    ret = init_lvgl_task();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to init LVGL task");
+        return ret;
+    }
 
     // 初始化后台管理模块
     ret = background_manager_init();
@@ -314,16 +429,23 @@ esp_err_t init_all_tasks(void) {
         return ret;
     }
 
-    // 初始化LVGL任务
-    ret = init_lvgl_task();
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to init LVGL task");
-        return ret;
-    }
-
     ret = init_lsm6ds3_control_task();
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to init LSM6DS3 control task");
+        return ret;
+    }
+
+    // 初始化音频接收任务（后台服务）
+    ret = init_audio_receiver_task();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to init audio receiver task");
+        return ret;
+    }
+
+    // 初始化串口显示任务（后台服务）
+    ret = init_serial_display_task();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to init serial display task");
         return ret;
     }
 
@@ -375,6 +497,20 @@ esp_err_t stop_all_tasks(void) {
         ESP_LOGI(TAG, "WiFi manager task stopped");
     }
 
+    if (s_audio_receiver_task_handle) {
+        audio_receiver_stop(); // 先停止音频接收服务
+        vTaskDelete(s_audio_receiver_task_handle);
+        s_audio_receiver_task_handle = NULL;
+        ESP_LOGI(TAG, "Audio receiver task stopped");
+    }
+
+    if (s_serial_display_task_handle) {
+        serial_display_stop(); // 先停止串口显示服务
+        vTaskDelete(s_serial_display_task_handle);
+        s_serial_display_task_handle = NULL;
+        ESP_LOGI(TAG, "Serial display task stopped");
+    }
+
     if (s_lsm6ds3_control_task != NULL)
     {
         vTaskDelete(s_lsm6ds3_control_task);
@@ -394,6 +530,8 @@ void list_running_tasks(void) {
     ESP_LOGI(TAG, "Joystick Task: %s", s_joystick_task_handle ? "Running" : "Stopped");
     ESP_LOGI(TAG, "Battery Task: %s", s_battery_task_handle ? "Running" : "Stopped");
     ESP_LOGI(TAG, "WiFi Task: %s", s_wifi_task_handle ? "Running" : "Stopped");
+    ESP_LOGI(TAG, "Audio Receiver Task: %s", s_audio_receiver_task_handle ? "Running" : "Stopped");
+    ESP_LOGI(TAG, "Serial Display Task: %s", s_serial_display_task_handle ? "Running" : "Stopped");
     ESP_LOGI(TAG, "==================");
 }
 

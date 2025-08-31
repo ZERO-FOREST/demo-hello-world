@@ -19,9 +19,13 @@ if(EN_RECEIVER_MODE)
 
 else()
     set(MAIN_SRCS
+        #主要启动文件 
         "main.c"
         "task_init.c"
         "components_init.c"
+
+        # UI相关的文件
+        "UI/ui_telemetry.c"
         "UI/ui_start_animation.c"
         "UI/ui_main.c"
         "UI/ui_wifi_settings.c"
@@ -30,13 +34,18 @@ else()
         "UI/ui_serial_display.c"
         "UI/ui_calibration.c"
         "UI/ui_test.c"
+
+        # UI公共组件
         "UI/theme_manager.c"
         "UI/ui_common.c"
-        "UI/ui_telemetry.c"
         "UI/ui_state_manager.c"
+
+        # app中game的相关文件
         "app/game/game_main.c"
         "app/game/game_tetris.c"
         "app/game/game_snake.c"
+
+        # app文件
         "app/wifi_image_transfer.c"
         "app/p2p_udp_image_transfer.c"
         "app/serial_display.c"
@@ -46,6 +55,9 @@ else()
         "app/background_manager.c"
         "app/settings_manager.c"
         "app/lsm6ds_control.c"
+        "app/audio_receiver.c"
+
+        # app中遥测相关的文件，数量较多
         "app/Telemetry/src/telemetry_protocol.c"
         "app/Telemetry/src/telemetry_tcp.c"
         "app/Telemetry/src/telemetry_data_converter.c"
@@ -53,9 +65,7 @@ else()
         "app/Telemetry/src/telemetry_receiver.c"
         "app/Telemetry/src/telemetry_sender.c"
         
-        "UI/ui_audio_receiver.c"
-        "app/audio_receiver.c"
-        
+        # 字体相关文件
         "fonts/font_init.c"
         "fonts/symbol.c"
     )
