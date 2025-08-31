@@ -8,6 +8,7 @@
 #include "ui.h"
 #include <stdlib.h>
 #include <string.h>
+#include "esp_heap_caps.h"
 
 // --- NVS 常量 ---
 #define NVS_NAMESPACE "tetris_hs"
@@ -27,6 +28,10 @@ static lv_obj_t* score_label;
 static lv_obj_t* level_label;
 static lv_timer_t* game_tick_timer = NULL;
 static lv_timer_t* input_timer = NULL;
+
+// --- 动态分配的画布缓冲区 ---
+static lv_color_t* main_canvas_buf = NULL;
+static lv_color_t* next_canvas_buf = NULL;
 
 // --- 游戏状态 ---
 static uint8_t board[BOARD_HEIGHT][BOARD_WIDTH];
@@ -55,6 +60,18 @@ static struct {
 } next_piece;
 
 // --- NVS (非易失性存储) 函数 ---
+
+// 清理游戏资源
+static void cleanup_game_resources() {
+    if (main_canvas_buf) {
+        heap_caps_free(main_canvas_buf);
+        main_canvas_buf = NULL;
+    }
+    if (next_canvas_buf) {
+        heap_caps_free(next_canvas_buf);
+        next_canvas_buf = NULL;
+    }
+}
 
 // 从 NVS 读取最高分
 static void read_high_scores() {
@@ -577,15 +594,30 @@ static void start_game_cb(lv_event_t* e) {
     lv_obj_t* parent = lv_event_get_user_data(e);
     lv_obj_clean(parent);
 
-    // 为画布创建缓冲区 (非常重要，必须是 static 或全局)
-    static lv_color_t cbuf[LV_CANVAS_BUF_SIZE_TRUE_COLOR(BOARD_WIDTH * BLOCK_SIZE, BOARD_HEIGHT * BLOCK_SIZE)];
+    // 动态分配画布缓冲区到PSRAM
+    if (main_canvas_buf == NULL) {
+        size_t main_buf_size = LV_CANVAS_BUF_SIZE_TRUE_COLOR(BOARD_WIDTH * BLOCK_SIZE, BOARD_HEIGHT * BLOCK_SIZE);
+        main_canvas_buf = (lv_color_t*)heap_caps_malloc(main_buf_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (!main_canvas_buf) {
+            // 如果PSRAM分配失败，尝试内部RAM
+            main_canvas_buf = (lv_color_t*)malloc(main_buf_size);
+        }
+    }
+    
+    if (next_canvas_buf == NULL) {
+        size_t next_buf_size = LV_CANVAS_BUF_SIZE_TRUE_COLOR(4 * BLOCK_SIZE, 4 * BLOCK_SIZE);
+        next_canvas_buf = (lv_color_t*)heap_caps_malloc(next_buf_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (!next_canvas_buf) {
+            next_canvas_buf = (lv_color_t*)malloc(next_buf_size);
+        }
+    }
 
     // 设置父容器为不可滚动
     lv_obj_set_scroll_dir(parent, LV_DIR_NONE);
 
     // 创建画布用于游戏区域
     canvas = lv_canvas_create(parent);
-    lv_canvas_set_buffer(canvas, cbuf, BOARD_WIDTH * BLOCK_SIZE, BOARD_HEIGHT * BLOCK_SIZE, LV_IMG_CF_TRUE_COLOR);
+    lv_canvas_set_buffer(canvas, main_canvas_buf, BOARD_WIDTH * BLOCK_SIZE, BOARD_HEIGHT * BLOCK_SIZE, LV_IMG_CF_TRUE_COLOR);
     lv_obj_align(canvas, LV_ALIGN_LEFT_MID, 10, 0);
 
     // --- 右侧控制/信息面板 ---
@@ -620,10 +652,9 @@ static void start_game_cb(lv_event_t* e) {
     lv_obj_set_style_text_align(next_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_font(next_label, &lv_font_montserrat_12, 0); // 减小字体
 
-    // 下一个方块显示画布 - 使用更小的尺寸
-    static lv_color_t next_cbuf[LV_CANVAS_BUF_SIZE_TRUE_COLOR(4 * BLOCK_SIZE, 4 * BLOCK_SIZE)];
+    // 下一个方块显示画布 - 使用动态分配的缓冲区
     next_canvas = lv_canvas_create(panel);
-    lv_canvas_set_buffer(next_canvas, next_cbuf, 4 * BLOCK_SIZE, 4 * BLOCK_SIZE, LV_IMG_CF_TRUE_COLOR);
+    lv_canvas_set_buffer(next_canvas, next_canvas_buf, 4 * BLOCK_SIZE, 4 * BLOCK_SIZE, LV_IMG_CF_TRUE_COLOR);
     lv_obj_set_size(next_canvas, 4 * BLOCK_SIZE, 4 * BLOCK_SIZE);
 
     // 返回按钮 (返回到俄罗斯方块菜单)
