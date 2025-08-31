@@ -34,7 +34,6 @@ static RingbufHandle_t audio_ringbuf = NULL;
 static void i2s_playback_task(void* arg) {
     while (server_running) {
         size_t item_size;
-        // 使用较短的超时以提高响应性
         const uint8_t* item = xRingbufferReceive(audio_ringbuf, &item_size, pdMS_TO_TICKS(100));
         if (item) {
             size_t bytes_written = 0;
@@ -44,7 +43,6 @@ static void i2s_playback_task(void* arg) {
             }
             vRingbufferReturnItem(audio_ringbuf, (void*)item);
         }
-        // 减少任务切换开销
         vTaskDelay(pdMS_TO_TICKS(1));
     }
     playback_task_handle = NULL;
@@ -161,10 +159,10 @@ esp_err_t audio_receiver_start(void) {
     }
     server_running = true;
 
-    // 初始化环形缓冲区 - 1MB缓冲区分配到PSRAM
-    audio_ringbuf = xRingbufferCreateWithCaps(BUFFER_SIZE * 4, RINGBUF_TYPE_BYTEBUF, MALLOC_CAP_SPIRAM);
+    // 初始化环形缓冲区 - 256KB缓冲区分配到PSRAM
+    audio_ringbuf = xRingbufferCreateWithCaps(BUFFER_SIZE, RINGBUF_TYPE_BYTEBUF, MALLOC_CAP_SPIRAM);
     if (!audio_ringbuf) {
-        audio_ringbuf = xRingbufferCreate(BUFFER_SIZE / 4, RINGBUF_TYPE_BYTEBUF);
+        audio_ringbuf = xRingbufferCreate(BUFFER_SIZE, RINGBUF_TYPE_BYTEBUF);
         if (!audio_ringbuf) {
             ESP_LOGE(TAG, "Failed to create ring buffer");
             server_running = false;
@@ -189,7 +187,6 @@ esp_err_t audio_receiver_start(void) {
         return ret;
     }
 
-    // Pre-fill the DMA buffer with silence
     const size_t silence_buffer_size = 1024;
     uint8_t* silence_buffer = (uint8_t*)calloc(1, silence_buffer_size);
     if (silence_buffer) {
@@ -198,7 +195,7 @@ esp_err_t audio_receiver_start(void) {
         free(silence_buffer);
     }
 
-    // 创建播放任务（高优先级，专用于音频播放）
+    // 创建播放任务
     if (playback_task_handle == NULL) {
         xTaskCreatePinnedToCore(i2s_playback_task, "i2s_playback", 4096, NULL, 6, &playback_task_handle, 1);
     }
