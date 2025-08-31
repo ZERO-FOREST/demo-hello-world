@@ -202,7 +202,7 @@ static void start_transfer_service(image_transfer_mode_t mode) {
 
     if (mode == IMAGE_TRANSFER_MODE_UDP) {
         ESP_LOGI(TAG, "Initializing UDP service...");
-        ret = p2p_udp_image_transfer_init(P2P_MODE_AP, ui_image_transfer_set_image_data, udp_status_callback);
+        ret = p2p_udp_image_transfer_init(P2P_MODE_STA, ui_image_transfer_set_image_data, udp_status_callback);
         if (ret == ESP_OK) {
             ESP_LOGI(TAG, "Starting UDP service...");
             ret = p2p_udp_image_transfer_start();

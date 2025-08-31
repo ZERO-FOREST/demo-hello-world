@@ -34,6 +34,7 @@ else()
         "UI/ui_serial_display.c"
         "UI/ui_calibration.c"
         "UI/ui_test.c"
+        "UI/ui_numeric_keypad.c"
 
         # UI公共组件
         "UI/theme_manager.c"
@@ -56,6 +57,7 @@ else()
         "app/settings_manager.c"
         "app/lsm6ds_control.c"
         "app/audio_receiver.c"
+        "app/ap_manager.c"
 
         # app中遥测相关的文件，数量较多
         "app/Telemetry/src/telemetry_protocol.c"
