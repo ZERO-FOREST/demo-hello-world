@@ -43,7 +43,6 @@ static void i2s_playback_task(void* arg) {
             }
             vRingbufferReturnItem(audio_ringbuf, (void*)item);
         }
-        vTaskDelay(pdMS_TO_TICKS(1));
     }
     playback_task_handle = NULL;
     vTaskDelete(NULL);
@@ -54,36 +53,34 @@ static void tcp_receive_task(void* arg) {
     int sock = (int)(intptr_t)arg;
     int total_received = 0;
     
-    char *rx_buffer = malloc(BUFFER_SIZE);
+    char *rx_buffer = heap_caps_malloc(BUFFER_SIZE, MALLOC_CAP_SPIRAM);
     if (!rx_buffer) {
-        ESP_LOGE(TAG, "Failed to allocate rx_buffer");
-        goto cleanup;
+        ESP_LOGE(TAG, "Failed to allocate rx_buffer from PSRAM");
+        rx_buffer = malloc(BUFFER_SIZE);
+        if (!rx_buffer) {
+            ESP_LOGE(TAG, "Failed to allocate rx_buffer from internal RAM");
+            goto cleanup;
+        }
     }
     
     while (server_running && sock >= 0) {
         int len = recv(sock, rx_buffer, BUFFER_SIZE, 0);
         if (len < 0) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                vTaskDelay(pdMS_TO_TICKS(5)); // 短暂等待，避免忙等
                 continue;
             }
+            ESP_LOGE(TAG, "recv failed: errno %d", errno);
             break;
         } else if (len == 0) {
+            ESP_LOGI(TAG, "Connection closed");
             break;
         } else {
             total_received += len;
             
-            BaseType_t done = pdFALSE;
-            int retry_count = 0;
-            while (done != pdTRUE && server_running && retry_count < 5) {
-                done = xRingbufferSend(audio_ringbuf, rx_buffer, len, pdMS_TO_TICKS(50));
-                if (!done) {
-                    retry_count++;
-                    if (retry_count <= 2) {
-                        vTaskDelay(pdMS_TO_TICKS(5));
-                    }
-                } else {
-                    break;
-                }
+            BaseType_t done = xRingbufferSend(audio_ringbuf, rx_buffer, len, pdMS_TO_TICKS(100));
+            if (!done) {
+                ESP_LOGW(TAG, "Ringbuffer full, dropping %d bytes", len);
             }
         }
     }
@@ -125,6 +122,7 @@ static void tcp_server_task(void* arg) {
     while (server_running) {
         struct sockaddr_in source_addr;
         uint32_t addr_len = sizeof(source_addr);
+        ESP_LOGI(TAG, "Socket listening...");
         client_sock = accept(server_sock, (struct sockaddr*)&source_addr, &addr_len);
         if (client_sock < 0) {
             if (!server_running) {
@@ -134,7 +132,12 @@ static void tcp_server_task(void* arg) {
             vTaskDelay(pdMS_TO_TICKS(1000));
             continue;
         }
+        ESP_LOGI(TAG, "Socket accepted connection");
         
+        // 设置套接字为非阻塞
+        int flags = fcntl(client_sock, F_GETFL, 0);
+        fcntl(client_sock, F_SETFL, flags | O_NONBLOCK);
+
         // 创建独立的TCP接收任务来处理这个连接
         xTaskCreatePinnedToCore(tcp_receive_task, "tcp_receive", 4096, (void*)(intptr_t)client_sock, 5, &tcp_receive_task_handle, 0);
         
@@ -197,7 +200,7 @@ esp_err_t audio_receiver_start(void) {
 
     // 创建播放任务
     if (playback_task_handle == NULL) {
-        xTaskCreatePinnedToCore(i2s_playback_task, "i2s_playback", 4096, NULL, 6, &playback_task_handle, 1);
+        xTaskCreatePinnedToCore(i2s_playback_task, "i2s_playback", 4096, NULL, 5, &playback_task_handle, 1);
     }
 
     // 创建TCP服务器任务
@@ -214,19 +217,27 @@ void audio_receiver_stop(void) {
     }
     server_running = false;
 
+    if (client_sock != -1) {
+        close(client_sock);
+        client_sock = -1;
+    }
     if (server_sock != -1) {
+        shutdown(server_sock, SHUT_RDWR);
         close(server_sock);
         server_sock = -1;
     }
     
+    // 等待任务结束
+    while(tcp_server_task_handle != NULL || tcp_receive_task_handle != NULL || playback_task_handle != NULL) {
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+
     if (audio_ringbuf) {
-        // 发送一个虚拟项目以唤醒正在等待的 xRingbufferReceive
-        xRingbufferSend(audio_ringbuf, & (uint8_t) {0}, 1, pdMS_TO_TICKS(10));
-        vTaskDelay(pdMS_TO_TICKS(20)); // 等待任务响应
         vRingbufferDelete(audio_ringbuf);
         audio_ringbuf = NULL;
     }
 
     i2s_tdm_stop();
     i2s_tdm_deinit();
+    ESP_LOGI(TAG, "Audio receiver stopped");
 }
