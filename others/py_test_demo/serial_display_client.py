@@ -129,8 +129,8 @@ class SerialDisplayClient:
                 
                 self.send_text(text)
                 counter += 1
-                time.sleep(0.2)  # 每2秒发送一次
-                
+                time.sleep(0.1)  # 每0.1秒发送一次
+
         except KeyboardInterrupt:
             print("\n演示模式已停止")
 

@@ -128,7 +128,7 @@ void ui_main_update_wifi_display(void) {
 
     // 根据连接状态更新WiFi符号
     if (wifi_connected) {
-        lv_label_set_text(g_wifi_label, MYSYMBOL_WIFI);
+        lv_label_set_text(g_wifi_label, MYSYMBOL_WIFI_HIGH);
     } else {
         lv_label_set_text(g_wifi_label, MYSYMBOL_NO_WIFI);
     }

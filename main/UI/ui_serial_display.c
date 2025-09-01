@@ -22,199 +22,150 @@
 static const char* TAG = "UI_SERIAL_DISPLAY";
 
 // 最大保存行数
-#define MAX_LINES 128
-#define MAX_LINE_LENGTH 256
-#define MAX_DISPLAY_LINES 128 // 界面显示的行数
+#define MAX_DISPLAY_LINES 128
+#define MAX_LINE_LENGTH 256  // 增加长度以避免截断
+#define DISPLAY_QUEUE_LEN 16
 
-// 行数据结构
+// 消息类型
 typedef struct {
-    char text[MAX_LINE_LENGTH];
-    char timestamp[32];
-    time_t timestamp_raw;
-} display_line_t;
+    char line[MAX_LINE_LENGTH - 20];  // 为时间戳预留空间
+    time_t timestamp;
+} display_msg_t;
 
 // 全局变量
 static lv_obj_t* g_serial_display_screen = NULL;
-static lv_obj_t* g_text_area = NULL;
+static lv_obj_t* g_label = NULL;
 static lv_obj_t* g_status_label = NULL;
 static lv_obj_t* g_back_btn = NULL;
 static lv_obj_t* g_clear_btn = NULL;
 
-// 数据缓冲区 - 使用PSRAM
-static display_line_t* g_lines = NULL;
-static int g_line_count = 0;
-static int g_current_index = 0;
-static bool g_auto_scroll = true;
-static bool g_buffer_initialized = false;
+// 循环缓冲区 - 使用PSRAM动态分配
+static char (*display_buffer)[MAX_LINE_LENGTH] = NULL;
+static int display_start = 0;
+static int display_count = 0;
 static volatile bool g_ui_needs_update = false;
 static lv_timer_t* g_ui_update_timer = NULL;
+static bool g_buffer_initialized = false;
 
 // 消息队列
 static QueueHandle_t g_display_queue = NULL;
 static TaskHandle_t g_display_task_handle = NULL;
 static bool g_display_running = false;
 
-// 消息类型
-typedef enum { MSG_NEW_DATA, MSG_CLEAR_DISPLAY, MSG_UPDATE_STATUS } display_msg_type_t;
-
-typedef struct {
-    display_msg_type_t type;
-    char data[MAX_LINE_LENGTH];
-    time_t timestamp;
-} display_msg_t;
-
 // 初始化PSRAM缓冲区
-static esp_err_t init_psram_buffer(void) {
+static esp_err_t init_display_buffer(void) {
     if (g_buffer_initialized) {
         return ESP_OK;
     }
 
     // 分配PSRAM内存
-    g_lines = (display_line_t*)heap_caps_malloc(MAX_LINES * sizeof(display_line_t), MALLOC_CAP_SPIRAM);
-    if (g_lines == NULL) {
-        ESP_LOGE(TAG, "Failed to allocate PSRAM buffer for %d lines", MAX_LINES);
+    display_buffer = (char (*)[MAX_LINE_LENGTH])heap_caps_malloc(
+        MAX_DISPLAY_LINES * MAX_LINE_LENGTH, MALLOC_CAP_SPIRAM);
+    
+    if (display_buffer == NULL) {
+        ESP_LOGE(TAG, "Failed to allocate PSRAM buffer for display lines: %d bytes", 
+                 MAX_DISPLAY_LINES * MAX_LINE_LENGTH);
         return ESP_ERR_NO_MEM;
     }
 
     // 初始化缓冲区
-    memset(g_lines, 0, MAX_LINES * sizeof(display_line_t));
-    g_line_count = 0;
-    g_current_index = 0;
-    g_auto_scroll = true;
+    memset(display_buffer, 0, MAX_DISPLAY_LINES * MAX_LINE_LENGTH);
+    display_start = 0;
+    display_count = 0;
     g_buffer_initialized = true;
 
-    ESP_LOGI(TAG, "PSRAM buffer initialized: %d lines, %d bytes", MAX_LINES, MAX_LINES * sizeof(display_line_t));
+    ESP_LOGI(TAG, "PSRAM display buffer initialized: %d lines, %d bytes", 
+             MAX_DISPLAY_LINES, MAX_DISPLAY_LINES * MAX_LINE_LENGTH);
     return ESP_OK;
 }
 
 // 清理PSRAM缓冲区
-static void cleanup_psram_buffer(void) {
-    if (g_lines != NULL) {
-        heap_caps_free(g_lines);
-        g_lines = NULL;
+static void cleanup_display_buffer(void) {
+    if (display_buffer != NULL) {
+        heap_caps_free(display_buffer);
+        display_buffer = NULL;
     }
     g_buffer_initialized = false;
-    g_line_count = 0;
-    g_current_index = 0;
+    display_start = 0;
+    display_count = 0;
 }
 
-// 获取时间戳字符串
-static void get_timestamp_str(char* timestamp_str, size_t max_len, time_t timestamp) {
-    struct tm* timeinfo = localtime(&timestamp);
-    if (timeinfo) {
-        snprintf(timestamp_str, max_len, "[%02d:%02d:%02d]", timeinfo->tm_hour, timeinfo->tm_min, timeinfo->tm_sec);
-    } else {
-        snprintf(timestamp_str, max_len, "[--:--:--]");
-    }
-}
-
-// 添加新行到缓冲区
-static void add_line(const char* text, time_t timestamp) {
-    if (!g_buffer_initialized || g_lines == NULL) {
-        ESP_LOGE(TAG, "Buffer not initialized");
+// 添加新行到循环缓冲区
+static void add_line(const char* line) {
+    if (!g_buffer_initialized || display_buffer == NULL) {
+        ESP_LOGE(TAG, "Display buffer not initialized");
         return;
     }
 
-    if (g_line_count < MAX_LINES) {
-        // 添加新行
-        strncpy(g_lines[g_line_count].text, text, MAX_LINE_LENGTH - 1);
-        g_lines[g_line_count].text[MAX_LINE_LENGTH - 1] = '\0';
-        g_lines[g_line_count].timestamp_raw = timestamp;
-        get_timestamp_str(g_lines[g_line_count].timestamp, sizeof(g_lines[g_line_count].timestamp), timestamp);
-        g_line_count++;
+    int idx = (display_start + display_count) % MAX_DISPLAY_LINES;
+    strncpy(display_buffer[idx], line, MAX_LINE_LENGTH - 1);
+    display_buffer[idx][MAX_LINE_LENGTH - 1] = '\0';
+
+    if (display_count < MAX_DISPLAY_LINES) {
+        display_count++;
     } else {
-        // 缓冲区满，移动所有行向前
-        memmove(&g_lines[0], &g_lines[1], sizeof(display_line_t) * (MAX_LINES - 1));
-        // 添加新行到最后
-        strncpy(g_lines[MAX_LINES - 1].text, text, MAX_LINE_LENGTH - 1);
-        g_lines[MAX_LINES - 1].text[MAX_LINE_LENGTH - 1] = '\0';
-        g_lines[MAX_LINES - 1].timestamp_raw = timestamp;
-        get_timestamp_str(g_lines[MAX_LINES - 1].timestamp, sizeof(g_lines[MAX_LINES - 1].timestamp), timestamp);
-    }
-}
-
-// 更新显示内容
-static void update_display(void) {
-    if (!g_text_area || !g_buffer_initialized || g_lines == NULL) {
-        return;
+        display_start = (display_start + 1) % MAX_DISPLAY_LINES;
     }
 
-    // 检查LVGL对象是否有效
-    if (!lv_obj_is_valid(g_text_area)) {
-        ESP_LOGW(TAG, "Text area object is not valid");
-        return;
-    }
-
-    // 构建显示文本
-    char display_text[4096] = ""; // 减小缓冲区大小
-    char* p = display_text;
-    size_t remaining_space = sizeof(display_text);
-
-    int start_line = 0;
-
-    if (g_auto_scroll) {
-        // 自动滚动模式：显示最后MAX_DISPLAY_LINES行
-        start_line = (g_line_count > MAX_DISPLAY_LINES) ? (g_line_count - MAX_DISPLAY_LINES) : 0;
-    } else {
-        // 手动滚动模式：从当前索引开始显示
-        start_line = g_current_index;
-        if (start_line >= g_line_count) {
-            start_line = (g_line_count > MAX_DISPLAY_LINES) ? (g_line_count - MAX_DISPLAY_LINES) : 0;
-        }
-    }
-
-    int display_count = 0;
-    for (int i = start_line; i < g_line_count && display_count < MAX_DISPLAY_LINES; i++) {
-        // 直接将行数据格式化到最终的显示缓冲区，避免多次拼接和内存操作
-        int written = snprintf(p, remaining_space, "%s %s\n", g_lines[i].timestamp, g_lines[i].text);
-
-        if (written > 0 && written < remaining_space) {
-            p += written;
-            remaining_space -= written;
-            display_count++;
-        } else {
-            // 如果缓冲区已满或发生错误，则停止添加
-            break;
-        }
-    }
-
-    // 更新文本区域
-    lv_textarea_set_text(g_text_area, display_text);
-
-    // 自动滚动到末尾
-    if (g_auto_scroll) {
-        lv_textarea_set_cursor_pos(g_text_area, LV_TEXTAREA_CURSOR_LAST);
-    }
-
-    // 更新状态信息
-    if (g_status_label && lv_obj_is_valid(g_status_label)) {
-        char status_text[128];
-        bool tcp_running = serial_display_is_running();
-        snprintf(status_text, sizeof(status_text), "TCP:8080 %s | Lines: %d/%d", tcp_running ? "ON" : "OFF",
-                 g_line_count, MAX_LINES);
-        lv_label_set_text(g_status_label, status_text);
-    }
+    g_ui_needs_update = true;
 }
 
 // 清空显示
 static void clear_display(void) {
-    if (!g_buffer_initialized || g_lines == NULL) {
+    if (!g_buffer_initialized || display_buffer == NULL) {
         return;
     }
-
-    g_line_count = 0;
-    g_current_index = 0;
-    memset(g_lines, 0, MAX_LINES * sizeof(display_line_t));
-
-    // 标记UI需要更新
+    
+    display_start = 0;
+    display_count = 0;
+    memset(display_buffer, 0, MAX_DISPLAY_LINES * MAX_LINE_LENGTH);
     g_ui_needs_update = true;
 }
 
 // UI更新定时器回调
 static void ui_update_timer_cb(lv_timer_t* timer) {
-    if (g_ui_needs_update) {
-        g_ui_needs_update = false;
-        update_display();
+    if (!g_ui_needs_update || g_label == NULL || !g_buffer_initialized || display_buffer == NULL) {
+        return;
+    }
+    g_ui_needs_update = false;
+
+    // 检查LVGL对象是否有效
+    if (!lv_obj_is_valid(g_label)) {
+        ESP_LOGW(TAG, "Label object is not valid");
+        return;
+    }
+
+    // 使用PSRAM分配临时缓冲区
+    static char* buf = NULL;
+    if (buf == NULL) {
+        buf = (char*)heap_caps_malloc(MAX_DISPLAY_LINES * MAX_LINE_LENGTH, MALLOC_CAP_SPIRAM);
+        if (buf == NULL) {
+            ESP_LOGE(TAG, "Failed to allocate PSRAM buffer for UI update");
+            return;
+        }
+    }
+
+    char* p = buf;
+    int rem = MAX_DISPLAY_LINES * MAX_LINE_LENGTH;
+
+    for (int i = 0; i < display_count; i++) {
+        int idx = (display_start + i) % MAX_DISPLAY_LINES;
+        int n = snprintf(p, rem, "%s\n", display_buffer[idx]);
+        if (n < 0 || n >= rem) break;
+        p += n;
+        rem -= n;
+    }
+
+    lv_label_set_text_static(g_label, buf);
+    lv_obj_scroll_to_y(g_label, LV_COORD_MAX, LV_ANIM_OFF);
+
+    // 更新状态信息
+    if (g_status_label && lv_obj_is_valid(g_status_label)) {
+        char status_text[128];
+        bool tcp_running = serial_display_is_running();
+        snprintf(status_text, sizeof(status_text), "TCP:8080 %s | Lines: %d/%d", 
+                tcp_running ? "ON" : "OFF", display_count, MAX_DISPLAY_LINES);
+        lv_label_set_text(g_status_label, status_text);
     }
 }
 
@@ -223,33 +174,26 @@ static void display_task(void* pvParameters) {
     display_msg_t msg;
     TickType_t last_status_update = 0;
     const TickType_t status_update_interval = pdMS_TO_TICKS(2000); // 每2秒更新一次状态
-    bool needs_update = false;
 
     ESP_LOGI(TAG, "Display task started");
 
     while (g_display_running && g_display_queue) {
         // 等待消息，超时时间为100ms
         if (xQueueReceive(g_display_queue, &msg, pdMS_TO_TICKS(100)) == pdTRUE) {
+            // 处理队列中所有剩余消息
             do {
-                switch (msg.type) {
-                case MSG_NEW_DATA:
-                    if (g_buffer_initialized && g_lines != NULL) {
-                        add_line(msg.data, msg.timestamp);
-                        g_ui_needs_update = true;
-                    }
-                    break;
-                case MSG_CLEAR_DISPLAY:
-                    if (g_buffer_initialized && g_lines != NULL) {
-                        clear_display();
-                    }
-                    break;
-                case MSG_UPDATE_STATUS:
-                    g_ui_needs_update = true;
-                    break;
-                default:
-                    break;
+                char line_with_ts[MAX_LINE_LENGTH];
+                struct tm* tinfo = localtime(&msg.timestamp);
+                if (tinfo) {
+                    snprintf(line_with_ts, sizeof(line_with_ts), "[%02d:%02d:%02d] %.*s",
+                             tinfo->tm_hour, tinfo->tm_min, tinfo->tm_sec, 
+                             (int)(sizeof(line_with_ts) - 15), msg.line);  // 限制字符串长度
+                } else {
+                    snprintf(line_with_ts, sizeof(line_with_ts), "[--:--:--] %.*s", 
+                             (int)(sizeof(line_with_ts) - 12), msg.line);  // 限制字符串长度
                 }
-            } while (xQueueReceive(g_display_queue, &msg, 0) == pdTRUE); // 处理队列中所有剩余消息
+                add_line(line_with_ts);
+            } while (xQueueReceive(g_display_queue, &msg, 0) == pdTRUE);
         }
 
         // 定期检查并更新状态
@@ -258,8 +202,6 @@ static void display_task(void* pvParameters) {
             g_ui_needs_update = true;
             last_status_update = current_time;
         }
-
-        // 异步更新UI，不再直接调用update_display
     }
 
     ESP_LOGI(TAG, "Display task stopped");
@@ -295,18 +237,17 @@ static void back_btn_event_cb(lv_event_t* e) {
         }
 
         // 清理PSRAM缓冲区
-        cleanup_psram_buffer();
+        cleanup_display_buffer();
+
+        g_serial_display_screen = NULL;
+        g_label = NULL;
+        g_status_label = NULL;
+        g_back_btn = NULL;
+        g_clear_btn = NULL;
 
         // 停止TCP服务器 - 移到最后执行
         serial_display_stop();
         ESP_LOGI(TAG, "Serial display TCP server stopped on back button");
-
-        // 清空全局变量
-        g_serial_display_screen = NULL;
-        g_text_area = NULL;
-        g_status_label = NULL;
-        g_back_btn = NULL;
-        g_clear_btn = NULL;
 
         lv_obj_clean(screen);
         ui_main_menu_create(screen);
@@ -314,36 +255,12 @@ static void back_btn_event_cb(lv_event_t* e) {
 }
 
 static void clear_btn_event_cb(lv_event_t* e) {
-    if (g_display_queue && g_display_running) {
-        display_msg_t msg = {.type = MSG_CLEAR_DISPLAY};
-        xQueueSend(g_display_queue, &msg, pdMS_TO_TICKS(100));
-    }
+    clear_display();
 }
 
 // 滚动事件回调
 static void scroll_event_cb(lv_event_t* e) {
-    lv_obj_t* obj = lv_event_get_target(e);
-    lv_event_code_t code = lv_event_get_code(e);
-
-    if (code == LV_EVENT_SCROLL) {
-        // 用户手动滚动，关闭自动滚动
-        g_auto_scroll = false;
-
-        // 根据滚动位置调整当前索引
-        lv_coord_t scroll_y = lv_obj_get_scroll_y(obj);
-        lv_coord_t height = lv_obj_get_height(obj);
-
-        if (height > 0) {
-            int scroll_percent = (scroll_y * 100) / height;
-            g_current_index = (scroll_percent * g_line_count) / 100;
-            if (g_current_index >= g_line_count) {
-                g_current_index = g_line_count - 1;
-            }
-            if (g_current_index < 0) {
-                g_current_index = 0;
-            }
-        }
-    }
+    // 简化滚动事件处理，保持自动滚动行为
 }
 
 // 公共API：添加新数据
@@ -368,11 +285,11 @@ void ui_serial_display_add_data(const char* data, size_t len) {
     while (line) {
         // 跳过空行
         if (strlen(line) > 0) {
-            display_msg_t msg = {.type = MSG_NEW_DATA, .timestamp = current_time};
-            strncpy(msg.data, line, MAX_LINE_LENGTH - 1);
-            msg.data[MAX_LINE_LENGTH - 1] = '\0';
+            display_msg_t msg = {.timestamp = current_time};
+            strncpy(msg.line, line, sizeof(msg.line) - 1);
+            msg.line[sizeof(msg.line) - 1] = '\0';
 
-            xQueueSend(g_display_queue, &msg, pdMS_TO_TICKS(100));
+            xQueueSend(g_display_queue, &msg, pdMS_TO_TICKS(50));
         }
         line = strtok(NULL, "\n\r");
     }
@@ -411,9 +328,9 @@ void ui_serial_display_create(lv_obj_t* parent) {
     ESP_LOGI(TAG, "Serial display TCP server started on port 8080");
 
     // 初始化PSRAM缓冲区
-    ret = init_psram_buffer();
+    ret = init_display_buffer();
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to initialize PSRAM buffer");
+        ESP_LOGE(TAG, "Failed to initialize PSRAM display buffer");
         serial_display_stop();
         return;
     }
@@ -445,36 +362,25 @@ void ui_serial_display_create(lv_obj_t* parent) {
     lv_obj_t* content_container;
     ui_create_page_content_area(page_parent_container, &content_container);
 
-    // 创建文本区域 - 直接占满整个内容区域
-    g_text_area = lv_textarea_create(content_container);
-    lv_obj_set_size(g_text_area, 240, 290);            // 占满整个内容区域
-    lv_obj_align(g_text_area, LV_ALIGN_CENTER, 0, 10); // 向下偏移，为状态标签留出空间
-    lv_obj_set_style_border_width(g_text_area, 0, 0);  // 移除边框
-    lv_obj_set_style_radius(g_text_area, 0, 0);        // 移除圆角
-    lv_obj_set_style_pad_all(g_text_area, 5, 0);       // 添加少量内边距
-    lv_obj_set_style_bg_color(g_text_area, theme_get_color(theme_get_current_theme()->colors.surface), 0);
-    // lv_obj_set_style_text_font(g_text_area, &lv_font_montserrat_14, 0); // 使用更小的字体
+    // 创建标签 - 直接占满整个内容区域
+    g_label = lv_label_create(content_container);
+    lv_obj_set_size(g_label, 240, 290);
+    lv_obj_align(g_label, LV_ALIGN_CENTER, 0, 10);
+    lv_label_set_long_mode(g_label, LV_LABEL_LONG_WRAP);
+    lv_label_set_text(g_label, "Waiting for data...");
+    lv_obj_set_style_text_color(g_label, theme_get_color(theme_get_current_theme()->colors.text_primary), 0);
+    lv_obj_set_style_bg_color(g_label, theme_get_color(theme_get_current_theme()->colors.surface), 0);
 
     // 检查并应用中文字体
     if (is_font_loaded()) {
-        lv_obj_set_style_text_font(g_text_area, get_loaded_font(), 0);
+        lv_obj_set_style_text_font(g_label, get_loaded_font(), 0);
     } else {
         // Fallback to default font if custom font is not loaded
-        lv_obj_set_style_text_font(g_text_area, &lv_font_montserrat_14, 0);
+        lv_obj_set_style_text_font(g_label, &lv_font_montserrat_14, 0);
     }
 
-    lv_obj_set_style_text_color(g_text_area, theme_get_color(theme_get_current_theme()->colors.text_primary), 0);
-    lv_obj_set_style_bg_color(g_text_area, theme_get_color(theme_get_current_theme()->colors.surface), 0);
-    lv_textarea_set_placeholder_text(g_text_area, "Waiting for data...");
-    lv_textarea_set_text(g_text_area, "");
-
-    // 设置文本区域为只读
-    lv_textarea_set_password_mode(g_text_area, false);
-    lv_textarea_set_one_line(g_text_area, false);
-    lv_textarea_set_cursor_pos(g_text_area, 0);
-
     // 添加滚动事件
-    lv_obj_add_event_cb(g_text_area, scroll_event_cb, LV_EVENT_SCROLL, NULL);
+    lv_obj_add_event_cb(g_label, scroll_event_cb, LV_EVENT_SCROLL, NULL);
 
     // 5. 创建清空按钮 - 直接放在内容区域右下角
     g_clear_btn = lv_btn_create(content_container);
@@ -487,27 +393,18 @@ void ui_serial_display_create(lv_obj_t* parent) {
     lv_label_set_text(clear_label, "C");
     lv_obj_center(clear_label);
 
-    // 创建 LVGL 操作互斥锁
-    // g_lvgl_mutex = xSemaphoreCreateMutex(); // Removed FreeRTOS mutex
-    // if (g_lvgl_mutex == NULL) {
-    //     ESP_LOGE(TAG, "Failed to create LVGL mutex");
-    //     ui_serial_display_destroy(); // Clean up allocated resources
-    //     return;
-    // }
-
     // 初始化数据
     clear_display();
 
     // 创建消息队列
-    g_display_queue = xQueueCreate(10, sizeof(display_msg_t));
+    g_display_queue = xQueueCreate(DISPLAY_QUEUE_LEN, sizeof(display_msg_t));
     if (!g_display_queue) {
         ESP_LOGE(TAG, "Failed to create display queue");
-        cleanup_psram_buffer();
         return;
     }
 
     // 创建UI更新定时器
-    g_ui_update_timer = lv_timer_create(ui_update_timer_cb, 50, NULL); // 50ms刷新率
+    g_ui_update_timer = lv_timer_create(ui_update_timer_cb, 100, NULL); // 100ms刷新率
     if (g_ui_update_timer == NULL) {
         ESP_LOGE(TAG, "Failed to create LVGL UI update timer");
         ui_serial_display_destroy(); // Clean up
@@ -516,19 +413,14 @@ void ui_serial_display_create(lv_obj_t* parent) {
 
     // 启动显示任务
     g_display_running = true;
-    if (xTaskCreatePinnedToCore(display_task, "ui_display_task", 8192, NULL, 3, &g_display_task_handle, 1) != pdPASS) {
+    if (xTaskCreate(display_task, "ui_display_task", 4096, NULL, 3, &g_display_task_handle) != pdPASS) {
         ESP_LOGE(TAG, "Failed to create display task");
         g_display_running = false;
         vQueueDelete(g_display_queue);
         g_display_queue = NULL;
-        cleanup_psram_buffer();
         serial_display_stop();
         return;
     }
-
-    // 发送初始状态更新消息
-    display_msg_t status_msg = {.type = MSG_UPDATE_STATUS};
-    xQueueSend(g_display_queue, &status_msg, pdMS_TO_TICKS(100));
 
     ESP_LOGI(TAG, "Serial display UI created successfully");
 }
@@ -564,11 +456,11 @@ void ui_serial_display_destroy(void) {
     }
 
     // 清理PSRAM缓冲区
-    cleanup_psram_buffer();
+    cleanup_display_buffer();
 
     // 清空全局变量
     g_serial_display_screen = NULL;
-    g_text_area = NULL;
+    g_label = NULL;
     g_status_label = NULL;
     g_back_btn = NULL;
     g_clear_btn = NULL;
