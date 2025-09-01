@@ -13,10 +13,6 @@ if(EN_RECEIVER_MODE)
     
     target_compile_definitions(${COMPONENT_LIB} PRIVATE EN_RECEIVER_MODE=1)
 
-    # Provide tusb_config.h to the espressif__tinyusb component
-    # idf_component_get_property(tusb_lib espressif__tinyusb COMPONENT_LIB)
-    # target_include_directories(${tusb_lib} PRIVATE "${CMAKE_SOURCE_DIR}/components/Receiver/inc")
-
 else()
     set(MAIN_SRCS
         #主要启动文件 

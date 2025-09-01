@@ -1,11 +1,8 @@
 set(PERIPHERALS_SRCS "")
 
 if(EN_RECEIVER_MODE)
-
-    idf_component_register(
-        SRCS ${PERIPHERALS_SRCS}
-        INCLUDE_DIRS "inc"
-        REQUIRES log driver
+    set(PERIPHERALS_SRCS 
+        "src/ws2812.c"
     )
     
 else()

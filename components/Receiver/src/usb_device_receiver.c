@@ -117,6 +117,8 @@ static void usb_rx_task(void* arg) {
         } else {
             vTaskDelay(pdMS_TO_TICKS(5));
         }
+        // 无论是否有数据，适当让出 CPU，防止长期占用导致 WDT 触发
+        vTaskDelay(1);
     }
 }
 
@@ -176,7 +178,8 @@ esp_err_t usb_receiver_init(void) {
 void usb_receiver_start(void) {
     if (s_usb_task)
         return;
-    xTaskCreatePinnedToCore(usb_rx_task, "usb_rx", 4096, NULL, 9, &s_usb_task, tskNO_AFFINITY);
+    // 降低任务优先级并固定到 CPU1，减少对 CPU0 空闲任务的影响
+    xTaskCreatePinnedToCore(usb_rx_task, "usb_rx", 4096, NULL, 4, &s_usb_task, 1);
 }
 
 void usb_receiver_stop(void) {

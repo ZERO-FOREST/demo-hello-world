@@ -14,7 +14,7 @@
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "spi_slave_receiver.h"
+// #include "spi_slave_receiver.h"
 #include "usb_device_receiver.h"
 #include <inttypes.h>
 #include <stdio.h>
@@ -36,9 +36,9 @@ void app_main(void) {
     }
 
     // 初始化 SPI 从机并启动接收任务
-    if (spi_receiver_init() == ESP_OK) {
-        spi_receiver_start();
-    }
+    // if (spi_receiver_init() == ESP_OK) {
+    //     spi_receiver_start();
+    // }
 
     while (1) {
         ESP_LOGI(TAG, "Receiver running, free heap: %lu bytes", (unsigned long)esp_get_free_heap_size());
