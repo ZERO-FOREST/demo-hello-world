@@ -48,6 +48,15 @@ ESP-IDFv5.5[下载目录](https://github.com/espressif/idf-installer/releases/do
 |Bpp|2|如果选择2无法显示某些字，改成1即可|
 |Range|0x20-0x7F,0x4E00-0x9FA5|-|
 
+|图标|提示|
+| :--- | :---|
+|Size|18|
+|Bpp|2|
+|Range|0xe66b,0xe6ab|
+
+
+
+
 其他选择自己喜欢的中文字体即可，上述的范围包括常规的汉字和数字。通过网页转换如果字体文件较大的话会卡顿，耐心等待。
 
 ## 编译与烧录

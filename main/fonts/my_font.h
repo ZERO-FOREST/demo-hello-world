@@ -1,3 +1,12 @@
+/*
+ * @Author: tidycraze 2595256284@qq.com
+ * @Date: 2025-09-01 13:24:54
+ * @LastEditors: tidycraze 2595256284@qq.com
+ * @LastEditTime: 2025-09-01 14:43:28
+ * @FilePath: \demo-hello-world\main\fonts\my_font.h
+ * @Description: 
+ * 
+ */
 #ifndef MY_FONT_H
 #define MY_FONT_H
 
@@ -7,12 +16,19 @@
 extern const lv_font_t Mysymbol;
 extern lv_font_t* font_cn;
 
-#define MYSYMBOL_SERIAL_DISPLAY "\uE60A"
-#define MYSYMBOL_WIFI "\uE60E"
-#define MYSYMBOL_NO_WIFI "\uE632"
-#define MYSYMBOL_CALIBRATION "\uE61E"
-#define MYSYMBOL_GAME "\uE8A7"
-#define MYSYMBOL_IMAGE_TRAN "\uE603"
+#define MYSYMBOL_BACK "\uE66B"
+#define MYSYMBOL_MUSIC "\uE6AB"
+#define MYSYMBOL_PLUGS "\uE6BC"
+#define MYSYMBOL_PLUGS_CONNECTED "\uE6BD"
+#define MYSYMBOL_SPEAKER "\uE6FD"
+#define MYSYMBOL_SPEAKERX "\uE6FE"
+#define MYSYMBOL_WIFI_NONE "\uE75B"
+#define MYSYMBOL_WIFI_LOW "\uE759"
+#define MYSYMBOL_WIFI_MEDIUM "\uE75C"
+#define MYSYMBOL_WIFI_HIGH "\uE75A"
+#define MYSYMBOL_NO_WIFI "\uE7A0"
+#define MYSYMBOL_PHONE "\uE7C3"
+#define MYSYMBOL_BROADCAST "\uE7D5"
 
 /**
  * @brief 从 'font' 分区初始化字体
