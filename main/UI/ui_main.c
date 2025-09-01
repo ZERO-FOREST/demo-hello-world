@@ -8,6 +8,7 @@
 #include "../app/game/game.h"
 #include "my_font.h"
 #include "background_manager.h"
+#include "status_bar_manager.h"
 #include "color.h"
 #include "esp_log.h"
 #include "font/lv_font.h"
@@ -33,7 +34,6 @@ static lv_obj_t* g_menu_container = NULL;
 static int g_current_selected_index = 0;
 
 // 函数声明
-void ui_main_update_wifi_display(void);
 
 // 时间更新定时器回调函数
 static void time_update_timer_cb(lv_timer_t* timer) {
@@ -61,9 +61,6 @@ static void time_update_timer_cb(lv_timer_t* timer) {
             ESP_LOGD("UI_MAIN", "Time updated: %s", time_str);
         }
     }
-
-    // 同时更新WiFi状态显示
-    ui_main_update_wifi_display();
 }
 
 // 电池电量更新函数（由任务调用）
@@ -108,32 +105,6 @@ void ui_main_update_battery_display(void) {
     }
 }
 
-// WiFi状态更新函数
-void ui_main_update_wifi_display(void) {
-    if (!g_wifi_label) {
-        ESP_LOGW("UI_MAIN", "WiFi label is NULL!");
-        return;
-    }
-
-    // 检查标签是否仍然有效
-    if (!lv_obj_is_valid(g_wifi_label)) {
-        ESP_LOGW("UI_MAIN", "WiFi label is no longer valid!");
-        g_wifi_label = NULL; // 重置为NULL
-        return;
-    }
-
-    // 获取WiFi连接状态
-    wifi_manager_info_t wifi_info = wifi_manager_get_info();
-    bool wifi_connected = (wifi_info.state == WIFI_STATE_CONNECTED);
-
-    // 根据连接状态更新WiFi符号
-    if (wifi_connected) {
-        lv_label_set_text(g_wifi_label, MYSYMBOL_WIFI_HIGH);
-    } else {
-        lv_label_set_text(g_wifi_label, MYSYMBOL_NO_WIFI);
-    }
-}
-
 // 菜单项回调函数类型
 typedef void (*menu_item_cb_t)(void);
 
@@ -156,6 +127,9 @@ static void settings_cb(void) {
             ESP_LOGI("UI_MAIN", "Time update timer stopped");
         }
 
+        // 反初始化状态栏管理器
+        status_bar_manager_deinit();
+
         // 重置全局UI指针
         g_time_label = NULL;
         g_battery_label = NULL;
@@ -177,6 +151,9 @@ static void game_cb(void) {
 
     lv_obj_t* screen = lv_scr_act();
     if (screen) {
+        // 反初始化状态栏管理器
+        status_bar_manager_deinit();
+
         // 重置全局UI指针
         g_time_label = NULL;
         g_battery_label = NULL;
@@ -198,6 +175,9 @@ static void image_transfer_cb(void) {
 
     lv_obj_t* screen = lv_scr_act();
     if (screen) {
+        // 反初始化状态栏管理器
+        status_bar_manager_deinit();
+
         // 重置全局UI指针
         g_time_label = NULL;
         g_battery_label = NULL;
@@ -227,6 +207,9 @@ static void serial_display_cb(void) {
             ESP_LOGI("UI_MAIN", "Time update timer stopped");
         }
 
+        // 反初始化状态栏管理器
+        status_bar_manager_deinit();
+
         // 重置全局UI指针
         g_time_label = NULL;
         g_battery_label = NULL;
@@ -248,6 +231,9 @@ static void calibration_cb(void) {
 
     lv_obj_t* screen = lv_scr_act();
     if (screen) {
+        // 反初始化状态栏管理器
+        status_bar_manager_deinit();
+
         // 重置全局UI指针
         g_time_label = NULL;
         g_battery_label = NULL;
@@ -277,6 +263,9 @@ static void test_cb(void) {
             ESP_LOGI("UI_MAIN", "Time update timer stopped");
         }
 
+        // 反初始化状态栏管理器
+        status_bar_manager_deinit();
+
         // 重置全局UI指针
         g_time_label = NULL;
         g_battery_label = NULL;
@@ -305,6 +294,9 @@ static void telemetry_cb(void) {
             timer = NULL;
             ESP_LOGI("UI_MAIN", "Time update timer stopped");
         }
+
+        // 反初始化状态栏管理器
+        status_bar_manager_deinit();
 
         // 重置全局UI指针
         g_time_label = NULL;
@@ -514,8 +506,15 @@ void ui_main_menu_create(lv_obj_t* parent) {
         }
     }
 
-    // 初始化WiFi状态显示
-    ui_main_update_wifi_display();
+    // 设置状态栏管理器的容器和UI组件
+    esp_err_t ret = status_bar_manager_set_container(status_bar, NULL);
+    if (ret == ESP_OK) {
+        status_bar_manager_set_fixed_labels(g_time_label, g_battery_label);
+        status_bar_manager_start(); // 启动状态栏更新定时器
+        ESP_LOGI("UI_MAIN", "Status bar manager container set and UI components configured");
+    } else {
+        ESP_LOGE("UI_MAIN", "Failed to set status bar manager container: %s", esp_err_to_name(ret));
+    }
 
     // 恢复状态（如果有保存的状态）
     if (saved_state) {

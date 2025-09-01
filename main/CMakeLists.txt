@@ -55,6 +55,7 @@ else()
         "app/power_management.c"
         "app/background_manager.c"
         "app/settings_manager.c"
+        "app/status_bar_manager.c"
         "app/lsm6ds_control.c"
         "app/audio_receiver.c"
         "app/ap_manager.c"

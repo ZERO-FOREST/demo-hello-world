@@ -88,20 +88,6 @@ void wifi_manager_sync_time(void);
 bool wifi_manager_get_time_str(char* time_str, size_t max_len);
 
 /**
- * @brief 添加WiFi到列表
- * @param ssid WiFi名称
- * @param password WiFi密码
- * @return void
- */
-static void add_wifi_to_list(const char* ssid, const char* password);
-
-/**
- * @brief 从NVS加载WiFi列表
- *
- */
-static void load_wifi_list_from_nvs();
-
-/**
  * @brief 获取已保存的WiFi列表大小
  * @return int32_t WiFi数量
  */

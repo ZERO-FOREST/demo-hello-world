@@ -25,6 +25,7 @@
 #include "lsm6ds3.h"
 #include "lv_port_indev.h" // 包含此头文件以获取宏定义
 #include "settings_manager.h"
+#include "status_bar_manager.h"
 #include "ui_state_manager.h"
 
 static const char* TAG = "COMPONENTS_INIT";
@@ -157,6 +158,14 @@ esp_err_t components_init(void) {
     // 初始化设置管理器
     settings_manager_init();
     ESP_LOGI(TAG, "Settings manager initialized.");
+
+    // 初始化状态栏管理器
+    ret = status_bar_manager_init();
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "Status bar manager initialized");
+    } else {
+        ESP_LOGW(TAG, "Status bar manager init failed: %s", esp_err_to_name(ret));
+    }
 
     // 其他组件初始化可以在这里添加
 

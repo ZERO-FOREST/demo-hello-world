@@ -13,6 +13,7 @@
 #include <stdlib.h>
 #include "esp_heap_caps.h"
 #include <errno.h>
+#include "../UI/inc/status_bar_manager.h"
 
 void audio_receiver_stop(void);
 
@@ -25,6 +26,7 @@ static const char* TAG = "AUDIO_RECEIVER";
 static int server_sock = -1;
 static int client_sock = -1;
 static bool server_running = false;
+static bool audio_receiving = false;  // 音频接收状态标志
 static TaskHandle_t playback_task_handle = NULL;
 static TaskHandle_t tcp_server_task_handle = NULL;
 static TaskHandle_t tcp_receive_task_handle = NULL;
@@ -78,6 +80,12 @@ static void tcp_receive_task(void* arg) {
         } else {
             total_received += len;
             
+            // 设置音频接收状态
+            audio_receiving = true;
+            
+            // 更新状态栏显示音频接收状态
+            status_bar_manager_set_audio_status(true);
+            
             BaseType_t done = xRingbufferSend(audio_ringbuf, rx_buffer, len, pdMS_TO_TICKS(100));
             if (!done) {
                 ESP_LOGW(TAG, "Ringbuffer full, dropping %d bytes", len);
@@ -86,6 +94,10 @@ static void tcp_receive_task(void* arg) {
     }
 
 cleanup:
+    // 连接断开时，更新状态
+    audio_receiving = false;
+    status_bar_manager_set_audio_status(false);
+    
     if (rx_buffer) {
         free(rx_buffer);
     }
@@ -216,6 +228,10 @@ void audio_receiver_stop(void) {
         return;
     }
     server_running = false;
+    audio_receiving = false;
+
+    // 更新状态栏为空闲状态
+    status_bar_manager_set_audio_status(false);
 
     if (client_sock != -1) {
         close(client_sock);
@@ -240,4 +256,8 @@ void audio_receiver_stop(void) {
     i2s_tdm_stop();
     i2s_tdm_deinit();
     ESP_LOGI(TAG, "Audio receiver stopped");
+}
+
+bool audio_receiver_is_receiving(void) {
+    return audio_receiving && server_running && (client_sock >= 0);
 }
