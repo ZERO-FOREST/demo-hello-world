@@ -20,6 +20,7 @@ dependencies.lock
 .devcontainer/
 .clangd
 .ccls-cache/
+.github/
 
 # clangd
 .cache/

@@ -48,11 +48,11 @@ esp_err_t i2s_tdm_init(void) {
         .data_bit_width = I2S_TDM_BITS_PER_SAMPLE,
         .slot_bit_width = I2S_TDM_SLOT_BIT_WIDTH,
         .slot_mode = I2S_SLOT_MODE_MONO,  // 单声道模式
-        .slot_mask = (1 << I2S_TDM_SLOT_SPEAKER),  // 只启用扬声器时隙
+        .slot_mask = (1 << I2S_TDM_SLOT_SPEAKER) | (1 << I2S_TDM_SLOT_MIC),  // 启用扬声器时隙
         .ws_width = 32,
         .ws_pol = false,                           // WS低电平=左声道
         .bit_shift = true,                         // WS边沿后延迟1bit
-        .left_align = false,                       // 右对齐
+        .left_align = true,                       // 右对齐
         .big_endian = false,                       // 小端序
         .bit_order_lsb = false,                    // MSB优先
     };
@@ -73,7 +73,7 @@ esp_err_t i2s_tdm_init(void) {
     // 初始化发送通道 (TDM模式)
     ret = i2s_channel_init_tdm_mode(g_i2s_tdm_handle.tx_handle, &tdm_cfg);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to init TX TDM mode: %s", esp_err_to_name(ret));
+        ESP_LOGE(TAG, "Failed to init TX TDM mode: %d", ret);
         i2s_del_channel(g_i2s_tdm_handle.tx_handle);
         i2s_del_channel(g_i2s_tdm_handle.rx_handle);
         return ret;
@@ -81,11 +81,12 @@ esp_err_t i2s_tdm_init(void) {
 
     // 配置接收时隙 (单麦克风)
     slot_cfg.slot_mask = (1 << I2S_TDM_SLOT_MIC);  // 只启用麦克风时隙
+    tdm_cfg.slot_cfg = slot_cfg; // 确保 tdm_cfg 使用更新后的 slot_cfg
 
     // 初始化接收通道 (TDM模式)
     ret = i2s_channel_init_tdm_mode(g_i2s_tdm_handle.rx_handle, &tdm_cfg);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to init RX TDM mode: %s", esp_err_to_name(ret));
+        ESP_LOGE(TAG, "Failed to init RX TDM mode: %d", ret);
         i2s_del_channel(g_i2s_tdm_handle.tx_handle);
         i2s_del_channel(g_i2s_tdm_handle.rx_handle);
         return ret;
@@ -114,12 +115,15 @@ esp_err_t i2s_tdm_deinit(void) {
         return ESP_OK;
     }
 
-    // 停止通道
-    if (g_i2s_tdm_handle.tx_handle) {
-        i2s_channel_disable(g_i2s_tdm_handle.tx_handle);
-    }
-    if (g_i2s_tdm_handle.rx_handle) {
-        i2s_channel_disable(g_i2s_tdm_handle.rx_handle);
+    // 停止通道（仅在已启动时禁用）
+    if (g_i2s_tdm_handle.is_started) {
+        if (g_i2s_tdm_handle.tx_handle) {
+            i2s_channel_disable(g_i2s_tdm_handle.tx_handle);
+        }
+        if (g_i2s_tdm_handle.rx_handle) {
+            i2s_channel_disable(g_i2s_tdm_handle.rx_handle);
+        }
+        g_i2s_tdm_handle.is_started = false;
     }
 
     // 删除通道
@@ -160,9 +164,12 @@ esp_err_t i2s_tdm_start(void) {
     ret = i2s_channel_enable(g_i2s_tdm_handle.rx_handle);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to enable RX channel: %s", esp_err_to_name(ret));
+        // 如果启用 RX 失败，禁用已启用的 TX
         i2s_channel_disable(g_i2s_tdm_handle.tx_handle);
         return ret;
     }
+
+    g_i2s_tdm_handle.is_started = true;
 
     ESP_LOGI(TAG, "I2S TDM started (TX + RX)");
     return ESP_OK;
@@ -182,6 +189,8 @@ esp_err_t i2s_tdm_stop(void) {
     if (g_i2s_tdm_handle.rx_handle) {
         i2s_channel_disable(g_i2s_tdm_handle.rx_handle);
     }
+
+    g_i2s_tdm_handle.is_started = false;
 
     ESP_LOGI(TAG, "I2S TDM stopped");
     return ESP_OK;
@@ -232,9 +241,13 @@ esp_err_t i2s_tdm_set_sample_rate(uint32_t sample_rate) {
         return ESP_ERR_INVALID_STATE;
     }
 
-    // 停止通道
-    i2s_channel_disable(g_i2s_tdm_handle.tx_handle);
-    i2s_channel_disable(g_i2s_tdm_handle.rx_handle);
+    // 仅在之前已启动时才停止通道并在完成后恢复
+    bool was_started = g_i2s_tdm_handle.is_started;
+    if (was_started) {
+        if (g_i2s_tdm_handle.tx_handle) i2s_channel_disable(g_i2s_tdm_handle.tx_handle);
+        if (g_i2s_tdm_handle.rx_handle) i2s_channel_disable(g_i2s_tdm_handle.rx_handle);
+        g_i2s_tdm_handle.is_started = false;
+    }
 
     // 重新配置 TDM 时钟
     i2s_tdm_clk_config_t clk_cfg = I2S_TDM_CLK_DEFAULT_CONFIG(sample_rate);
@@ -243,19 +256,31 @@ esp_err_t i2s_tdm_set_sample_rate(uint32_t sample_rate) {
 
     esp_err_t ret = i2s_channel_reconfig_tdm_clock(g_i2s_tdm_handle.tx_handle, &clk_cfg);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to reconfigure TX TDM clock: %s", esp_err_to_name(ret));
+        ESP_LOGE(TAG, "Failed to reconfigure TX TDM clock: %d", ret);
         return ret;
     }
 
     ret = i2s_channel_reconfig_tdm_clock(g_i2s_tdm_handle.rx_handle, &clk_cfg);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to reconfigure RX TDM clock: %s", esp_err_to_name(ret));
+        ESP_LOGE(TAG, "Failed to reconfigure RX TDM clock: %d", ret);
         return ret;
     }
 
-    // 重新启动通道
-    i2s_channel_enable(g_i2s_tdm_handle.tx_handle);
-    i2s_channel_enable(g_i2s_tdm_handle.rx_handle);
+    // 如果函数进入时设备正在运行，则重新启用通道
+    if (was_started) {
+        esp_err_t eret = i2s_channel_enable(g_i2s_tdm_handle.tx_handle);
+        if (eret != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to re-enable TX after clk change: %d", eret);
+            return eret;
+        }
+        eret = i2s_channel_enable(g_i2s_tdm_handle.rx_handle);
+        if (eret != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to re-enable RX after clk change: %d", eret);
+            i2s_channel_disable(g_i2s_tdm_handle.tx_handle);
+            return eret;
+        }
+        g_i2s_tdm_handle.is_started = true;
+    }
 
     g_i2s_tdm_handle.sample_rate = sample_rate;
     ESP_LOGI(TAG, "Sample rate changed to %lu Hz", sample_rate);

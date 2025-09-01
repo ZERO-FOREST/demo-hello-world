@@ -32,7 +32,7 @@ extern "C" {
 #define I2S_TDM_SAMPLE_RATE    44100     // 采样率 44.1kHz
 #define I2S_TDM_BITS_PER_SAMPLE 16       // 16位采样
 #define I2S_TDM_CHANNELS       2         // TDM通道数: 扬声器+麦克风
-#define I2S_TDM_SLOT_BIT_WIDTH 16       // 物理时隙宽度（为兼容 MAX98357 建议 32bit/声道）
+#define I2S_TDM_SLOT_BIT_WIDTH 32       // 物理时隙宽度
 #define I2S_TDM_SLOT_NUM       2         // TDM时隙数量
 
 // TDM时隙分配
@@ -46,6 +46,7 @@ typedef struct {
     i2s_chan_handle_t tx_handle;    // 发送通道句柄 (到MAX98357)
     i2s_chan_handle_t rx_handle;    // 接收通道句柄 (来自麦克风)
     bool is_initialized;             // 初始化状态
+    bool is_started;                 // 通道是否已启动
     uint32_t sample_rate;           // 当前采样率
     uint16_t buffer_size;           // 缓冲区大小
 } i2s_tdm_handle_t;

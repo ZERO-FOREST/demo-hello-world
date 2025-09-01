@@ -11,18 +11,20 @@
 #include "freertos/task.h"
 #include "lvgl.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
+#include "my_font.h"
 #include "serial_display.h"
 #include "ui.h"
 
 static const char* TAG = "UI_SERIAL_DISPLAY";
 
 // 最大保存行数
-#define MAX_LINES 1024
+#define MAX_LINES 128
 #define MAX_LINE_LENGTH 256
-#define MAX_DISPLAY_LINES 20 // 界面显示的行数
+#define MAX_DISPLAY_LINES 128 // 界面显示的行数
 
 // 行数据结构
 typedef struct {
@@ -44,6 +46,8 @@ static int g_line_count = 0;
 static int g_current_index = 0;
 static bool g_auto_scroll = true;
 static bool g_buffer_initialized = false;
+static volatile bool g_ui_needs_update = false;
+static lv_timer_t* g_ui_update_timer = NULL;
 
 // 消息队列
 static QueueHandle_t g_display_queue = NULL;
@@ -143,6 +147,9 @@ static void update_display(void) {
 
     // 构建显示文本
     char display_text[4096] = ""; // 减小缓冲区大小
+    char* p = display_text;
+    size_t remaining_space = sizeof(display_text);
+
     int start_line = 0;
 
     if (g_auto_scroll) {
@@ -158,38 +165,26 @@ static void update_display(void) {
 
     int display_count = 0;
     for (int i = start_line; i < g_line_count && display_count < MAX_DISPLAY_LINES; i++) {
-        char line_text[256]; // 减小行缓冲区大小
-        line_text[0] = '\0'; // 初始化缓冲区
+        // 直接将行数据格式化到最终的显示缓冲区，避免多次拼接和内存操作
+        int written = snprintf(p, remaining_space, "%s %s\n", g_lines[i].timestamp, g_lines[i].text);
 
-        // 安全地构建行文本
-        int written = 0;
-
-        // 添加时间戳
-        written += snprintf(line_text + written, sizeof(line_text) - written, "%s,", g_lines[i].timestamp);
-        if (written >= sizeof(line_text) - 1) {
-            continue; // 跳过这一行
-        }
-
-        // 添加文本内容（限制长度）
-        int remaining_space = sizeof(line_text) - written - 2; // -2 for "\n" and null terminator
-        if (remaining_space > 0) {
-            written +=
-                snprintf(line_text + written, sizeof(line_text) - written, "%.*s\n", remaining_space, g_lines[i].text);
-        } else {
-            // 只添加换行符
-            written += snprintf(line_text + written, sizeof(line_text) - written, "\n");
-        }
-
-        if (strlen(display_text) + strlen(line_text) < sizeof(display_text) - 1) {
-            strcat(display_text, line_text);
+        if (written > 0 && written < remaining_space) {
+            p += written;
+            remaining_space -= written;
             display_count++;
         } else {
-            break; // 避免缓冲区溢出
+            // 如果缓冲区已满或发生错误，则停止添加
+            break;
         }
     }
 
     // 更新文本区域
     lv_textarea_set_text(g_text_area, display_text);
+
+    // 自动滚动到末尾
+    if (g_auto_scroll) {
+        lv_textarea_set_cursor_pos(g_text_area, LV_TEXTAREA_CURSOR_LAST);
+    }
 
     // 更新状态信息
     if (g_status_label && lv_obj_is_valid(g_status_label)) {
@@ -211,8 +206,14 @@ static void clear_display(void) {
     g_current_index = 0;
     memset(g_lines, 0, MAX_LINES * sizeof(display_line_t));
 
-    // 只有在UI元素有效时才更新显示
-    if (g_text_area && lv_obj_is_valid(g_text_area)) {
+    // 标记UI需要更新
+    g_ui_needs_update = true;
+}
+
+// UI更新定时器回调
+static void ui_update_timer_cb(lv_timer_t* timer) {
+    if (g_ui_needs_update) {
+        g_ui_needs_update = false;
         update_display();
     }
 }
@@ -222,41 +223,43 @@ static void display_task(void* pvParameters) {
     display_msg_t msg;
     TickType_t last_status_update = 0;
     const TickType_t status_update_interval = pdMS_TO_TICKS(2000); // 每2秒更新一次状态
+    bool needs_update = false;
 
     ESP_LOGI(TAG, "Display task started");
 
     while (g_display_running && g_display_queue) {
-        TickType_t current_time = xTaskGetTickCount();
+        // 等待消息，超时时间为100ms
+        if (xQueueReceive(g_display_queue, &msg, pdMS_TO_TICKS(100)) == pdTRUE) {
+            do {
+                switch (msg.type) {
+                case MSG_NEW_DATA:
+                    if (g_buffer_initialized && g_lines != NULL) {
+                        add_line(msg.data, msg.timestamp);
+                        g_ui_needs_update = true;
+                    }
+                    break;
+                case MSG_CLEAR_DISPLAY:
+                    if (g_buffer_initialized && g_lines != NULL) {
+                        clear_display();
+                    }
+                    break;
+                case MSG_UPDATE_STATUS:
+                    g_ui_needs_update = true;
+                    break;
+                default:
+                    break;
+                }
+            } while (xQueueReceive(g_display_queue, &msg, 0) == pdTRUE); // 处理队列中所有剩余消息
+        }
 
-        // 定期更新状态显示
+        // 定期检查并更新状态
+        TickType_t current_time = xTaskGetTickCount();
         if (current_time - last_status_update >= status_update_interval) {
-            update_display();
+            g_ui_needs_update = true;
             last_status_update = current_time;
         }
 
-        if (xQueueReceive(g_display_queue, &msg, pdMS_TO_TICKS(100)) == pdTRUE) {
-            switch (msg.type) {
-            case MSG_NEW_DATA:
-                if (g_buffer_initialized && g_lines != NULL) {
-                    add_line(msg.data, msg.timestamp);
-                    update_display();
-                }
-                break;
-
-            case MSG_CLEAR_DISPLAY:
-                if (g_buffer_initialized && g_lines != NULL) {
-                    clear_display();
-                }
-                break;
-
-            case MSG_UPDATE_STATUS:
-                update_display();
-                break;
-
-            default:
-                break;
-            }
-        }
+        // 异步更新UI，不再直接调用update_display
     }
 
     ESP_LOGI(TAG, "Display task stopped");
@@ -283,6 +286,12 @@ static void back_btn_event_cb(lv_event_t* e) {
         if (g_display_queue) {
             vQueueDelete(g_display_queue);
             g_display_queue = NULL;
+        }
+
+        // 删除UI更新定时器
+        if (g_ui_update_timer) {
+            lv_timer_del(g_ui_update_timer);
+            g_ui_update_timer = NULL;
         }
 
         // 清理PSRAM缓冲区
@@ -429,6 +438,7 @@ void ui_serial_display_create(lv_obj_t* parent) {
     if (back_btn) {
         lv_obj_remove_event_cb(back_btn, NULL); // 移除默认回调
         lv_obj_add_event_cb(back_btn, back_btn_event_cb, LV_EVENT_CLICKED, NULL);
+        g_back_btn = back_btn; // Save reference
     }
 
     // 3. 创建页面内容容器
@@ -443,7 +453,16 @@ void ui_serial_display_create(lv_obj_t* parent) {
     lv_obj_set_style_radius(g_text_area, 0, 0);        // 移除圆角
     lv_obj_set_style_pad_all(g_text_area, 5, 0);       // 添加少量内边距
     lv_obj_set_style_bg_color(g_text_area, theme_get_color(theme_get_current_theme()->colors.surface), 0);
-    lv_obj_set_style_text_font(g_text_area, &lv_font_montserrat_14, 0); // 使用更小的字体
+    // lv_obj_set_style_text_font(g_text_area, &lv_font_montserrat_14, 0); // 使用更小的字体
+
+    // 检查并应用中文字体
+    if (is_font_loaded()) {
+        lv_obj_set_style_text_font(g_text_area, get_loaded_font(), 0);
+    } else {
+        // Fallback to default font if custom font is not loaded
+        lv_obj_set_style_text_font(g_text_area, &lv_font_montserrat_14, 0);
+    }
+
     lv_obj_set_style_text_color(g_text_area, theme_get_color(theme_get_current_theme()->colors.text_primary), 0);
     lv_obj_set_style_bg_color(g_text_area, theme_get_color(theme_get_current_theme()->colors.surface), 0);
     lv_textarea_set_placeholder_text(g_text_area, "Waiting for data...");
@@ -468,6 +487,14 @@ void ui_serial_display_create(lv_obj_t* parent) {
     lv_label_set_text(clear_label, "C");
     lv_obj_center(clear_label);
 
+    // 创建 LVGL 操作互斥锁
+    // g_lvgl_mutex = xSemaphoreCreateMutex(); // Removed FreeRTOS mutex
+    // if (g_lvgl_mutex == NULL) {
+    //     ESP_LOGE(TAG, "Failed to create LVGL mutex");
+    //     ui_serial_display_destroy(); // Clean up allocated resources
+    //     return;
+    // }
+
     // 初始化数据
     clear_display();
 
@@ -476,6 +503,14 @@ void ui_serial_display_create(lv_obj_t* parent) {
     if (!g_display_queue) {
         ESP_LOGE(TAG, "Failed to create display queue");
         cleanup_psram_buffer();
+        return;
+    }
+
+    // 创建UI更新定时器
+    g_ui_update_timer = lv_timer_create(ui_update_timer_cb, 50, NULL); // 50ms刷新率
+    if (g_ui_update_timer == NULL) {
+        ESP_LOGE(TAG, "Failed to create LVGL UI update timer");
+        ui_serial_display_destroy(); // Clean up
         return;
     }
 
@@ -520,6 +555,12 @@ void ui_serial_display_destroy(void) {
     if (g_display_queue) {
         vQueueDelete(g_display_queue);
         g_display_queue = NULL;
+    }
+
+    // 删除UI更新定时器
+    if (g_ui_update_timer) {
+        lv_timer_del(g_ui_update_timer);
+        g_ui_update_timer = NULL;
     }
 
     // 清理PSRAM缓冲区

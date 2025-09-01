@@ -21,6 +21,7 @@
 #include "ui_state_manager.h" // 添加状态管理器头文件
 #include "wifi_image_transfer.h"
 #include "wifi_manager.h"
+// audio receiver is declared in ui.h (ui_audio_receiver_create)
 
 // 全局变量保存时间标签、电池标签和WiFi标签
 static lv_obj_t* g_time_label = NULL;
@@ -330,7 +331,7 @@ static menu_item_t menu_items[] = {
     {"Serial Display", serial_display_cb},
     {"Calibration", calibration_cb},
     {"Test", test_cb},
-    {"Remote Control", telemetry_cb}, // 添加遥控器菜单项
+    {"Remote Control", telemetry_cb} // 添加遥控器菜单项
     // 添加更多项...
 };
 
@@ -341,7 +342,7 @@ static menu_item_t menu_items_zh[] = {
     {"校准", calibration_cb},
     {"游戏", game_cb},
     {"设置", settings_cb},
-    {"测试", test_cb},
+    {"测试", test_cb}
 };
 
 static void btn_event_cb(lv_event_t* e) {

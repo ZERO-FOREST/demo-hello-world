@@ -1,5 +1,17 @@
 #include "tcp_client.h"
 
+#include "freertos/FreeRTOS.h"
+#include "freertos/event_groups.h"
+#include "esp_wifi.h"
+#include "esp_event.h"
+#include "esp_netif.h"
+#include "esp_log.h"
+#include "lwip/sockets.h"
+#include "lwip/dns.h"
+#include "lwip/netdb.h"
+#include <string.h>
+#include <errno.h>
+
 static const char *TAG = "tcp_client";
 
 // ----------------- WiFi事件处理 -----------------

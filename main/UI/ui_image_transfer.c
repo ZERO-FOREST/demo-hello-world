@@ -4,18 +4,22 @@
  * @author TidyCraze
  * @date 2025-08-15
  */
-#include "ui_image_transfer.h"
 #include "esp_log.h"
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/timers.h"
+#include "freertos/event_groups.h"
+#include <stdio.h>
+#include <string.h>
+
+#include "ui_image_transfer.h"
 #include "theme_manager.h"
 #include "ui.h"
 #include "ui_common.h"
 #include "settings_manager.h"
-#include <stdio.h>
-#include <string.h>
+#include "wifi_image_transfer.h" // For TCP mode
+#include "p2p_udp_image_transfer.h" // For UDP mode
 
 
 static const char* TAG = "UI_IMG_TRANSFER";
@@ -40,7 +44,10 @@ static lv_img_dsc_t s_img_dsc = {.header.always_zero = 0,
 // State variables
 static bool s_is_running = false;
 static image_transfer_mode_t s_current_mode;
-static lv_timer_t* s_fps_timer = NULL;
+static lv_timer_t* s_status_update_timer = NULL;
+static lv_timer_t* s_image_render_timer = NULL;
+static EventGroupHandle_t s_ui_event_group = NULL;
+#define FRAME_READY_BIT (1 << 0)
 
 // Forward declarations
 static void on_back_clicked(lv_event_t* e);
@@ -53,8 +60,8 @@ static void stop_transfer_service(void);
 static void update_mode_toggle_button(void); // Function to update the toggle button's text
 
 static void udp_status_callback(p2p_connection_state_t state, const char* info);
-static const char* get_udp_state_string(p2p_connection_state_t state);
-static void fps_timer_callback(lv_timer_t* timer);
+static void status_update_timer_callback(lv_timer_t* timer);
+static void image_render_timer_callback(lv_timer_t* timer);
 static void update_ip_address(void);
 static void update_ssid_label(void);
 
@@ -150,8 +157,10 @@ void ui_image_transfer_create(lv_obj_t* parent) {
     update_mode_toggle_button(); // Set initial text for the button
     start_transfer_service(s_current_mode);
 
-    // Create a timer to update FPS
-    s_fps_timer = lv_timer_create(fps_timer_callback, 500, NULL);
+    // Create a timer to update status labels like FPS, IP, etc.
+    s_status_update_timer = lv_timer_create(status_update_timer_callback, 500, NULL);
+    // Create a high-frequency timer for rendering images
+    s_image_render_timer = lv_timer_create(image_render_timer_callback, 33, NULL); // ~30 FPS
 }
 
 void ui_image_transfer_destroy(void) {
@@ -163,9 +172,13 @@ void ui_image_transfer_destroy(void) {
 
     stop_transfer_service();
 
-    if (s_fps_timer) {
-        lv_timer_del(s_fps_timer);
-        s_fps_timer = NULL;
+    if (s_status_update_timer) {
+        lv_timer_del(s_status_update_timer);
+        s_status_update_timer = NULL;
+    }
+    if (s_image_render_timer) {
+        lv_timer_del(s_image_render_timer);
+        s_image_render_timer = NULL;
     }
 
     // lv_obj_del will recursively delete children, so we only need to delete the parent
@@ -181,6 +194,33 @@ void ui_image_transfer_destroy(void) {
     s_mode_toggle_btn_label = NULL;
 
     s_is_running = false;
+}
+
+static void update_mode_toggle_button(void) {
+    if (s_mode_toggle_btn_label) {
+        image_transfer_mode_t current_mode = settings_get_transfer_mode();
+        if (current_mode == IMAGE_TRANSFER_MODE_TCP) {
+            lv_label_set_text(s_mode_toggle_btn_label, "TCP");
+        } else {
+            lv_label_set_text(s_mode_toggle_btn_label, "UDP");
+        }
+    }
+}
+
+static void udp_status_callback(p2p_connection_state_t state, const char* info)
+{
+    const char* state_str = "Unknown";
+    switch (state) {
+        case P2P_STATE_IDLE: state_str = "Idle"; break;
+        case P2P_STATE_AP_STARTING: state_str = "Starting AP..."; break;
+        case P2P_STATE_AP_RUNNING: state_str = "AP Running"; break;
+        case P2P_STATE_STA_CONNECTING: state_str = "Connecting..."; break;
+        case P2P_STATE_STA_CONNECTED: state_str = "Connected"; break;
+        case P2P_STATE_ERROR: state_str = "Error"; break;
+    }
+     if (s_status_label) {
+        lv_label_set_text_fmt(s_status_label, "Status: %s", state_str);
+    }
 }
 
 static void start_transfer_service(image_transfer_mode_t mode) {
@@ -202,7 +242,7 @@ static void start_transfer_service(image_transfer_mode_t mode) {
 
     if (mode == IMAGE_TRANSFER_MODE_UDP) {
         ESP_LOGI(TAG, "Initializing UDP service...");
-        ret = p2p_udp_image_transfer_init(P2P_MODE_AP, ui_image_transfer_set_image_data, udp_status_callback);
+        ret = p2p_udp_image_transfer_init(P2P_MODE_STA, NULL, udp_status_callback);
         if (ret == ESP_OK) {
             ESP_LOGI(TAG, "Starting UDP service...");
             ret = p2p_udp_image_transfer_start();
@@ -211,6 +251,7 @@ static void start_transfer_service(image_transfer_mode_t mode) {
         ESP_LOGI(TAG, "Starting TCP service...");
         if (wifi_image_transfer_start(6556)) {
             ret = ESP_OK;
+            s_ui_event_group = wifi_image_transfer_get_ui_event_group(); // Get event group
             lv_label_set_text(s_status_label, "Status: TCP Server Running");
         }
     }
@@ -236,6 +277,7 @@ static void stop_transfer_service(void) {
         p2p_udp_image_transfer_deinit();
     } else { // IMAGE_TRANSFER_MODE_TCP
         wifi_image_transfer_stop();
+        s_ui_event_group = NULL;
     }
 
     s_is_running = false;
@@ -243,6 +285,11 @@ static void stop_transfer_service(void) {
     lv_label_set_text(s_ip_label, "IP: Not Assigned");
     lv_label_set_text(s_ssid_label, "SSID: -");
     lv_label_set_text(s_fps_label, "FPS: 0.0");
+
+    // Clear the image
+    if (s_img_obj) {
+        lv_img_set_src(s_img_obj, NULL);
+    }
 }
 
 static void on_back_clicked(lv_event_t* e) {
@@ -276,54 +323,51 @@ static void on_settings_changed_event(lv_event_t* e) {
     update_mode_toggle_button();
 }
 
-void ui_image_transfer_set_image_data(uint8_t* img_buf, int width, int height, jpeg_pixel_format_t format) {
-    // This function is now the single point of entry for image data from both TCP and UDP services
-    if (!s_img_obj || !lv_obj_is_valid(s_img_obj)) {
-        ESP_LOGW(TAG, "Image object is NULL or invalid, cannot update image");
-        return;
-    }
-    if (format != JPEG_PIXEL_FORMAT_RGB565_BE) {
-        ESP_LOGW(TAG, "Unexpected image format");
-        return;
-    }
-
-    s_img_dsc.header.w = width;
-    s_img_dsc.header.h = height;
-    s_img_dsc.data_size = width * height * 2;
-    s_img_dsc.header.cf = LV_IMG_CF_TRUE_COLOR;
-    s_img_dsc.data = img_buf;
-
-    lv_img_set_src(s_img_obj, &s_img_dsc);
-    // Let's not resize the img object itself, but let the image panel center it.
-    // lv_obj_set_size(s_img_obj, width, height); 
-}
-
-static void update_mode_toggle_button(void) {
-    if (s_mode_toggle_btn_label) {
-        image_transfer_mode_t current_mode = settings_get_transfer_mode();
-        lv_label_set_text(s_mode_toggle_btn_label, (current_mode == IMAGE_TRANSFER_MODE_TCP) ? "TCP" : "UDP");
-    }
-}
-
-static void udp_status_callback(p2p_connection_state_t state, const char* info) {
-    if (!s_is_running || s_current_mode != IMAGE_TRANSFER_MODE_UDP) return;
-
-    if (s_status_label) {
-        lv_label_set_text(s_status_label, get_udp_state_string(state));
-    }
-    if (state == P2P_STATE_AP_RUNNING || state == P2P_STATE_STA_CONNECTED) {
-        update_ip_address();
-    }
-}
-
-static void fps_timer_callback(lv_timer_t* timer)
+static void status_update_timer_callback(lv_timer_t* timer)
 {
     if (s_fps_label && s_is_running) {
         float fps = 0.0f;
         if (s_current_mode == IMAGE_TRANSFER_MODE_UDP) {
             fps = p2p_udp_get_fps();
+        } else {
+            fps = wifi_image_transfer_get_fps();
         }
-        lv_label_set_text_fmt(s_fps_label, "FPS: %.1f", fps);
+        lv_label_set_text_fmt(s_fps_label, "FPS: %d.%01d", (int)fps, (int)(fps * 10) % 10);
+    }
+    // Also update IP and SSID periodically in case it changes (e.g. reconnect)
+    update_ip_address();
+    update_ssid_label();
+}
+
+static void image_render_timer_callback(lv_timer_t* timer)
+{
+    if (!s_is_running || s_current_mode != IMAGE_TRANSFER_MODE_TCP || !s_ui_event_group) {
+        return;
+    }
+
+    // Check if a new frame is ready without blocking
+    EventBits_t bits = xEventGroupWaitBits(s_ui_event_group, FRAME_READY_BIT, pdTRUE, pdFALSE, 0);
+
+    if ((bits & FRAME_READY_BIT) != 0) {
+        uint8_t* frame_buffer = NULL;
+        int width = 0;
+        int height = 0;
+        
+        // Lock the buffer to get the pointer
+        if (wifi_image_transfer_get_latest_frame(&frame_buffer, &width, &height) == ESP_OK) {
+            if (frame_buffer && width > 0 && height > 0) {
+                 if (s_img_obj && lv_obj_is_valid(s_img_obj)) {
+                    s_img_dsc.header.w = width;
+                    s_img_dsc.header.h = height;
+                    s_img_dsc.data_size = width * height * 2; // Assuming RGB565 (2 bytes per pixel)
+                    s_img_dsc.data = frame_buffer;
+                    
+                    lv_img_set_src(s_img_obj, &s_img_dsc);
+                 }
+            }
+            // IMPORTANT: Unlock the buffer so the decode task can write to it again
+            wifi_image_transfer_frame_unlock();
+        }
     }
 }
 
@@ -362,17 +406,5 @@ static void update_ssid_label(void) {
         } else {
             lv_label_set_text(s_ssid_label, "SSID: Not Connected");
         }
-    }
-}
-
-static const char* get_udp_state_string(p2p_connection_state_t state) {
-    switch (state) {
-    case P2P_STATE_IDLE: return "Status: Idle";
-    case P2P_STATE_AP_STARTING: return "Status: Starting AP...";
-    case P2P_STATE_AP_RUNNING: return "Status: AP Running";
-    case P2P_STATE_STA_CONNECTING: return "Status: Connecting...";
-    case P2P_STATE_STA_CONNECTED: return "Status: Connected";
-    case P2P_STATE_ERROR: return "Status: Error";
-    default: return "Status: Unknown";
     }
 }

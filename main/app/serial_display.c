@@ -297,14 +297,13 @@ static void tcp_server_task(void* pvParameters) {
                         memcpy(s_display_buffer, rx_buffer, len);
                         s_buffer_size = len;
                         ESP_LOGI(TAG, "Data buffered for serial transmission");
-
-                        // 同时发送到UI显示
-                        ui_serial_display_add_data((const char*)rx_buffer, len);
                     } else {
                         ESP_LOGE(TAG, "Buffer not initialized or data too large: %d bytes", len);
                     }
                     xSemaphoreGive(s_buffer_mutex);
                 }
+                // 将UI更新调用移出互斥锁，以避免阻塞其他任务
+                ui_serial_display_add_data((const char*)rx_buffer, len);
             }
         } while (s_server_running);
 

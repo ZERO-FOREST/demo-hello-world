@@ -44,7 +44,6 @@ static void disp_flush(lv_disp_drv_t* disp_drv, const lv_area_t* area, lv_color_
  **********************/
 static bool disp_flush_enabled = true;
 
-/* 将显示缓冲放入PSRAM，减小内置RAM占用，并加大块尺寸 */
 #include "esp_heap_caps.h"
 static lv_color_t* disp_buf_1 = NULL;
 static lv_color_t* disp_buf_2 = NULL;
@@ -67,8 +66,7 @@ void lv_port_disp_init(void) {
      * Create a buffer for drawing
      *----------------------------*/
     static lv_disp_draw_buf_t draw_buf_dsc;
-    /* 分配更大的双缓冲到PSRAM，例如每缓冲 120 行 */
-    size_t lines = MY_DISP_VER_RES; // 可根据内存情况调大/调小
+    size_t lines = MY_DISP_VER_RES;
     size_t buf_pixels = MY_DISP_HOR_RES * lines;
     disp_buf_1 = (lv_color_t*)heap_caps_malloc(buf_pixels * sizeof(lv_color_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     disp_buf_2 = (lv_color_t*)heap_caps_malloc(buf_pixels * sizeof(lv_color_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);

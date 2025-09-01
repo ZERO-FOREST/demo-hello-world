@@ -18,10 +18,18 @@
 #include "usb_device_receiver.h"
 #include <inttypes.h>
 #include <stdio.h>
+#include "nvs_flash.h"
 
 static const char* TAG = "MAIN";
 
 void app_main(void) {
+
+    esp_err_t ret = nvs_flash_init();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize NVS: %s", esp_err_to_name(ret));
+        return;
+    }
+
     // 初始化 USB CDC 从机并启动接收任务
     if (usb_receiver_init() == ESP_OK) {
         usb_receiver_start();
