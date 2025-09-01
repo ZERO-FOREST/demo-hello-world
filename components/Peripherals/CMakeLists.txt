@@ -11,6 +11,7 @@ if(EN_RECEIVER_MODE)
 else()
     set(PERIPHERALS_SRCS
         "src/st7789.c"
+        "src/st7789_esp_lcd.c"
         "src/xpt2046.c" # 根据需要选择一个触摸驱动
         "src/ws2812.c"
         "src/lsm6ds3.c"
