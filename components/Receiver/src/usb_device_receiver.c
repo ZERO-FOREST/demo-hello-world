@@ -194,3 +194,16 @@ void usb_receiver_stop(void) {
     // tinyusb_driver_uninstall 函数在当前版本中不可用 (IDF-1474)
     // 由于没有卸载函数，直接返回
 }
+
+// 供命令终端使用的输出函数：通过USB CDC回传到主机
+void cmd_terminal_write(const char* s) {
+    if (!s || !s_usb_connected) return;
+    size_t len = strlen(s);
+    // 将整段字符串写入CDC队列并flush
+    tinyusb_cdcacm_write_queue(TINYUSB_CDC_ACM_0, (const uint8_t*)s, len);
+    tinyusb_cdcacm_write_flush(TINYUSB_CDC_ACM_0, 0);
+    // 追加换行，便于在终端阅读
+    const char crlf[] = "\r\n";
+    tinyusb_cdcacm_write_queue(TINYUSB_CDC_ACM_0, (const uint8_t*)crlf, sizeof(crlf) - 1);
+    tinyusb_cdcacm_write_flush(TINYUSB_CDC_ACM_0, 0);
+}

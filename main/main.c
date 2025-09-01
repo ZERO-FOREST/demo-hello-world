@@ -35,10 +35,15 @@ void app_main(void) {
         usb_receiver_start();
     }
 
-    // 初始化 SPI 从机并启动接收任务
-    // if (spi_receiver_init() == ESP_OK) {
-    //     spi_receiver_start();
-    // }
+    extern void usb_receiver_init(void);
+    extern void usb_receiver_start(void);
+    extern void spi_receiver_init(void);
+    extern void spi_receiver_start(void);
+    usb_receiver_init();
+    usb_receiver_start();
+    spi_receiver_init();
+    spi_receiver_start();
+
 
     while (1) {
         ESP_LOGI(TAG, "Receiver running, free heap: %lu bytes", (unsigned long)esp_get_free_heap_size());

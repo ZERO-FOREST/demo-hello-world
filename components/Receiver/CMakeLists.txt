@@ -5,6 +5,7 @@ set(RECEIVER_SRCS
     # "src/spi_slave_receiver.c"
     "src/usb_device_receiver.c"
     "src/jpeg_stream_encoder.c"
+    "src/cmd_terminal.c"
 )
 
 idf_component_register(
