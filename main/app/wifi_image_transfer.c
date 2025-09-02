@@ -241,6 +241,9 @@ static void tcp_recv_task(void* pvParameters) {
 
                 // Move to the position after the processed frame
                 search_offset = eoi_pos + sizeof(eoi_marker);
+
+                // Yield to prevent watchdog timeout when processing multiple frames
+                vTaskDelay(1);
             }
 
             // Move remaining data to the start of the buffer
