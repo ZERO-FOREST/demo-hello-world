@@ -2,7 +2,9 @@
  * @file lv_port_disp.c
  * ESP32-S3 Display Port for LVGL
  */
+#if(EN_RECEIVER_MODE)
 
+#else
 /*********************
  *      INCLUDES
  *********************/
@@ -160,3 +162,5 @@ static void disp_flush(lv_disp_drv_t* disp_drv, const lv_area_t* area, lv_color_
      *Inform the graphics library that you are ready with the flushing*/
     lv_disp_flush_ready(disp_drv);
 }
+
+#endif

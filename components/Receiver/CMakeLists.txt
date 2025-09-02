@@ -2,7 +2,7 @@ set(RECEIVER_SRCS
     # "src/tcp_client.c"
     "src/tcp_protocol.c"
     # "src/tcp_client_esp32.c"
-    # "src/spi_slave_receiver.c"
+    "src/spi_slave_receiver.c"
     "src/usb_device_receiver.c"
     "src/jpeg_stream_encoder.c"
     "src/cmd_terminal.c"
