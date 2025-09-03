@@ -37,7 +37,7 @@ void app_main(void) {
 
     // 初始化 SPI 从机并启动接收任务
     if (spi_receiver_init() == ESP_OK) {
-        spi_receiver_start();
+        // spi_receiver_start();
     }
 
     while (1) {

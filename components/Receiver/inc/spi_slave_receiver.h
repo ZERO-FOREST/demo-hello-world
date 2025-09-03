@@ -15,7 +15,7 @@ extern "C" {
 #define SPI_SLAVE_PIN_CS       34
 
 // 事务与缓冲配置
-#define SPI_RX_QUEUE_SIZE      4
+#define SPI_RX_QUEUE_SIZE      2
 #define SPI_RX_TRANSACTION_SZ  512   // 单次事务最大接收字节数
 #define SPI_RX_BUFFER_SZ       1024  // 累积解析缓冲
 
