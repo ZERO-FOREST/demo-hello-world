@@ -11,6 +11,9 @@
 #include "tcp_protocol.h"
 #include <string.h>
 
+// 对外的行命令处理接口（由 cmd_terminal.c 提供）
+void cmd_terminal_handle_line(const char* line);
+
 static const char* TAG = "usb_rx";
 
 static TaskHandle_t s_usb_task = NULL;
@@ -31,49 +34,91 @@ static void usb_line_state_changed_callback(int itf, cdcacm_event_t *event) {
 }
 
 static void parse_and_dispatch(const uint8_t* data, size_t len) {
-    if (!data || len < MIN_FRAME_SIZE)
+    if (!data || len == 0)
         return;
 
-    size_t pos = 0;
-    while (pos + MIN_FRAME_SIZE <= len) {
-        if (pos + 3 > len)
-            break;
-        if (!(data[pos] == ((FRAME_HEADER >> 8) & 0xFF) && data[pos + 1] == (FRAME_HEADER & 0xFF))) {
-            pos++;
-            continue;
-        }
-        uint8_t length_field = data[pos + 2];
-        size_t frame_size = 2 + 1 + length_field + 2;
-        if (pos + frame_size > len)
-            break;
-
-        protocol_frame_t frame;
-        parse_result_t pr = parse_protocol_frame(&data[pos], (uint16_t)frame_size, &frame);
-        if (pr == PARSE_SUCCESS) {
-            switch (frame.frame_type) {
-            case FRAME_TYPE_REMOTE_CONTROL:
-                handle_remote_control_data(&frame.payload.remote_control);
+    // 判断模式：若缓冲区以协议帧头(0xAA55)起始，则按二进制帧解析；否则按ASCII行命令解析
+    if (len >= 2 && data[0] == ((FRAME_HEADER >> 8) & 0xFF) && data[1] == (FRAME_HEADER & 0xFF)) {
+        size_t pos = 0;
+        while (pos + MIN_FRAME_SIZE <= len) {
+            if (pos + 3 > len)
                 break;
-            case FRAME_TYPE_HEARTBEAT:
-                handle_heartbeat_data(&frame.payload.heartbeat);
-                break;
-            case FRAME_TYPE_EXTENDED_CMD:
-                handle_extended_command(&frame.payload.extended_cmd);
-                break;
-            default:
-                break;
+            if (!(data[pos] == ((FRAME_HEADER >> 8) & 0xFF) && data[pos + 1] == (FRAME_HEADER & 0xFF))) {
+                // 在二进制模式下遇到非帧头字节，跳过1字节
+                pos++;
+                continue;
             }
+            uint8_t length_field = data[pos + 2];
+            size_t frame_size = 2 + 1 + length_field + 2;
+            if (pos + frame_size > len)
+                break; // 帧不完整，等待更多数据
+
+            protocol_frame_t frame;
+            parse_result_t pr = parse_protocol_frame(&data[pos], (uint16_t)frame_size, &frame);
+            if (pr == PARSE_SUCCESS) {
+                switch (frame.frame_type) {
+                case FRAME_TYPE_REMOTE_CONTROL:
+                    handle_remote_control_data(&frame.payload.remote_control);
+                    break;
+                case FRAME_TYPE_HEARTBEAT:
+                    handle_heartbeat_data(&frame.payload.heartbeat);
+                    break;
+                case FRAME_TYPE_EXTENDED_CMD:
+                    handle_extended_command(&frame.payload.extended_cmd);
+                    break;
+                default:
+                    break;
+                }
+            }
+            pos += frame_size;
         }
-        pos += frame_size;
-    }
-    if (pos < len) {
-        size_t remain = len - pos;
-        if (remain > USB_RX_BUFFER_SIZE)
-            remain = USB_RX_BUFFER_SIZE;
-        memmove(s_parse_buf, &data[pos], remain);
-        s_parse_len = remain;
+        if (pos < len) {
+            size_t remain = len - pos;
+            if (remain > USB_RX_BUFFER_SIZE)
+                remain = USB_RX_BUFFER_SIZE;
+            memmove(s_parse_buf, &data[pos], remain);
+            s_parse_len = remain;
+        } else {
+            s_parse_len = 0;
+        }
     } else {
-        s_parse_len = 0;
+        // 文本模式：按行(\r/\n)拆分并分发到命令终端
+        size_t start = 0;
+        while (start < len) {
+            size_t i = start;
+            size_t line_end = (size_t)-1;
+            for (; i < len; ++i) {
+                if (data[i] == '\n' || data[i] == '\r') { line_end = i; break; }
+            }
+            if (line_end == (size_t)-1) {
+                break; // 无完整行，等待更多数据
+            }
+            size_t line_len = line_end - start;
+            char linebuf[192];
+            if (line_len >= sizeof(linebuf)) line_len = sizeof(linebuf) - 1;
+            memcpy(linebuf, &data[start], line_len);
+            linebuf[line_len] = '\0';
+            cmd_terminal_handle_line(linebuf);
+            // 跳过换行符（支持CRLF/ LFCR）
+            size_t skip = 1;
+            if (line_end + 1 < len) {
+                if ((data[line_end] == '\r' && data[line_end + 1] == '\n') ||
+                    (data[line_end] == '\n' && data[line_end + 1] == '\r')) {
+                    skip = 2;
+                }
+            }
+            start = line_end + skip;
+        }
+        // 将未完成的最后一行保留到解析缓冲
+        if (start < len) {
+            size_t remain = len - start;
+            if (remain > USB_RX_BUFFER_SIZE)
+                remain = USB_RX_BUFFER_SIZE;
+            memmove(s_parse_buf, &data[start], remain);
+            s_parse_len = remain;
+        } else {
+            s_parse_len = 0;
+        }
     }
 }
 

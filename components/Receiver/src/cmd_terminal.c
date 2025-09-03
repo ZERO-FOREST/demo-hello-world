@@ -140,3 +140,13 @@ void handle_extended_command(const extended_cmd_payload_t* cmd_data) {
         ESP_LOGI(TAG, "收到扩展命令: id=0x%02X, len=%u", cmd_data->cmd_id, (unsigned)cmd_data->param_len);
     }
 }
+
+// 新增：对外暴露的行命令处理接口（用于USB CDC等直接文本输入）
+void cmd_terminal_handle_line(const char* line) {
+    if (!line) return;
+    // 复制到可修改缓冲区，便于去除换行与分词
+    char buf[192];
+    strncpy(buf, line, sizeof(buf) - 1);
+    buf[sizeof(buf) - 1] = '\0';
+    handle_text_command(buf);
+}
