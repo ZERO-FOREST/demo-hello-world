@@ -16,8 +16,8 @@ extern "C" {
 
 // 事务与缓冲配置
 #define SPI_RX_QUEUE_SIZE      4
-#define SPI_RX_TRANSACTION_SZ  1024  // 单次事务最大接收字节数
-#define SPI_RX_BUFFER_SZ       4096  // 累积解析缓冲
+#define SPI_RX_TRANSACTION_SZ  512   // 单次事务最大接收字节数
+#define SPI_RX_BUFFER_SZ       1024  // 累积解析缓冲
 
 esp_err_t spi_receiver_init(void);
 void spi_receiver_start(void);

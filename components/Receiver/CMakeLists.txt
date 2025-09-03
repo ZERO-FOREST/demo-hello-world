@@ -6,6 +6,8 @@ set(RECEIVER_SRCS
     "src/usb_device_receiver.c"
     "src/jpeg_stream_encoder.c"
     "src/cmd_terminal.c"
+    "src/usb_interface.c"
+    "src/settings_manager.c"
 )
 
 idf_component_register(

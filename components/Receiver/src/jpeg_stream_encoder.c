@@ -32,7 +32,11 @@ esp_err_t jpeg_stream_create(const jpeg_stream_config_t* user_cfg, jpeg_stream_h
     enc_cfg.src_type = h->cfg.src_type;
     enc_cfg.subsampling = h->cfg.subsampling;
     enc_cfg.quality = h->cfg.quality;
-    enc_cfg.task_enable = false;
+    enc_cfg.task_enable = true;
+#ifdef ESP_PLATFORM
+    enc_cfg.hfm_task_priority = 13;
+    enc_cfg.hfm_task_core = 1;
+#endif
 
     if (jpeg_enc_open(&enc_cfg, &h->enc) != JPEG_ERR_OK) {
         ESP_LOGE(TAG, "jpeg_enc_open failed");
