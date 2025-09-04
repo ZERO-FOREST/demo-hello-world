@@ -13,5 +13,5 @@ set(RECEIVER_SRCS
 idf_component_register(
     SRCS ${RECEIVER_SRCS}
     INCLUDE_DIRS "inc"
-    REQUIRES log driver esp_tinyusb esp_new_jpeg nvs_flash
+    REQUIRES log driver esp_tinyusb esp_new_jpeg nvs_flash spi_flash
 )
