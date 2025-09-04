@@ -2,7 +2,7 @@
  * @Author: tidycraze 2595256284@qq.com
  * @Date: 2025-07-28 11:29:59
  * @LastEditors: tidycraze 2595256284@qq.com
- * @LastEditTime: 2025-09-04 14:35:50
+ * @LastEditTime: 2025-09-04 16:28:26
  * @FilePath: \demo-hello-world\main\main.c
  * @Description: 主函数入口
  *
@@ -62,7 +62,7 @@ void app_main(void) {
         .task_priority = 3,
         .task_stack_size = 4096,
         .connection_timeout_ms = 10000,
-        .target_ssid_prefix = "tidy",
+        .target_ssid_prefix = "tidy_",
         .default_password = "22989822",
     };
     if (wifi_pairing_manager_init(&wifi_config, NULL) == ESP_OK) {

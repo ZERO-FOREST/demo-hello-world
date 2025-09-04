@@ -2,6 +2,7 @@
 #include <string.h>
 
 #include "esp_log.h"
+#include "esp_heap_caps.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
@@ -17,14 +18,14 @@ static TaskHandle_t s_led_task_handle = NULL;
 static QueueHandle_t s_request_queue = NULL;
 static TimerHandle_t s_duration_timer = NULL;
 
-// 当前状态
-static led_status_request_t s_current_request = {0};
+// 当前状态 - 使用动态分配的内存
+static led_status_request_t* s_current_request = NULL;
 static led_style_t s_current_style = LED_STYLE_OFF;
 static uint32_t s_effect_counter = 0;
 static uint32_t s_last_update_time = 0;
 
-// 配置
-static led_manager_config_t s_config = {0};
+// 配置 - 使用动态分配的内存
+static led_manager_config_t* s_config = NULL;
 
 // 内部函数声明
 static void led_manager_task(void* pvParameters);
@@ -56,21 +57,58 @@ esp_err_t led_status_manager_init(const led_manager_config_t* config) {
 
     ESP_LOGI(TAG, "初始化LED状态管理器...");
 
-    // 保存配置
-    memcpy(&s_config, config, sizeof(led_manager_config_t));
+    // 使用PSRAM动态分配配置内存
+    s_config = heap_caps_malloc(sizeof(led_manager_config_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!s_config) {
+        // 如果PSRAM不可用，使用普通内存
+        s_config = malloc(sizeof(led_manager_config_t));
+        if (!s_config) {
+            ESP_LOGE(TAG, "分配配置内存失败");
+            return ESP_ERR_NO_MEM;
+        }
+        ESP_LOGW(TAG, "使用内部RAM分配配置内存");
+    } else {
+        ESP_LOGI(TAG, "使用PSRAM分配配置内存");
+    }
+    memcpy(s_config, config, sizeof(led_manager_config_t));
+
+    // 使用PSRAM动态分配当前请求内存
+    s_current_request = heap_caps_malloc(sizeof(led_status_request_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!s_current_request) {
+        // 如果PSRAM不可用，使用普通内存
+        s_current_request = malloc(sizeof(led_status_request_t));
+        if (!s_current_request) {
+            ESP_LOGE(TAG, "分配当前请求内存失败");
+            free(s_config);
+            s_config = NULL;
+            return ESP_ERR_NO_MEM;
+        }
+        ESP_LOGW(TAG, "使用内部RAM分配当前请求内存");
+    } else {
+        ESP_LOGI(TAG, "使用PSRAM分配当前请求内存");
+    }
+    memset(s_current_request, 0, sizeof(led_status_request_t));
 
     // 初始化WS2812
-    esp_err_t ret = ws2812_init(config->led_count);
+    esp_err_t ret = ws2812_init(s_config->led_count);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "WS2812初始化失败: %s", esp_err_to_name(ret));
+        free(s_current_request);
+        free(s_config);
+        s_current_request = NULL;
+        s_config = NULL;
         return ret;
     }
 
     // 创建请求队列
-    s_request_queue = xQueueCreate(config->queue_size, sizeof(led_status_request_t));
+    s_request_queue = xQueueCreate(s_config->queue_size, sizeof(led_status_request_t));
     if (!s_request_queue) {
         ESP_LOGE(TAG, "创建请求队列失败");
         ws2812_deinit();
+        free(s_current_request);
+        free(s_config);
+        s_current_request = NULL;
+        s_config = NULL;
         return ESP_ERR_NO_MEM;
     }
 
@@ -82,12 +120,17 @@ esp_err_t led_status_manager_init(const led_manager_config_t* config) {
         vQueueDelete(s_request_queue);
         s_request_queue = NULL;
         ws2812_deinit();
+        free(s_current_request);
+        free(s_config);
+        s_current_request = NULL;
+        s_config = NULL;
         return ESP_ERR_NO_MEM;
     }
 
-    // 创建LED管理任务
-    BaseType_t task_ret = xTaskCreate(led_manager_task, "led_manager", config->task_stack_size,
-                                      NULL, config->task_priority, &s_led_task_handle);
+    // 创建LED管理任务 - 减少栈大小
+    uint32_t stack_size = s_config->task_stack_size > 2048 ? 2048 : s_config->task_stack_size;
+    BaseType_t task_ret = xTaskCreate(led_manager_task, "led_manager", stack_size,
+                                      NULL, s_config->task_priority, &s_led_task_handle);
 
     if (task_ret != pdPASS) {
         ESP_LOGE(TAG, "创建LED管理任务失败");
@@ -96,6 +139,10 @@ esp_err_t led_status_manager_init(const led_manager_config_t* config) {
         vQueueDelete(s_request_queue);
         s_request_queue = NULL;
         ws2812_deinit();
+        free(s_current_request);
+        free(s_config);
+        s_current_request = NULL;
+        s_config = NULL;
         return ESP_ERR_NO_MEM;
     }
 
@@ -154,6 +201,17 @@ esp_err_t led_status_manager_deinit(void) {
     ws2812_clear_all();
     ws2812_refresh();
     ws2812_deinit();
+
+    // 释放动态分配的内存
+    if (s_current_request) {
+        free(s_current_request);
+        s_current_request = NULL;
+    }
+    if (s_config) {
+        free(s_config);
+        s_config = NULL;
+    }
+
     ESP_LOGI(TAG, "LED状态管理器反初始化完成");
     return ESP_OK;
 }
@@ -239,6 +297,7 @@ bool led_status_manager_is_initialized(void) { return s_initialized; }
 static void led_manager_task(void* pvParameters) {
     ESP_LOGI(TAG, "LED管理任务启动");
 
+    // 使用栈上的小结构体，减少内存使用
     led_status_request_t request;
     TickType_t last_wake_time = xTaskGetTickCount();
     const TickType_t update_period = pdMS_TO_TICKS(20); // 50Hz更新频率
@@ -250,7 +309,7 @@ static void led_manager_task(void* pvParameters) {
         // 检查是否有新的请求
         if (xQueueReceive(s_request_queue, &request, 0) == pdTRUE) {
             // 检查优先级
-            if (request.priority >= s_current_request.priority ||
+            if (request.priority >= s_current_request->priority ||
                 s_current_style == LED_STYLE_OFF) {
                 ESP_LOGI(TAG, "应用新的LED样式: %d, 优先级: %d", request.style, request.priority);
 
@@ -260,7 +319,7 @@ static void led_manager_task(void* pvParameters) {
                 }
 
                 // 应用新样式
-                memcpy(&s_current_request, &request, sizeof(led_status_request_t));
+                memcpy(s_current_request, &request, sizeof(led_status_request_t));
                 apply_led_style(&request);
 
                 // 如果有持续时间限制，启动定时器
@@ -271,7 +330,7 @@ static void led_manager_task(void* pvParameters) {
                 }
             } else {
                 ESP_LOGD(TAG, "忽略低优先级请求: %d < %d", request.priority,
-                         s_current_request.priority);
+                         s_current_request->priority);
             }
         }
 
@@ -342,7 +401,7 @@ static esp_err_t update_led_effect(void) {
         return render_green_fast_blink();
 
     case LED_STYLE_CUSTOM:
-        return render_custom_style(&s_current_request.custom);
+        return render_custom_style(&s_current_request->custom);
 
     default:
         ESP_LOGW(TAG, "未知的LED样式: %d", s_current_style);
