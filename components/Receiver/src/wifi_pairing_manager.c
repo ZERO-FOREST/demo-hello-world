@@ -56,6 +56,8 @@ static void set_state_and_notify(wifi_pairing_state_t new_state, const char* ssi
 static void update_led_status(wifi_pairing_state_t state);
 static bool is_target_ssid(const char* ssid);
 static void get_mac_suffix(char* mac_suffix, size_t size);
+static void start_scan_timer(void);
+static void stop_scan_timer(void);
 
 /**
  * @brief 初始化WiFi配对管理器
@@ -258,10 +260,7 @@ esp_err_t wifi_pairing_manager_start(void) {
     }
 
     // 启动扫描定时器
-    if (xTimerStart(s_scan_timer, portMAX_DELAY) != pdPASS) {
-        ESP_LOGE(TAG, "启动扫描定时器失败");
-        return ESP_FAIL;
-    }
+    start_scan_timer();
 
     s_running = true;
     ESP_LOGI(TAG, "WiFi配对管理器启动成功");
@@ -394,6 +393,8 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t e
             set_state_and_notify(WIFI_PAIRING_STATE_DISCONNECTED, NULL);
             s_retry_count = 0;
             xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
+            // 连接失败或断开后，重新开始扫描
+            start_scan_timer();
         }
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t* event = (ip_event_got_ip_t*)event_data;
@@ -405,6 +406,9 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t e
 
         // 保存成功连接的凭证
         save_credentials_to_nvs(&s_current_credentials);
+
+        // 连接成功，停止扫描定时器
+        stop_scan_timer();
     }
 }
 
@@ -684,23 +688,49 @@ static void update_led_status(wifi_pairing_state_t state) {
     switch (state) {
     case WIFI_PAIRING_STATE_CONNECTING:
         // 连接过程中显示蓝红闪烁
-        led_status_set_style(LED_STYLE_BLUE_RED_BLINK, LED_PRIORITY_HIGH, 0);
+        led_status_set_style(LED_STYLE_BLUE_RED_BLINK, LED_PRIORITY_NORMAL, 0);
         break;
 
     case WIFI_PAIRING_STATE_CONNECTED:
         // 连接成功显示绿色呼吸
-        led_status_set_style(LED_STYLE_GREEN_BREATHING, LED_PRIORITY_HIGH, 0);
+        led_status_set_style(LED_STYLE_GREEN_BREATHING, LED_PRIORITY_NORMAL, 0);
         break;
 
     case WIFI_PAIRING_STATE_DISCONNECTED:
     case WIFI_PAIRING_STATE_ERROR:
-        // 断开连接或错误时关闭LED
-        led_status_clear();
+        // 断开连接或错误时显示红色常亮
+        led_status_set_style(LED_STYLE_RED_SOLID, LED_PRIORITY_NORMAL, 0);
         break;
 
     default:
         // 其他状态保持当前LED状态
         break;
+    }
+}
+
+/**
+ * @brief 启动扫描定时器
+ */
+static void start_scan_timer(void) {
+    if (s_scan_timer && !xTimerIsTimerActive(s_scan_timer)) {
+        if (xTimerStart(s_scan_timer, portMAX_DELAY) != pdPASS) {
+            ESP_LOGE(TAG, "启动扫描定时器失败");
+        } else {
+            ESP_LOGI(TAG, "扫描定时器已启动");
+        }
+    }
+}
+
+/**
+ * @brief 停止扫描定时器
+ */
+static void stop_scan_timer(void) {
+    if (s_scan_timer && xTimerIsTimerActive(s_scan_timer)) {
+        if (xTimerStop(s_scan_timer, portMAX_DELAY) != pdPASS) {
+            ESP_LOGE(TAG, "停止扫描定时器失败");
+        } else {
+            ESP_LOGI(TAG, "扫描定时器已停止");
+        }
     }
 }
 
