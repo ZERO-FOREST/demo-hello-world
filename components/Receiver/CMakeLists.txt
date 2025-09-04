@@ -9,6 +9,7 @@ set(RECEIVER_SRCS
     "src/usb_interface.c"
     "src/settings_manager.c"
     "src/led_status_manager.c"
+    "src/wifi_pairing_manager.c"
 )
 
 idf_component_register(

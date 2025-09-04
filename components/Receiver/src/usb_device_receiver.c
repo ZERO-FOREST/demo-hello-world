@@ -5,6 +5,7 @@
 #include "tusb.h"
 #include "tusb_cdc_acm.h"
 
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -18,23 +19,23 @@ static const char* TAG = "usb_rx";
 
 static TaskHandle_t s_usb_task = NULL;
 static uint8_t s_rx_chunk[USB_RX_CHUNK_SIZE];
-static uint8_t s_parse_buf[USB_RX_BUFFER_SIZE];
+static uint8_t* s_parse_buf = NULL;
 static size_t s_parse_len = 0;
 static bool s_usb_connected = false;
 
 // USB CDC 连接状态回调
-static void usb_line_state_changed_callback(int itf, cdcacm_event_t *event) {
+static void usb_line_state_changed_callback(int itf, cdcacm_event_t* event) {
     if (event->type == CDC_EVENT_LINE_STATE_CHANGED) {
         bool dtr = event->line_state_changed_data.dtr;
         bool rts = event->line_state_changed_data.rts;
         s_usb_connected = (dtr && rts);
-        ESP_LOGI(TAG, "USB连接状态: DTR=%d, RTS=%d, 连接=%s", 
-                 dtr, rts, s_usb_connected ? "已连接" : "断开");
+        ESP_LOGI(TAG, "USB连接状态: DTR=%d, RTS=%d, 连接=%s", dtr, rts,
+                 s_usb_connected ? "已连接" : "断开");
     }
 }
 
 static void parse_and_dispatch(const uint8_t* data, size_t len) {
-    if (!data || len == 0)
+    if (!data || !s_parse_buf || len == 0)
         return;
 
     // 判断模式：若缓冲区以协议帧头(0xAA55)起始，则按二进制帧解析；否则按ASCII行命令解析
@@ -43,7 +44,8 @@ static void parse_and_dispatch(const uint8_t* data, size_t len) {
         while (pos + MIN_FRAME_SIZE <= len) {
             if (pos + 3 > len)
                 break;
-            if (!(data[pos] == ((FRAME_HEADER >> 8) & 0xFF) && data[pos + 1] == (FRAME_HEADER & 0xFF))) {
+            if (!(data[pos] == ((FRAME_HEADER >> 8) & 0xFF) &&
+                  data[pos + 1] == (FRAME_HEADER & 0xFF))) {
                 // 在二进制模式下遇到非帧头字节，跳过1字节
                 pos++;
                 continue;
@@ -88,14 +90,18 @@ static void parse_and_dispatch(const uint8_t* data, size_t len) {
             size_t i = start;
             size_t line_end = (size_t)-1;
             for (; i < len; ++i) {
-                if (data[i] == '\n' || data[i] == '\r') { line_end = i; break; }
+                if (data[i] == '\n' || data[i] == '\r') {
+                    line_end = i;
+                    break;
+                }
             }
             if (line_end == (size_t)-1) {
                 break; // 无完整行，等待更多数据
             }
             size_t line_len = line_end - start;
             char linebuf[192];
-            if (line_len >= sizeof(linebuf)) line_len = sizeof(linebuf) - 1;
+            if (line_len >= sizeof(linebuf))
+                line_len = sizeof(linebuf) - 1;
             memcpy(linebuf, &data[start], line_len);
             linebuf[line_len] = '\0';
             cmd_terminal_handle_line(linebuf);
@@ -124,15 +130,21 @@ static void parse_and_dispatch(const uint8_t* data, size_t len) {
 
 static void usb_rx_task(void* arg) {
     ESP_LOGI(TAG, "USB CDC 接收任务启动");
-    
+
+    if (!s_parse_buf) {
+        ESP_LOGE(TAG, "Parse buffer not initialized");
+        vTaskDelete(NULL);
+        return;
+    }
+
     // 等待USB连接建立
     while (!tusb_cdc_acm_initialized(TINYUSB_CDC_ACM_0)) {
         ESP_LOGI(TAG, "等待USB CDC初始化完成...");
         vTaskDelay(pdMS_TO_TICKS(500));
     }
-    
+
     ESP_LOGI(TAG, "USB CDC已初始化，开始接收数据");
-    
+
     while (1) {
         size_t n = 0;
         esp_err_t ret = tinyusb_cdcacm_read(TINYUSB_CDC_ACM_0, s_rx_chunk, sizeof(s_rx_chunk), &n);
@@ -162,18 +174,26 @@ static void usb_rx_task(void* arg) {
 }
 
 esp_err_t usb_receiver_init(void) {
+    // Allocate parse buffer from PSRAM to save internal RAM
+    s_parse_buf = (uint8_t*)heap_caps_malloc(USB_RX_BUFFER_SIZE, MALLOC_CAP_SPIRAM);
+    if (!s_parse_buf) {
+        ESP_LOGE(TAG, "Failed to allocate parse buffer from PSRAM");
+        return ESP_ERR_NO_MEM;
+    }
     // ESP32-S3内置USB接口，不需要外部PHY
     const tinyusb_config_t tusb_cfg = {
-        .device_descriptor = NULL,      // 使用默认设备描述符
-        .string_descriptor = NULL,      // 使用默认字符串描述符
-        .external_phy = false,          // ESP32-S3使用内置USB PHY
+        .device_descriptor = NULL,        // 使用默认设备描述符
+        .string_descriptor = NULL,        // 使用默认字符串描述符
+        .external_phy = false,            // ESP32-S3使用内置USB PHY
         .configuration_descriptor = NULL, // 使用默认配置描述符
-        .self_powered = false,          // 总线供电模式
-        .vbus_monitor_io = -1,          // ESP32-S3不需要外部VBUS监控
+        .self_powered = false,            // 总线供电模式
+        .vbus_monitor_io = -1,            // ESP32-S3不需要外部VBUS监控
     };
     esp_err_t ret = tinyusb_driver_install(&tusb_cfg);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "tinyusb_driver_install 失败: %s", esp_err_to_name(ret));
+        free(s_parse_buf);
+        s_parse_buf = NULL;
         return ret;
     }
 
@@ -189,14 +209,16 @@ esp_err_t usb_receiver_init(void) {
     ret = tusb_cdc_acm_init(&acm_cfg);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "tinyusb_cdcacm_init 失败: %s", esp_err_to_name(ret));
+        free(s_parse_buf);
+        s_parse_buf = NULL;
         return ret;
     }
 
     ESP_LOGI(TAG, "USB CDC 初始化完成");
-    
+
     // 等待USB连接建立
     ESP_LOGI(TAG, "等待USB设备连接...");
-    
+
     // 给USB设备一些时间来枚举
     vTaskDelay(pdMS_TO_TICKS(1000));
     return ESP_OK;
@@ -216,11 +238,16 @@ void usb_receiver_stop(void) {
     }
     // tinyusb_driver_uninstall 函数在当前版本中不可用 (IDF-1474)
     // 由于没有卸载函数，直接返回
+    if (s_parse_buf) {
+        free(s_parse_buf);
+        s_parse_buf = NULL;
+    }
 }
 
 // 供命令终端使用的输出函数：通过USB CDC回传到主机
 void cmd_terminal_write(const char* s) {
-    if (!s || !s_usb_connected) return;
+    if (!s || !s_usb_connected)
+        return;
     size_t len = strlen(s);
     // 将整段字符串写入CDC队列并flush
     tinyusb_cdcacm_write_queue(TINYUSB_CDC_ACM_0, (const uint8_t*)s, len);

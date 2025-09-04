@@ -2,7 +2,7 @@
  * @Author: tidycraze 2595256284@qq.com
  * @Date: 2025-07-28 11:29:59
  * @LastEditors: tidycraze 2595256284@qq.com
- * @LastEditTime: 2025-09-04 13:48:13
+ * @LastEditTime: 2025-09-04 14:35:50
  * @FilePath: \demo-hello-world\main\main.c
  * @Description: 主函数入口
  *
@@ -18,35 +18,76 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
+#include "esp_heap_caps.h"
 #include "led_status_manager.h"
 #include "spi_slave_receiver.h"
 #include "usb_device_receiver.h"
+#include "wifi_pairing_manager.h"
 
-static const char* TAG = "MAIN";
+static const char* TAG = "main";
+
+static void log_heap_info(const char* step) {
+    ESP_LOGI(TAG, "Heap info at step '%s':", step);
+    ESP_LOGI(TAG, "  Internal RAM free: %u bytes", heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
+    ESP_LOGI(TAG, "  PSRAM free: %u bytes", heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+}
 
 led_manager_config_t led_manager_config = {
     .led_count = 1, .task_priority = 2, .task_stack_size = 2048, .queue_size = 2};
 
 void app_main(void) {
 
+    // 初始化NVS
     esp_err_t ret = nvs_flash_init();
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize NVS: %s", esp_err_to_name(ret));
         return;
     }
 
+    log_heap_info("Initial");
+
+    // 初始化LED管理器
+    led_manager_config_t led_manager_config = {
+        .led_count = 1, .queue_size = 2, .task_priority = 5, .task_stack_size = 2048};
+    if (led_status_manager_init(&led_manager_config) == ESP_OK) {
+        led_status_set_style(LED_STYLE_RED_SOLID, LED_PRIORITY_LOW, 0);
+        log_heap_info("After LED Manager Init");
+    } else {
+        ESP_LOGE(TAG, "Failed to initialize LED Status Manager");
+    }
+
+    // 初始化WiFi配对管理器
+    wifi_pairing_config_t wifi_config = {
+        .scan_interval_ms = 1000,
+        .task_priority = 3,
+        .task_stack_size = 4096,
+        .connection_timeout_ms = 10000,
+        .target_ssid_prefix = "tidy",
+        .default_password = "22989822",
+    };
+    if (wifi_pairing_manager_init(&wifi_config, NULL) == ESP_OK) {
+        wifi_pairing_manager_start();
+        log_heap_info("After WiFi Manager Init");
+    } else {
+        ESP_LOGE(TAG, "Failed to initialize WiFi Pairing Manager");
+    }
+
     // 初始化 SPI 从机并启动接收任务
     if (spi_receiver_init() == ESP_OK) {
         spi_receiver_start();
+        log_heap_info("After SPI Receiver Init");
+    } else {
+        ESP_LOGE(TAG, "Failed to initialize SPI Receiver");
     }
 
     // 初始化 USB CDC 从机并启动接收任务
+    ESP_LOGI(TAG, "开始初始化USB Receiver");
     if (usb_receiver_init() == ESP_OK) {
         usb_receiver_start();
+        log_heap_info("After USB Receiver Init");
+    } else {
+        ESP_LOGE(TAG, "Failed to initialize USB Receiver");
     }
-
-    led_status_manager_init(&led_manager_config);
-    led_status_set_style(LED_STYLE_RED_SOLID, LED_PRIORITY_LOW, 0);
 
     while (1) {
         ESP_LOGI(TAG, "Receiver running, free heap: %lu bytes",
