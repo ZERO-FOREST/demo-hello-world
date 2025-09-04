@@ -8,10 +8,11 @@ set(RECEIVER_SRCS
     "src/cmd_terminal.c"
     "src/usb_interface.c"
     "src/settings_manager.c"
+    "src/led_status_manager.c"
 )
 
 idf_component_register(
     SRCS ${RECEIVER_SRCS}
     INCLUDE_DIRS "inc"
-    REQUIRES log driver esp_tinyusb esp_new_jpeg nvs_flash spi_flash
+    REQUIRES log driver esp_tinyusb esp_new_jpeg nvs_flash spi_flash Peripherals
 )

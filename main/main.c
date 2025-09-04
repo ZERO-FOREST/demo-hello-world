@@ -2,7 +2,7 @@
  * @Author: tidycraze 2595256284@qq.com
  * @Date: 2025-07-28 11:29:59
  * @LastEditors: tidycraze 2595256284@qq.com
- * @LastEditTime: 2025-09-04 11:41:33
+ * @LastEditTime: 2025-09-04 13:48:13
  * @FilePath: \demo-hello-world\main\main.c
  * @Description: 主函数入口
  *
@@ -12,15 +12,20 @@
 
 #include "esp_log.h"
 #include "esp_system.h"
+#include "nvs_flash.h"
+#include <inttypes.h>
+
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+
+#include "led_status_manager.h"
 #include "spi_slave_receiver.h"
 #include "usb_device_receiver.h"
-#include <inttypes.h>
-#include <stdio.h>
-#include "nvs_flash.h"
 
 static const char* TAG = "MAIN";
+
+led_manager_config_t led_manager_config = {
+    .led_count = 1, .task_priority = 2, .task_stack_size = 2048, .queue_size = 2};
 
 void app_main(void) {
 
@@ -40,24 +45,31 @@ void app_main(void) {
         usb_receiver_start();
     }
 
-
+    led_status_manager_init(&led_manager_config);
+    led_status_set_style(LED_STYLE_RED_SOLID, LED_PRIORITY_LOW, 0);
 
     while (1) {
-        ESP_LOGI(TAG, "Receiver running, free heap: %lu bytes", (unsigned long)esp_get_free_heap_size());
+        ESP_LOGI(TAG, "Receiver running, free heap: %lu bytes",
+                 (unsigned long)esp_get_free_heap_size());
         vTaskDelay(pdMS_TO_TICKS(30000));
     }
 }
 #else
 
+// ESP-IDF 系统头文件必须在 FreeRTOS 头文件之前
 #include "esp_chip_info.h"
 #include "esp_log.h"
 #include "esp_system.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
 #include "sdkconfig.h"
-#include "task_init.h"
 #include <inttypes.h>
 #include <stdio.h>
+
+// FreeRTOS 头文件
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
+// 项目组件头文件
+#include "task_init.h"
 
 static const char* TAG = "MAIN";
 

@@ -8,7 +8,7 @@ if(EN_RECEIVER_MODE)
     idf_component_register(
         SRCS ${MAIN_SRCS}
         INCLUDE_DIRS "inc" "${CMAKE_SOURCE_DIR}/components/Receiver/inc"
-        REQUIRES esp_timer Receiver driver spi_flash
+        REQUIRES esp_timer Receiver driver spi_flash esp_common
     )
     
     target_compile_definitions(${COMPONENT_LIB} PRIVATE EN_RECEIVER_MODE=1)
@@ -72,7 +72,7 @@ else()
     idf_component_register(
         SRCS ${MAIN_SRCS}
         INCLUDE_DIRS "inc" "UI/inc" "app/inc" "app/game" "fonts" "app/Telemetry/inc"
-        REQUIRES lvgl esp_timer lvgl_port Peripherals driver spiffs spi_flash
+        REQUIRES lvgl esp_timer lvgl_port Peripherals driver spiffs spi_flash esp_common
     )
     
     target_compile_definitions(${COMPONENT_LIB} PRIVATE EN_RECEIVER_MODE=0)
