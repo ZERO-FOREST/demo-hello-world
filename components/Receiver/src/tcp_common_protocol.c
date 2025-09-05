@@ -119,15 +119,7 @@ uint16_t create_telemetry_frame_common(uint8_t *buffer, uint16_t buffer_size,
     *ptr++ = calculated_crc & 0xFF;        // CRC低字节
     *ptr++ = (calculated_crc >> 8) & 0xFF; // CRC高字节
     
-    // 添加调试日志
-    ESP_LOGI("TCP_PROTOCOL", "创建遥测帧: 帧头1=0x%02X, 帧头2=0x%02X, 长度=%d, 类型=%d", 
-             header->header1, header->header2, header->length, header->frame_type);
-    ESP_LOGI("TCP_PROTOCOL", "CRC计算: 数据长度=%d, CRC=0x%04X", crc_length, calculated_crc);
-    
-    // 打印原始数据用于调试
     uint16_t total_length = sizeof(protocol_header_t) + sizeof(telemetry_data_payload_t) + sizeof(uint16_t);
-    ESP_LOG_BUFFER_HEX("TCP_PROTOCOL", buffer, total_length);
-    
     return total_length;
 }
 
