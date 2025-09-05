@@ -18,7 +18,7 @@ static TaskHandle_t s_led_task_handle = NULL;
 static QueueHandle_t s_request_queue = NULL;
 static TimerHandle_t s_duration_timer = NULL;
 
-// 当前状态 - 使用动态分配的内存
+// 使用动态分配的内存
 static led_status_request_t* s_current_request = NULL;
 static led_style_t s_current_style = LED_STYLE_OFF;
 static uint32_t s_effect_counter = 0;
@@ -57,36 +57,12 @@ esp_err_t led_status_manager_init(const led_manager_config_t* config) {
 
     ESP_LOGI(TAG, "初始化LED状态管理器...");
 
-    // 使用PSRAM动态分配配置内存
+    // PSRAM动态分配配置内存
     s_config = heap_caps_malloc(sizeof(led_manager_config_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    if (!s_config) {
-        // 如果PSRAM不可用，使用普通内存
-        s_config = malloc(sizeof(led_manager_config_t));
-        if (!s_config) {
-            ESP_LOGE(TAG, "分配配置内存失败");
-            return ESP_ERR_NO_MEM;
-        }
-        ESP_LOGW(TAG, "使用内部RAM分配配置内存");
-    } else {
-        ESP_LOGI(TAG, "使用PSRAM分配配置内存");
-    }
     memcpy(s_config, config, sizeof(led_manager_config_t));
 
-    // 使用PSRAM动态分配当前请求内存
+    // PSRAM动态分配当前内存
     s_current_request = heap_caps_malloc(sizeof(led_status_request_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    if (!s_current_request) {
-        // 如果PSRAM不可用，使用普通内存
-        s_current_request = malloc(sizeof(led_status_request_t));
-        if (!s_current_request) {
-            ESP_LOGE(TAG, "分配当前请求内存失败");
-            free(s_config);
-            s_config = NULL;
-            return ESP_ERR_NO_MEM;
-        }
-        ESP_LOGW(TAG, "使用内部RAM分配当前请求内存");
-    } else {
-        ESP_LOGI(TAG, "使用PSRAM分配当前请求内存");
-    }
     memset(s_current_request, 0, sizeof(led_status_request_t));
 
     // 初始化WS2812
@@ -127,13 +103,25 @@ esp_err_t led_status_manager_init(const led_manager_config_t* config) {
         return ESP_ERR_NO_MEM;
     }
 
-    // 创建LED管理任务 - 减少栈大小
-    uint32_t stack_size = s_config->task_stack_size > 2048 ? 2048 : s_config->task_stack_size;
-    BaseType_t task_ret = xTaskCreate(led_manager_task, "led_manager", stack_size,
-                                      NULL, s_config->task_priority, &s_led_task_handle);
+    // 初始化状态
+    s_current_style = LED_STYLE_OFF;
+    s_effect_counter = 0;
+    s_last_update_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
 
+    // 清空LED
+    ws2812_clear_all();
+    ws2812_refresh();
+
+    // 设置初始化标志为true，确保任务启动时状态正确
+    s_initialized = true;
+
+    // 创建LED管理任务
+    ESP_LOGI(TAG, "创建LED管理任务，栈大小: %d 字节", s_config->task_stack_size);
+    BaseType_t task_ret = xTaskCreate(led_manager_task, "led_manager", s_config->task_stack_size,
+                                      NULL, s_config->task_priority, &s_led_task_handle);
     if (task_ret != pdPASS) {
         ESP_LOGE(TAG, "创建LED管理任务失败");
+        s_initialized = false;
         xTimerDelete(s_duration_timer, 0);
         s_duration_timer = NULL;
         vQueueDelete(s_request_queue);
@@ -145,17 +133,6 @@ esp_err_t led_status_manager_init(const led_manager_config_t* config) {
         s_config = NULL;
         return ESP_ERR_NO_MEM;
     }
-
-    // 初始化状态
-    s_current_style = LED_STYLE_OFF;
-    s_effect_counter = 0;
-    s_last_update_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
-
-    // 清空LED
-    ws2812_clear_all();
-    ws2812_refresh();
-
-    s_initialized = true;
     ESP_LOGI(TAG, "LED状态管理器初始化成功");
     return ESP_OK;
 }
@@ -306,10 +283,9 @@ static void led_manager_task(void* pvParameters) {
     vTaskDelay(pdMS_TO_TICKS(10));
 
     while (s_initialized) {
-        // 检查是否有新的请求
         if (xQueueReceive(s_request_queue, &request, 0) == pdTRUE) {
-            // 检查优先级
-            if (request.priority >= s_current_request->priority ||
+            if (s_current_request == NULL || 
+                request.priority >= s_current_request->priority ||
                 s_current_style == LED_STYLE_OFF) {
                 ESP_LOGI(TAG, "应用新的LED样式: %d, 优先级: %d", request.style, request.priority);
 
@@ -318,11 +294,11 @@ static void led_manager_task(void* pvParameters) {
                     xTimerStop(s_duration_timer, portMAX_DELAY);
                 }
 
-                // 应用新样式
-                memcpy(s_current_request, &request, sizeof(led_status_request_t));
+                if (s_current_request != NULL) {
+                    memcpy(s_current_request, &request, sizeof(led_status_request_t));
+                }
                 apply_led_style(&request);
 
-                // 如果有持续时间限制，启动定时器
                 if (request.duration_ms > 0 && s_duration_timer != NULL) {
                     xTimerChangePeriod(s_duration_timer, pdMS_TO_TICKS(request.duration_ms),
                                        portMAX_DELAY);
@@ -330,7 +306,7 @@ static void led_manager_task(void* pvParameters) {
                 }
             } else {
                 ESP_LOGD(TAG, "忽略低优先级请求: %d < %d", request.priority,
-                         s_current_request->priority);
+                         s_current_request ? s_current_request->priority : 0);
             }
         }
 
@@ -348,11 +324,9 @@ static void led_manager_task(void* pvParameters) {
 static void duration_timer_callback(TimerHandle_t xTimer) {
     ESP_LOGI(TAG, "LED样式持续时间到期，切换到关闭状态");
 
-    // 使用静态请求避免动态内存分配问题
     static const led_status_request_t clear_request = {
         .style = LED_STYLE_OFF, .priority = LED_PRIORITY_NORMAL, .duration_ms = 0, .custom = {}};
 
-    // 直接发送请求到队列，而不是调用函数避免递归
     if (s_request_queue != NULL) {
         xQueueSend(s_request_queue, &clear_request, 0);
     }

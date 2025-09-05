@@ -2,6 +2,7 @@
 #include "driver/gpio.h"
 #include "driver/rmt_tx.h"
 #include "esp_check.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -14,6 +15,7 @@ static const char* TAG = "WS2812";
 static bool s_is_initialized = false;
 static uint16_t s_led_count = 0;
 static ws2812_color_t* s_led_buffer = NULL;
+static uint8_t* s_grb_buffer = NULL;
 static uint8_t s_global_brightness = 255;
 static rmt_channel_handle_t s_rmt_channel = NULL;
 static rmt_encoder_handle_t s_rmt_encoder = NULL;
@@ -164,12 +166,11 @@ esp_err_t ws2812_init(uint16_t num_leds) {
 
     ESP_LOGI(TAG, "🌈 Initializing WS2812 on GPIO%d with %d LEDs", WS2812_GPIO_PIN, num_leds);
 
-    // 分配LED缓冲区
-    s_led_buffer = calloc(num_leds, sizeof(ws2812_color_t));
-    if (!s_led_buffer) {
-        ESP_LOGE(TAG, "Failed to allocate LED buffer");
-        return ESP_ERR_NO_MEM;
-    }
+    // 分配LED缓冲区，使用PSRAM
+    s_led_buffer = heap_caps_calloc(num_leds, sizeof(ws2812_color_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    
+    // 分配静态GRB缓冲区，使用PSRAM
+    s_grb_buffer = heap_caps_malloc(num_leds * 3, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
 
     // 配置RMT通道
     rmt_tx_channel_config_t channel_config = {
@@ -196,6 +197,8 @@ esp_err_t ws2812_init(uint16_t num_leds) {
         s_rmt_channel = NULL;
         free(s_led_buffer);
         s_led_buffer = NULL;
+        free(s_grb_buffer);
+        s_grb_buffer = NULL;
         return ret;
     }
 
@@ -209,6 +212,8 @@ esp_err_t ws2812_init(uint16_t num_leds) {
         s_rmt_channel = NULL;
         free(s_led_buffer);
         s_led_buffer = NULL;
+        free(s_grb_buffer);
+        s_grb_buffer = NULL;
         return ret;
     }
 
@@ -243,6 +248,11 @@ esp_err_t ws2812_deinit(void) {
     if (s_led_buffer) {
         free(s_led_buffer);
         s_led_buffer = NULL;
+    }
+    
+    if (s_grb_buffer) {
+        free(s_grb_buffer);
+        s_grb_buffer = NULL;
     }
 
     s_led_count = 0;
@@ -295,16 +305,11 @@ esp_err_t ws2812_refresh(void) {
         return ESP_ERR_INVALID_STATE;
     }
 
-    // 准备发送数据（GRB格式）
-    uint8_t* grb_data = malloc(s_led_count * 3);
-    if (!grb_data) {
-        ESP_LOGE(TAG, "Failed to allocate GRB buffer");
-        return ESP_ERR_NO_MEM;
-    }
+    // 使用静态GRB缓冲区
     for (uint16_t i = 0; i < s_led_count; i++) {
-        grb_data[i * 3 + 0] = s_led_buffer[i].green; // G
-        grb_data[i * 3 + 1] = s_led_buffer[i].red;   // R
-        grb_data[i * 3 + 2] = s_led_buffer[i].blue;  // B
+        s_grb_buffer[i * 3 + 0] = s_led_buffer[i].green; // G
+        s_grb_buffer[i * 3 + 1] = s_led_buffer[i].red;   // R
+        s_grb_buffer[i * 3 + 2] = s_led_buffer[i].blue;  // B
     }
 
     // 发送数据
@@ -312,9 +317,7 @@ esp_err_t ws2812_refresh(void) {
         .loop_count = 0,
     };
 
-    esp_err_t ret = rmt_transmit(s_rmt_channel, s_rmt_encoder, grb_data, s_led_count * 3, &tx_config);
-
-    free(grb_data);
+    esp_err_t ret = rmt_transmit(s_rmt_channel, s_rmt_encoder, s_grb_buffer, s_led_count * 3, &tx_config);
 
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "RMT transmit failed: %s", esp_err_to_name(ret));
