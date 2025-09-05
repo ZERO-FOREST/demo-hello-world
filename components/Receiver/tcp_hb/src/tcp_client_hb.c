@@ -420,15 +420,15 @@ bool tcp_client_hb_start(const char *task_name, uint32_t stack_size, UBaseType_t
 
     g_hb_client.is_running = true;
     
-    // 尝试初始连接
-    if (tcp_client_hb_connect_internal()) {
-        xTimerStart(g_hb_client.heartbeat_timer, 0);
-    } else if (g_hb_client.config.auto_reconnect_enabled) {
+    // 设置初始状态为重连中，让任务异步处理连接
+    if (g_hb_client.config.auto_reconnect_enabled) {
         tcp_client_hb_set_state(TCP_CLIENT_HB_STATE_RECONNECTING);
         xTimerStart(g_hb_client.reconnect_timer, 0);
+        ESP_LOGI(TAG, "心跳客户端启动成功，将异步尝试连接");
+    } else {
+        ESP_LOGI(TAG, "心跳客户端启动成功，自动重连已禁用");
     }
-
-    ESP_LOGI(TAG, "心跳客户端启动成功");
+    
     return true;
 }
 

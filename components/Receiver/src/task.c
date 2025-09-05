@@ -2,7 +2,7 @@
  * @Author: tidycraze 2595256284@qq.com
  * @Date: 2025-09-05 10:04:45
  * @LastEditors: tidycraze 2595256284@qq.com
- * @LastEditTime: 2025-09-05 13:02:56
+ * @LastEditTime: 2025-09-05 13:57:20
  * @FilePath: \demo-hello-world\components\Receiver\src\task.c
  * @Description: 任务实现
  * 
@@ -13,6 +13,7 @@
 #include "tcp_client_telemetry.h"
 #include "esp_log.h"
 #include "esp_event.h"
+#include "esp_task_wdt.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
@@ -216,22 +217,29 @@ static void wifi_event_callback(wifi_pairing_state_t state, const char* ssid) {
 static void tcp_task_function(void *pvParameters) {
     ESP_LOGI(TAG, "TCP任务启动，等待WIFI连接...");
     
+    // 将当前任务添加到看门狗
+    esp_task_wdt_add(NULL);
+    
     uint32_t status_print_counter = 0;
     uint32_t telemetry_send_counter = 0;
     
     while (1) {
+        // 重置看门狗
+        esp_task_wdt_reset();
+        
         // 等待事件
         EventBits_t bits = xEventGroupWaitBits(
             s_tcp_event_group,
             TCP_WIFI_CONNECTED_BIT | TCP_WIFI_DISCONNECTED_BIT | TCP_STOP_TASK_BIT,
             pdFALSE,  // 不清除事件位
             pdFALSE,  // 等待任意一个事件
-            pdMS_TO_TICKS(100)  // 100ms超时
+            pdMS_TO_TICKS(1000)  // 1秒超时，给看门狗足够的重置时间
         );
         
         // 检查是否需要停止任务
         if (bits & TCP_STOP_TASK_BIT) {
             ESP_LOGI(TAG, "收到停止信号，退出TCP任务");
+            xEventGroupClearBits(s_tcp_event_group, TCP_STOP_TASK_BIT);
             break;
         }
         
@@ -239,13 +247,19 @@ static void tcp_task_function(void *pvParameters) {
         if (bits & TCP_WIFI_CONNECTED_BIT) {
             if (!s_tcp_modules_running) {
                 ESP_LOGI(TAG, "WIFI已连接，启动TCP模块");
+                
+                // 添加延时，确保WiFi连接稳定
+                vTaskDelay(pdMS_TO_TICKS(2000));
+                
                 if (start_tcp_modules() == ESP_OK) {
                     s_tcp_modules_running = true;
                     ESP_LOGI(TAG, "TCP模块启动成功");
                 } else {
-                    ESP_LOGE(TAG, "TCP模块启动失败");
+                    ESP_LOGE(TAG, "TCP模块启动失败，将在下次WiFi连接时重试");
                 }
             }
+            // 清除已处理的连接事件位
+            xEventGroupClearBits(s_tcp_event_group, TCP_WIFI_CONNECTED_BIT);
         }
         
         // 处理WIFI断开事件
@@ -256,31 +270,35 @@ static void tcp_task_function(void *pvParameters) {
                 s_tcp_modules_running = false;
                 ESP_LOGI(TAG, "TCP模块已停止");
             }
+            // 清除已处理的断开事件位
+            xEventGroupClearBits(s_tcp_event_group, TCP_WIFI_DISCONNECTED_BIT);
         }
         
         // 如果TCP模块正在运行，执行周期性任务
         if (s_tcp_modules_running) {
             // 每30秒打印一次状态信息
-            if (++status_print_counter >= 300) { // 30秒 / 100ms = 300次
+            if (++status_print_counter >= 30) { // 30秒 / 1秒 = 30次
                 tcp_client_hb_print_status();
                 tcp_client_telemetry_print_status();
                 status_print_counter = 0;
             }
             
             // 每5秒发送一次遥测数据
-            if (++telemetry_send_counter >= 50) { // 5秒 / 100ms = 50次
+            if (++telemetry_send_counter >= 5) { // 5秒 / 1秒 = 5次
                 // 更新模拟遥测数据
                 // tcp_client_telemetry_update_sim_data();
                 telemetry_send_counter = 0;
             }
             
-            // 检查连接健康状态
-            if (!tcp_client_hb_is_connection_healthy()) {
-                ESP_LOGW(TAG, "心跳连接异常");
-            }
-            
-            if (!tcp_client_telemetry_is_connection_healthy()) {
-                ESP_LOGW(TAG, "遥测连接异常");
+            // 检查连接健康状态（降低检查频率以减少日志输出）
+            if (status_print_counter % 10 == 0) { // 每10秒检查一次
+                if (!tcp_client_hb_is_connection_healthy()) {
+                    ESP_LOGW(TAG, "心跳连接异常");
+                }
+                
+                if (!tcp_client_telemetry_is_connection_healthy()) {
+                    ESP_LOGW(TAG, "遥测连接异常");
+                }
             }
         }
     }
@@ -289,6 +307,10 @@ static void tcp_task_function(void *pvParameters) {
     stop_tcp_modules();
     s_tcp_modules_running = false;
     s_tcp_task_handle = NULL;
+    
+    // 从看门狗中移除任务
+    esp_task_wdt_delete(NULL);
+    
     ESP_LOGI(TAG, "TCP任务已退出");
     vTaskDelete(NULL);
 }

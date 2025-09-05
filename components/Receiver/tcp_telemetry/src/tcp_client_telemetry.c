@@ -234,15 +234,18 @@ static void tcp_client_telemetry_task_function(void *pvParameters) {
         // 如果未连接，尝试连接
         if (g_telemetry_client.state == TCP_CLIENT_TELEMETRY_STATE_DISCONNECTED) {
             if (g_telemetry_client.config.auto_reconnect_enabled) {
+                ESP_LOGI(TAG, "尝试连接到遥测服务器...");
                 if (tcp_client_telemetry_connect_internal()) {
-                    ESP_LOGI(TAG, "重连成功");
+                    ESP_LOGI(TAG, "遥测服务器连接成功");
                 } else {
-                    ESP_LOGW(TAG, "重连失败，等待重试");
-                    vTaskDelay(pdMS_TO_TICKS(g_telemetry_client.config.reconnect_delay_ms));
+                    ESP_LOGW(TAG, "遥测服务器连接失败，%d毫秒后重试", g_telemetry_client.config.reconnect_delay_ms);
                     g_telemetry_client.stats.reconnection_count++;
+                    // 连接失败后等待重连延时
+                    vTaskDelay(pdMS_TO_TICKS(g_telemetry_client.config.reconnect_delay_ms));
                     continue;
                 }
             } else {
+                // 如果未启用自动重连，等待1秒后再检查
                 vTaskDelay(pdMS_TO_TICKS(1000));
                 continue;
             }
@@ -347,7 +350,11 @@ bool tcp_client_telemetry_start(const char *task_name, uint32_t stack_size, UBas
     }
 
     g_telemetry_client.is_running = true;
-    ESP_LOGI(TAG, "遥测客户端启动成功");
+    
+    // 设置初始状态为断开连接，让任务内部处理连接
+    tcp_client_telemetry_set_state(TCP_CLIENT_TELEMETRY_STATE_DISCONNECTED);
+    
+    ESP_LOGI(TAG, "遥测客户端启动成功，将在任务中异步连接");
     return true;
 }
 
