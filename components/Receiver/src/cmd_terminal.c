@@ -38,9 +38,9 @@ bool cmd_terminal_save_wifi_config(const char* ssid, const char* password) {
     
     ESP_LOGI(TAG, "默认WiFi配置保存：SSID=%s (需要WiFi模块提供强符号实现)", ssid);
     
-    // 默认实现：尝试保存到NVS
+    // 默认实现：尝试保存到NVS（使用与WiFi自动配对模块相同的命名空间）
     nvs_handle_t nvs_handle;
-    esp_err_t err = nvs_open("wifi_config", NVS_READWRITE, &nvs_handle);
+    esp_err_t err = nvs_open("wifi_pairing", NVS_READWRITE, &nvs_handle);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "无法打开NVS命名空间: %s", esp_err_to_name(err));
         return false;
@@ -58,6 +58,14 @@ bool cmd_terminal_save_wifi_config(const char* ssid, const char* password) {
     err = nvs_set_str(nvs_handle, "password", password);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "保存密码失败: %s", esp_err_to_name(err));
+        nvs_close(nvs_handle);
+        return false;
+    }
+    
+    // 保存有效标志（与WiFi自动配对模块兼容）
+    err = nvs_set_u8(nvs_handle, "valid", 1);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "保存有效标志失败: %s", esp_err_to_name(err));
         nvs_close(nvs_handle);
         return false;
     }
