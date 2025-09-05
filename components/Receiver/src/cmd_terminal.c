@@ -2,6 +2,10 @@
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "nvs_flash.h"
+#include "nvs.h"
+#include "esp_wifi.h"
+#include "esp_netif.h"
 #include <ctype.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -25,8 +29,61 @@ __attribute__((weak)) bool cmd_terminal_set_jpeg_quality(uint8_t quality) {
     return false;
 }
 
+// WiFi配置保存回调：WiFi模块可提供强符号实现以覆写默认行为
+bool cmd_terminal_save_wifi_config(const char* ssid, const char* password) {
+    if (!ssid || !password) {
+        ESP_LOGW(TAG, "WiFi配置参数无效");
+        return false;
+    }
+    
+    ESP_LOGI(TAG, "默认WiFi配置保存：SSID=%s (需要WiFi模块提供强符号实现)", ssid);
+    
+    // 默认实现：尝试保存到NVS
+    nvs_handle_t nvs_handle;
+    esp_err_t err = nvs_open("wifi_config", NVS_READWRITE, &nvs_handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "无法打开NVS命名空间: %s", esp_err_to_name(err));
+        return false;
+    }
+    
+    // 保存SSID
+    err = nvs_set_str(nvs_handle, "ssid", ssid);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "保存SSID失败: %s", esp_err_to_name(err));
+        nvs_close(nvs_handle);
+        return false;
+    }
+    
+    // 保存密码
+    err = nvs_set_str(nvs_handle, "password", password);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "保存密码失败: %s", esp_err_to_name(err));
+        nvs_close(nvs_handle);
+        return false;
+    }
+    
+    // 提交更改
+    err = nvs_commit(nvs_handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "提交NVS更改失败: %s", esp_err_to_name(err));
+        nvs_close(nvs_handle);
+        return false;
+    }
+    
+    nvs_close(nvs_handle);
+    ESP_LOGI(TAG, "WiFi配置已保存到NVS");
+    return true;
+}
+
+// 重启确认回调：上层可提供强符号实现以自定义重启行为
+__attribute__((weak)) bool cmd_terminal_confirm_restart(void) {
+    ESP_LOGI(TAG, "默认重启确认：将在3秒后重启...");
+    vTaskDelay(pdMS_TO_TICKS(3000));
+    return true;
+}
+
 static void respondf(const char* fmt, ...) {
-    char buf[192];
+    char buf[512];  // 增加缓冲区大小以支持更长的help输出
     va_list ap;
     va_start(ap, fmt);
     vsnprintf(buf, sizeof(buf), fmt, ap);
@@ -50,13 +107,61 @@ static void trim_trailing_newline(char* s) {
     }
 }
 
+// 获取任务详细信息
+static void print_task_info(void) {
+    UBaseType_t task_count = uxTaskGetNumberOfTasks();
+    respondf("总任务数: %u", (unsigned)task_count);
+    
+#if (configUSE_TRACE_FACILITY == 1) && (configGENERATE_RUN_TIME_STATS == 1)
+    // 分配内存用于任务状态数组
+    TaskStatus_t* task_array = (TaskStatus_t*)malloc(task_count * sizeof(TaskStatus_t));
+    if (!task_array) {
+        respondf("内存不足，无法获取详细任务信息");
+        return;
+    }
+    
+    // 获取任务状态信息
+    UBaseType_t actual_count = uxTaskGetSystemState(task_array, task_count, NULL);
+    
+    respondf("任务详情:");
+    respondf("%-16s %-8s %-8s %-8s", "任务名", "状态", "优先级", "栈剩余");
+    respondf("----------------------------------------");
+    
+    for (UBaseType_t i = 0; i < actual_count; i++) {
+        const char* state_str;
+        switch (task_array[i].eCurrentState) {
+            case eRunning:   state_str = "运行中"; break;
+            case eReady:     state_str = "就绪"; break;
+            case eBlocked:   state_str = "阻塞"; break;
+            case eSuspended: state_str = "挂起"; break;
+            case eDeleted:   state_str = "已删除"; break;
+            default:         state_str = "未知"; break;
+        }
+        
+        respondf("%-16s %-8s %-8lu %-8u", 
+                task_array[i].pcTaskName,
+                state_str,
+                (unsigned long)task_array[i].uxCurrentPriority,
+                (unsigned)task_array[i].usStackHighWaterMark);
+    }
+    
+    free(task_array);
+#else
+    respondf("详细任务信息功能未启用");
+    respondf("需要在 FreeRTOS 配置中启用:");
+    respondf("- configUSE_TRACE_FACILITY = 1");
+    respondf("- configGENERATE_RUN_TIME_STATS = 1");
+    respondf("当前仅显示任务总数: %u", (unsigned)task_count);
+#endif
+}
+
 static void handle_text_command(char* line) {
     if (!line) return;
 
     trim_trailing_newline(line);
 
-    // 为不区分大小写比较准备副本
-    char cmd_copy[160];
+    // 不区分大小写比较准备副本
+    char cmd_copy[128];
     strncpy(cmd_copy, line, sizeof(cmd_copy) - 1);
     cmd_copy[sizeof(cmd_copy) - 1] = '\0';
     str_tolower(cmd_copy);
@@ -71,9 +176,14 @@ static void handle_text_command(char* line) {
                  "  help                - 显示帮助\n"
                  "  heap                - 打印空闲堆内存\n"
                  "  tasks               - 打印任务数量\n"
+                 "  taskinfo            - 显示详细任务信息\n"
                  "  version             - 打印IDF版本\n"
                  "  echo <text>         - 回显文本\n"
-                 "  jpegq <0-100>       - 设置JPEG质量(需要模块支持)");
+                 "  jpegq <0-100>       - 设置JPEG质量\n"
+                 "  wifi <ssid> <pwd>   - 配置WiFi并保存到NVS\n"
+                 "  wifir <ssid> <pwd>  - 配置WiFi并立即重启\n"
+                 "  restart             - 软件重启\n"
+                 "  reboot              - 软件重启(同restart)");
         return;
     }
 
@@ -84,6 +194,11 @@ static void handle_text_command(char* line) {
 
     if (strcmp(cmd, "tasks") == 0) {
         respondf("Tasks: %u", (unsigned)uxTaskGetNumberOfTasks());
+        return;
+    }
+
+    if (strcmp(cmd, "taskinfo") == 0) {
+        print_task_info();
         return;
     }
 
@@ -119,6 +234,48 @@ static void handle_text_command(char* line) {
         return;
     }
 
+    if (strcmp(cmd, "wifi") == 0 || strcmp(cmd, "wifir") == 0) {
+        bool reboot_after = (strcmp(cmd, "wifir") == 0);
+        
+        // 解析SSID和密码参数
+        char* ssid = strtok_r(NULL, " \t", &saveptr);
+        char* password = strtok_r(NULL, " \t", &saveptr);
+        
+        if (!ssid || !password) {
+            respondf("用法: %s <ssid> <password>", cmd);
+            return;
+        }
+        
+        // 保存WiFi配置到NVS
+        bool save_ok = cmd_terminal_save_wifi_config(ssid, password);
+        if (!save_ok) {
+            respondf("WiFi配置保存失败");
+            return;
+        }
+        
+        respondf("WiFi配置已保存: SSID=%s", ssid);
+        
+        if (reboot_after) {
+            respondf("正在重启以应用新配置...");
+            if (cmd_terminal_confirm_restart()) {
+                esp_restart();
+            }
+        } else {
+            respondf("是否立即重启以应用配置? (输入 restart 命令重启)");
+        }
+        return;
+    }
+
+    if (strcmp(cmd, "restart") == 0 || strcmp(cmd, "reboot") == 0) {
+        respondf("准备重启系统...");
+        if (cmd_terminal_confirm_restart()) {
+            esp_restart();
+        } else {
+            respondf("重启已取消");
+        }
+        return;
+    }
+
     respondf("未知命令: %s (输入 help 获取帮助)", line);
 }
 
@@ -141,11 +298,9 @@ void handle_extended_command(const extended_cmd_payload_t* cmd_data) {
     }
 }
 
-// 新增：对外暴露的行命令处理接口（用于USB CDC等直接文本输入）
 void cmd_terminal_handle_line(const char* line) {
     if (!line) return;
-    // 复制到可修改缓冲区，便于去除换行与分词
-    char buf[192];
+    char buf[666];
     strncpy(buf, line, sizeof(buf) - 1);
     buf[sizeof(buf) - 1] = '\0';
     handle_text_command(buf);
