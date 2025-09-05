@@ -111,7 +111,7 @@ void telemetry_sender_process(void) {
                 telemetry_protocol_create_rc_frame(frame_buffer, sizeof(frame_buffer), channel_count, channels);
             if (frame_len > 0) {
                 if (send_frame(frame_buffer, frame_len) > 0) {
-                    ESP_LOGD(TAG, "Sent RC frame: throttle=%d, direction=%d", channels[0], channels[1]);
+                    // RC帧发送完成
                 } else {
                     ESP_LOGW(TAG, "Failed to send RC frame");
                     g_sender_active = false;

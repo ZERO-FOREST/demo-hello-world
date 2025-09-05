@@ -132,7 +132,7 @@ class TCPTestServer:
                     break
                     
                 # 打印原始数据用于调试
-                print(f"[{datetime.now().strftime('%H:%M:%S')}] {port_type}收到原始数据 ({len(data)}字节): {data.hex()}")
+                # print(f"[{datetime.now().strftime('%H:%M:%S')}] {port_type}收到原始数据 ({len(data)}字节): {data.hex()}")
                 
                 # 解析协议帧
                 frame, error = self.parse_protocol_frame(data)
@@ -214,7 +214,7 @@ class TCPTestServer:
     def print_stats(self):
         """打印统计信息"""
         while self.running:
-            time.sleep(10)  # 每10秒打印一次统计
+            time.sleep(30)  # 每10秒打印一次统计
             print(f"\n=== 统计信息 [{datetime.now().strftime('%H:%M:%S')}] ===")
             print(f"心跳: 总计={self.heartbeat_stats['total']}, 有效={self.heartbeat_stats['valid']}, 无效={self.heartbeat_stats['invalid']}")
             print(f"遥测: 总计={self.telemetry_stats['total']}, 有效={self.telemetry_stats['valid']}, 无效={self.telemetry_stats['invalid']}")

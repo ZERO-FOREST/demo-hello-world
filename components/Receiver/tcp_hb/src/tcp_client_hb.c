@@ -132,9 +132,23 @@ static bool tcp_client_hb_send_packet(void) {
         return false;
     }
 
+    // 发送成功后，尝试接收数据来检测连接状态
+    uint8_t recv_buffer[1];
+    int recv_result = recv(g_hb_client.socket_fd, recv_buffer, sizeof(recv_buffer), MSG_DONTWAIT);
+    if (recv_result == 0) {
+        // 连接已被对方关闭
+        ESP_LOGW(TAG, "检测到连接已断开（recv返回0）");
+        g_hb_client.stats.heartbeat_failed_count++;
+        return false;
+    } else if (recv_result < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
+        // 发生了真正的错误（EAGAIN和EWOULDBLOCK是正常的，表示没有数据可读）
+        ESP_LOGW(TAG, "检测到连接错误: %s", strerror(errno));
+        g_hb_client.stats.heartbeat_failed_count++;
+        return false;
+    }
+
     g_hb_client.stats.heartbeat_sent_count++;
     g_hb_client.stats.last_heartbeat_time = tcp_client_hb_get_timestamp_ms();
-    ESP_LOGD(TAG, "心跳包发送成功，已发送: %lu", g_hb_client.stats.heartbeat_sent_count);
     
     return true;
 }
@@ -165,6 +179,26 @@ static bool tcp_client_hb_connect_internal(void) {
     timeout.tv_sec = TCP_CLIENT_HB_RECV_TIMEOUT_MS / 1000;
     timeout.tv_usec = (TCP_CLIENT_HB_RECV_TIMEOUT_MS % 1000) * 1000;
     setsockopt(g_hb_client.socket_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+    
+    // 启用TCP Keep-Alive机制
+    int keepalive = 1;
+    setsockopt(g_hb_client.socket_fd, SOL_SOCKET, SO_KEEPALIVE, &keepalive, sizeof(keepalive));
+    
+    // 设置Keep-Alive参数（如果系统支持）
+    #ifdef TCP_KEEPIDLE
+    int keepidle = 30;  // 30秒后开始发送keep-alive探测
+    setsockopt(g_hb_client.socket_fd, IPPROTO_TCP, TCP_KEEPIDLE, &keepidle, sizeof(keepidle));
+    #endif
+    
+    #ifdef TCP_KEEPINTVL
+    int keepintvl = 5;  // 探测间隔5秒
+    setsockopt(g_hb_client.socket_fd, IPPROTO_TCP, TCP_KEEPINTVL, &keepintvl, sizeof(keepintvl));
+    #endif
+    
+    #ifdef TCP_KEEPCNT
+    int keepcnt = 3;    // 最多3次探测失败后断开连接
+    setsockopt(g_hb_client.socket_fd, IPPROTO_TCP, TCP_KEEPCNT, &keepcnt, sizeof(keepcnt));
+    #endif
 
     // 配置服务器地址
     struct sockaddr_in server_addr;
@@ -267,7 +301,6 @@ static void tcp_client_hb_reconnect_timer_callback(TimerHandle_t xTimer) {
     (void)xTimer;
     
     if (g_hb_client.state == TCP_CLIENT_HB_STATE_RECONNECTING) {
-        ESP_LOGD(TAG, "重连定时器触发");
     }
 }
 
@@ -435,7 +468,12 @@ void tcp_client_hb_stop(void) {
     
     // 等待任务结束
     if (g_hb_client.heartbeat_task_handle) {
-        // 任务会自己删除
+        // 等待任务真正结束，最多等待5秒
+        uint32_t wait_count = 0;
+        while (eTaskGetState(g_hb_client.heartbeat_task_handle) != eDeleted && wait_count < 50) {
+            vTaskDelay(pdMS_TO_TICKS(100));
+            wait_count++;
+        }
         g_hb_client.heartbeat_task_handle = NULL;
     }
     
@@ -520,9 +558,4 @@ void tcp_client_hb_print_status(void) {
     ESP_LOGI(TAG, "=== 心跳客户端状态 ===");
     ESP_LOGI(TAG, "状态: %d", g_hb_client.state);
     ESP_LOGI(TAG, "服务器: %s:%d", g_hb_client.config.server_ip, g_hb_client.config.server_port);
-    ESP_LOGI(TAG, "已发送心跳: %lu", g_hb_client.stats.heartbeat_sent_count);
-    ESP_LOGI(TAG, "发送失败: %lu", g_hb_client.stats.heartbeat_failed_count);
-    ESP_LOGI(TAG, "连接次数: %lu", g_hb_client.stats.connection_count);
-    ESP_LOGI(TAG, "重连次数: %lu", g_hb_client.stats.reconnection_count);
-    ESP_LOGI(TAG, "总连接时长: %llu ms", g_hb_client.stats.total_connected_time);
 }

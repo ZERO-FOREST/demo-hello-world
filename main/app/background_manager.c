@@ -58,7 +58,7 @@ static void background_manager_task(void* pvParameters) {
                         s_current_time.is_network_synced = true;
                         s_current_time.is_valid = true;
                         s_time_changed = true;
-                        ESP_LOGD(TAG, "Network time updated: %02d:%02d", hour, minute);
+                        // 网络时间更新
                     }
                 } else {
                     // 使用本地时间
@@ -68,8 +68,7 @@ static void background_manager_task(void* pvParameters) {
                     s_current_time.is_network_synced = false;
                     s_current_time.is_valid = true;
                     s_time_changed = true;
-                    ESP_LOGD(TAG, "Local time updated: %02d:%02d", 
-                             s_current_time.hour, s_current_time.minute);
+                    // 本地时间更新
                 }
                 s_last_time_update = current_time_us;
                 xSemaphoreGive(s_data_mutex);
@@ -94,9 +93,7 @@ static void background_manager_task(void* pvParameters) {
                         s_current_battery.is_valid = true;
                         s_battery_changed = true;
                         
-                        ESP_LOGD(TAG, "Battery updated: %dmV, %d%%, Low: %d, Critical: %d",
-                                 battery_info.voltage_mv, battery_info.percentage,
-                                 battery_info.is_low_battery, battery_info.is_critical);
+                        // 电池信息更新
                     }
                 } else {
                     s_current_battery.is_valid = false;

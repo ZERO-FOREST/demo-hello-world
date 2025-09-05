@@ -497,7 +497,7 @@ static esp_err_t load_credentials_from_nvs(wifi_credentials_t* credentials) {
     nvs_handle_t nvs_handle;
     esp_err_t ret = nvs_open(NVS_NAMESPACE, NVS_READONLY, &nvs_handle);
     if (ret != ESP_OK) {
-        ESP_LOGD(TAG, "打开NVS失败: %s", esp_err_to_name(ret));
+        // NVS打开失败
         return ret;
     }
 
@@ -508,13 +508,13 @@ static esp_err_t load_credentials_from_nvs(wifi_credentials_t* credentials) {
     uint8_t valid_flag = 0;
     ret = nvs_get_u8(nvs_handle, NVS_KEY_VALID, &valid_flag);
     if (ret != ESP_OK) {
-        ESP_LOGD(TAG, "读取有效标志失败: %s", esp_err_to_name(ret));
+        // 读取NVS标志失败
         nvs_close(nvs_handle);
         return ret;
     }
 
     if (valid_flag == 0) {
-        ESP_LOGD(TAG, "NVS中的凭证无效");
+        // NVS凭证无效
         nvs_close(nvs_handle);
         return ESP_ERR_NOT_FOUND;
     }
@@ -638,7 +638,7 @@ static esp_err_t scan_and_connect_target(void) {
     // 查找目标SSID
     bool found_target = false;
     for (int i = 0; i < ap_count; i++) {
-        ESP_LOGD(TAG, "发现WiFi: %s (RSSI: %d)", ap_list[i].ssid, ap_list[i].rssi);
+        // 发现WiFi网络
 
         if (is_target_ssid((char*)ap_list[i].ssid)) {
             ESP_LOGI(TAG, "发现目标WiFi: %s", ap_list[i].ssid);
@@ -658,7 +658,7 @@ static esp_err_t scan_and_connect_target(void) {
     free(ap_list);
 
     if (!found_target) {
-        ESP_LOGD(TAG, "未发现目标WiFi网络");
+        // 未发现目标网络
         return ESP_ERR_NOT_FOUND;
     }
 

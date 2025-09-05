@@ -165,7 +165,12 @@ esp_err_t tcp_task_manager_stop(void) {
     
     // 等待任务结束
     if (s_tcp_task_handle) {
-        vTaskDelay(pdMS_TO_TICKS(100)); // 给任务时间清理
+        // 等待任务真正结束，最多等待5秒
+        uint32_t wait_count = 0;
+        while (eTaskGetState(s_tcp_task_handle) != eDeleted && wait_count < 50) {
+            vTaskDelay(pdMS_TO_TICKS(100));
+            wait_count++;
+        }
         s_tcp_task_handle = NULL;
     }
     

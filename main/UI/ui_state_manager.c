@@ -94,8 +94,7 @@ ui_main_menu_state_t* ui_state_manager_get_main_menu_state(void) {
     }
 
     if (g_ui_state->main_menu.is_valid) {
-        ESP_LOGD(TAG, "Retrieved main menu state from PSRAM: selected=%d, scroll=%d",
-                 g_ui_state->main_menu.selected_index, g_ui_state->main_menu.scroll_position);
+        // 从PSRAM获取主菜单状态
         return &g_ui_state->main_menu;
     }
     return NULL;
@@ -210,8 +209,7 @@ ui_page_state_t* ui_state_manager_get_page_state(ui_screen_type_t screen_type) {
 
     ui_page_state_t* page_state = &g_ui_state->page_states[screen_type];
     if (page_state->is_valid) {
-        ESP_LOGD(TAG, "Retrieved page state from PSRAM: screen=%d, scroll=%d, selected=%d",
-                 screen_type, page_state->scroll_position, page_state->selected_item);
+        // 从PSRAM获取页面状态
         return page_state;
     }
     

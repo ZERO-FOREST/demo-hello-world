@@ -313,7 +313,6 @@ static void telemetry_data_task(void* pvParameters) {
                 current_data.throttle = cmd.throttle;
                 current_data.direction = cmd.direction;
                 xSemaphoreGive(data_mutex);
-                ESP_LOGD(TAG, "Updated control data from UI: throttle=%d, direction=%d", cmd.throttle, cmd.direction);
             }
         }
 

@@ -159,7 +159,7 @@ static void usb_rx_task(void* arg) {
         size_t n = 0;
         esp_err_t ret = tinyusb_cdcacm_read(TINYUSB_CDC_ACM_0, s_rx_chunk, sizeof(s_rx_chunk), &n);
         if (ret == ESP_OK && n > 0) {
-            ESP_LOGD(TAG, "接收到 %zu 字节数据", n);
+            // 接收到USB数据
             if (s_parse_len + (size_t)n > USB_RX_BUFFER_SIZE) {
                 size_t to_copy = USB_RX_BUFFER_SIZE;
                 if ((size_t)n < USB_RX_BUFFER_SIZE) {

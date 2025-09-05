@@ -141,6 +141,26 @@ static bool tcp_client_telemetry_connect_internal(void) {
     timeout.tv_sec = g_telemetry_client.config.recv_timeout_ms / 1000;
     timeout.tv_usec = (g_telemetry_client.config.recv_timeout_ms % 1000) * 1000;
     setsockopt(g_telemetry_client.socket_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+    
+    // 启用TCP Keep-Alive机制
+    int keepalive = 1;
+    setsockopt(g_telemetry_client.socket_fd, SOL_SOCKET, SO_KEEPALIVE, &keepalive, sizeof(keepalive));
+    
+    // 设置Keep-Alive参数（如果系统支持）
+    #ifdef TCP_KEEPIDLE
+    int keepidle = 30;  // 30秒后开始发送keep-alive探测
+    setsockopt(g_telemetry_client.socket_fd, IPPROTO_TCP, TCP_KEEPIDLE, &keepidle, sizeof(keepidle));
+    #endif
+    
+    #ifdef TCP_KEEPINTVL
+    int keepintvl = 5;  // 探测间隔5秒
+    setsockopt(g_telemetry_client.socket_fd, IPPROTO_TCP, TCP_KEEPINTVL, &keepintvl, sizeof(keepintvl));
+    #endif
+    
+    #ifdef TCP_KEEPCNT
+    int keepcnt = 3;    // 最多3次探测失败后断开连接
+    setsockopt(g_telemetry_client.socket_fd, IPPROTO_TCP, TCP_KEEPCNT, &keepcnt, sizeof(keepcnt));
+    #endif
 
     // 配置服务器地址
     struct sockaddr_in server_addr;
@@ -274,8 +294,12 @@ static void tcp_client_telemetry_task_function(void *pvParameters) {
             telemetry_data.yaw_deg = g_sim_telemetry.yaw_deg;
             telemetry_data.altitude_cm = g_sim_telemetry.altitude_cm;
             
-            // 发送遥测数据
-            tcp_client_telemetry_send_data(&telemetry_data);
+            // 发送遥测数据，如果失败则断开连接
+            if (!tcp_client_telemetry_send_data(&telemetry_data)) {
+                ESP_LOGW(TAG, "遥测数据发送失败，断开连接");
+                tcp_client_telemetry_disconnect_internal();
+                continue;
+            }
         }
         
         vTaskDelay(pdMS_TO_TICKS(1000)); // 1秒发送一次遥测数据
@@ -370,7 +394,12 @@ void tcp_client_telemetry_stop(void) {
     
     // 等待任务结束
     if (g_telemetry_client.telemetry_task_handle) {
-        // 任务会自己删除
+        // 等待任务真正结束，最多等待5秒
+        uint32_t wait_count = 0;
+        while (eTaskGetState(g_telemetry_client.telemetry_task_handle) != eDeleted && wait_count < 50) {
+            vTaskDelay(pdMS_TO_TICKS(100));
+            wait_count++;
+        }
         g_telemetry_client.telemetry_task_handle = NULL;
     }
     
@@ -436,11 +465,25 @@ bool tcp_client_telemetry_send_data(const telemetry_data_payload_t *telemetry_da
         return false;
     }
 
+    // 发送成功后，尝试接收数据来检测连接状态
+    uint8_t recv_buffer[1];
+    int recv_result = recv(g_telemetry_client.socket_fd, recv_buffer, sizeof(recv_buffer), MSG_DONTWAIT);
+    if (recv_result == 0) {
+        // 连接已被对方关闭
+        ESP_LOGW(TAG, "检测到连接已断开（recv返回0）");
+        g_telemetry_client.stats.telemetry_failed_count++;
+        return false;
+    } else if (recv_result < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
+        // 发生了真正的错误（EAGAIN和EWOULDBLOCK是正常的，表示没有数据可读）
+        ESP_LOGW(TAG, "检测到连接错误: %s", strerror(errno));
+        g_telemetry_client.stats.telemetry_failed_count++;
+        return false;
+    }
+
     g_telemetry_client.stats.telemetry_sent_count++;
     g_telemetry_client.stats.last_telemetry_time = tcp_client_telemetry_get_timestamp_ms();
     g_telemetry_client.stats.bytes_sent += sent_bytes;
     
-    ESP_LOGD(TAG, "遥测数据发送成功，已发送: %lu", g_telemetry_client.stats.telemetry_sent_count);
     return true;
 }
 
@@ -468,7 +511,6 @@ bool tcp_client_telemetry_process_received_data(void) {
     }
     
     g_telemetry_client.stats.bytes_received += received_bytes;
-    ESP_LOGD(TAG, "接收到 %d 字节数据", received_bytes);
     
     // 查找帧头
     int header_pos = tcp_client_telemetry_find_frame_header(g_telemetry_client.recv_buffer, received_bytes);
@@ -503,13 +545,6 @@ void tcp_client_telemetry_print_status(void) {
     ESP_LOGI(TAG, "=== 遥测客户端状态 ===");
     ESP_LOGI(TAG, "状态: %d", g_telemetry_client.state);
     ESP_LOGI(TAG, "服务器: %s:%d", g_telemetry_client.config.server_ip, g_telemetry_client.config.server_port);
-    ESP_LOGI(TAG, "已发送遥测: %lu", g_telemetry_client.stats.telemetry_sent_count);
-    ESP_LOGI(TAG, "发送失败: %lu", g_telemetry_client.stats.telemetry_failed_count);
-    ESP_LOGI(TAG, "连接次数: %lu", g_telemetry_client.stats.connection_count);
-    ESP_LOGI(TAG, "重连次数: %lu", g_telemetry_client.stats.reconnection_count);
-    ESP_LOGI(TAG, "总连接时长: %llu ms", g_telemetry_client.stats.total_connected_time);
-    ESP_LOGI(TAG, "发送字节数: %lu", g_telemetry_client.stats.bytes_sent);
-    ESP_LOGI(TAG, "接收字节数: %lu", g_telemetry_client.stats.bytes_received);
 }
 
 void tcp_client_telemetry_update_sim_data(tcp_client_telemetry_sim_data_t *sim_data) {
@@ -540,11 +575,6 @@ void tcp_client_telemetry_print_received_frame(const uint8_t *buffer, uint16_t b
         return;
     }
     
-    ESP_LOGI(TAG, "=== 接收到协议帧 ===");
-    ESP_LOGI(TAG, "帧头1: 0x%02X", buffer[0]);
-    ESP_LOGI(TAG, "帧头2: 0x%02X", buffer[1]);
-    ESP_LOGI(TAG, "长度: %d", buffer[2]);
-    ESP_LOGI(TAG, "类型: %d", buffer[3]);
     
     if (buffer_len >= buffer[2] + 6) {  // 头部(4) + 载荷(length) + CRC(2)
         uint16_t crc = buffer[buffer[2] + 4] | (buffer[buffer[2] + 5] << 8);

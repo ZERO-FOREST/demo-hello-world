@@ -147,7 +147,6 @@ static void handle_client_connection(int client_sock) {
         if (len > 0) {
             buffer_len += len;
             last_packet_time = xTaskGetTickCount();
-            ESP_LOGD(TAG, "Received %d bytes, buffer now %d bytes", len, buffer_len);
 
             // 循环处理缓冲区中的数据，直到无法解析出完整的帧
             while (buffer_len > 0) {
@@ -156,7 +155,6 @@ static void handle_client_connection(int client_sock) {
 
                 if (frame_len > 0) {
                     // 成功解析出一个帧
-                    ESP_LOGD(TAG, "Parsed a frame of length %d", frame_len);
                     process_received_frame(&frame);
 
                     // 从缓冲区移除已处理的帧

@@ -393,7 +393,7 @@ static void update_icon_positions(void) {
         }
     }
 
-    ESP_LOGD(TAG, "Updated positions for %d visible icons", visible_count);
+    // 更新图标位置
 }
 
 /**
@@ -426,7 +426,7 @@ static esp_err_t create_icon_label(status_icon_type_t icon_type) {
     // 初始状态为隐藏
     lv_obj_add_flag(icon->label, LV_OBJ_FLAG_HIDDEN);
 
-    ESP_LOGD(TAG, "Created label for icon type %d", icon_type);
+    // 创建图标标签
     return ESP_OK;
 }
 

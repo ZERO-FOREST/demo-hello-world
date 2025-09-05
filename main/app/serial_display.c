@@ -149,7 +149,7 @@ static esp_err_t serial_send_data(const uint8_t* data, size_t len) {
         return ESP_FAIL;
     }
 
-    ESP_LOGD(TAG, "Serial sent %d bytes", written);
+    // 串口数据发送完成
     return ESP_OK;
 }
 

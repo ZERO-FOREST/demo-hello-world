@@ -58,7 +58,6 @@ static void time_update_timer_cb(lv_timer_t* timer) {
             lv_obj_invalidate(g_time_label);
             // 标记已显示
             background_manager_mark_time_displayed();
-            ESP_LOGD("UI_MAIN", "Time updated: %s", time_str);
         }
     }
 }
@@ -99,8 +98,7 @@ void ui_main_update_battery_display(void) {
 
             // 标记已显示
             background_manager_mark_battery_displayed();
-            ESP_LOGD("UI_MAIN", "Battery updated: %s, color: %s", battery_str,
-                     battery_info.percentage <= 30 ? "red" : "black");
+            // 电池状态更新
         }
     }
 }

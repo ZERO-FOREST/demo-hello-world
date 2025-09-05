@@ -72,9 +72,6 @@ esp_err_t telemetry_data_converter_update(void) {
         s_cached_data.joystick.joy_y = joystick_data.norm_joy1_y;
         s_cached_data.joystick.valid = true;
         
-        ESP_LOGD(TAG, "Joystick: X=%d, Y=%d", 
-                s_cached_data.joystick.joy_x, 
-                s_cached_data.joystick.joy_y);
     } else {
         s_cached_data.joystick.valid = false;
         ESP_LOGW(TAG, "Failed to read joystick data");
@@ -90,10 +87,6 @@ esp_err_t telemetry_data_converter_update(void) {
         s_cached_data.imu.yaw = imu_data.gyro.z;
         s_cached_data.imu.valid = true;
         
-        ESP_LOGD(TAG, "IMU: Roll=%.2f, Pitch=%.2f, Yaw=%.2f", 
-                s_cached_data.imu.roll, 
-                s_cached_data.imu.pitch, 
-                s_cached_data.imu.yaw);
     } else {
         s_cached_data.imu.valid = false;
         ESP_LOGW(TAG, "Failed to read IMU data");
@@ -104,7 +97,7 @@ esp_err_t telemetry_data_converter_update(void) {
     s_cached_data.imu.pitch = 0.0f;
     s_cached_data.imu.yaw = 0.0f;
     s_cached_data.imu.valid = false;
-    ESP_LOGD(TAG, "IMU sensor disabled, using default values");
+    // IMU传感器未启用
 #endif
     
     // 3. 获取电池数据 (可选功能)
@@ -115,8 +108,7 @@ esp_err_t telemetry_data_converter_update(void) {
         s_cached_data.battery.current_ma = 0; // 当前电池监测不支持电流检测
         s_cached_data.battery.valid = true;
         
-        ESP_LOGD(TAG, "Battery: Voltage=%dmV, Percentage=%d%%", 
-                battery_info.voltage_mv, battery_info.percentage);
+        // 电池数据转换
     } else {
         s_cached_data.battery.valid = false;
         ESP_LOGW(TAG, "Failed to read battery data");
@@ -126,7 +118,7 @@ esp_err_t telemetry_data_converter_update(void) {
     s_cached_data.battery.voltage_mv = 3700; // 默认3.7V
     s_cached_data.battery.current_ma = 100;  // 默认100mA
     s_cached_data.battery.valid = false;
-    ESP_LOGD(TAG, "Battery monitoring disabled, using default values");
+    // 电池监控未启用
 #endif
     
     // 4. 更新时间戳
@@ -159,8 +151,7 @@ esp_err_t telemetry_data_converter_get_rc_channels(uint16_t *channels, uint8_t *
     
     *channel_count = 4;  // 目前使用4个通道
     
-    ESP_LOGD(TAG, "RC Channels: Throttle=%d, Direction=%d", 
-            channels[0], channels[1]);
+    // RC通道数据转换
     
     return ESP_OK;
 }
@@ -197,9 +188,7 @@ esp_err_t telemetry_data_converter_get_telemetry_data(telemetry_data_payload_t *
     // 高度数据 - 目前暂无传感器，设为0
     telemetry->altitude_cm = 0;
     
-    ESP_LOGD(TAG, "Telemetry: V=%dmV, I=%dmA, R=%d, P=%d, Y=%d", 
-            telemetry->voltage_mv, telemetry->current_ma,
-            telemetry->roll_deg, telemetry->pitch_deg, telemetry->yaw_deg);
+    // 遥测数据打包完成
     
     return ESP_OK;
 }
