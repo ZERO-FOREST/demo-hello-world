@@ -2,7 +2,7 @@
  * @Author: tidycraze 2595256284@qq.com
  * @Date: 2025-07-28 11:29:59
  * @LastEditors: tidycraze 2595256284@qq.com
- * @LastEditTime: 2025-09-04 16:28:26
+ * @LastEditTime: 2025-09-05 13:22:11
  * @FilePath: \demo-hello-world\main\main.c
  * @Description: 主函数入口
  *
@@ -23,6 +23,7 @@
 #include "spi_slave_receiver.h"
 #include "usb_device_receiver.h"
 #include "wifi_pairing_manager.h"
+#include "task.h"
 
 static const char* TAG = "main";
 
@@ -31,9 +32,6 @@ static void log_heap_info(const char* step) {
     ESP_LOGI(TAG, "  Internal RAM free: %u bytes", heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
     ESP_LOGI(TAG, "  PSRAM free: %u bytes", heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
 }
-
-led_manager_config_t led_manager_config = {
-    .led_count = 1, .task_priority = 2, .task_stack_size = 2048, .queue_size = 2};
 
 void app_main(void) {
 
@@ -48,28 +46,12 @@ void app_main(void) {
 
     // 初始化LED管理器
     led_manager_config_t led_manager_config = {
-        .led_count = 1, .queue_size = 2, .task_priority = 5, .task_stack_size = 2048};
+        .led_count = 1, .queue_size = 1, .task_priority = 2, .task_stack_size = 2048};
     if (led_status_manager_init(&led_manager_config) == ESP_OK) {
         led_status_set_style(LED_STYLE_RED_SOLID, LED_PRIORITY_LOW, 0);
         log_heap_info("After LED Manager Init");
     } else {
         ESP_LOGE(TAG, "Failed to initialize LED Status Manager");
-    }
-
-    // 初始化WiFi配对管理器
-    wifi_pairing_config_t wifi_config = {
-        .scan_interval_ms = 1000,
-        .task_priority = 3,
-        .task_stack_size = 4096,
-        .connection_timeout_ms = 10000,
-        .target_ssid_prefix = "tidy_",
-        .default_password = "22989822",
-    };
-    if (wifi_pairing_manager_init(&wifi_config, NULL) == ESP_OK) {
-        wifi_pairing_manager_start();
-        log_heap_info("After WiFi Manager Init");
-    } else {
-        ESP_LOGE(TAG, "Failed to initialize WiFi Pairing Manager");
     }
 
     // 初始化 SPI 从机并启动接收任务
@@ -87,6 +69,27 @@ void app_main(void) {
         log_heap_info("After USB Receiver Init");
     } else {
         ESP_LOGE(TAG, "Failed to initialize USB Receiver");
+    }
+
+    // 启动事件驱动的TCP管理器
+    ESP_LOGI(TAG, "启动事件驱动TCP管理器");
+
+    // 初始化WiFi配对管理器
+    wifi_pairing_config_t wifi_config = {
+        .scan_interval_ms = 1000,
+        .task_priority = 3,
+        .task_stack_size = 4096,
+        .connection_timeout_ms = 10000,
+        .target_ssid_prefix = "tidy_",
+        .default_password = "22989822",
+    };
+    // 启动带WIFI事件集成的TCP管理器
+    esp_err_t tcp_result = tcp_task_manager_start_with_wifi(&wifi_config);
+    if (tcp_result != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to start TCP manager: %s", esp_err_to_name(tcp_result));
+    } else {
+        ESP_LOGI(TAG, "Event-driven TCP manager started successfully");
+        log_heap_info("After TCP Manager Init");
     }
 
     while (1) {
