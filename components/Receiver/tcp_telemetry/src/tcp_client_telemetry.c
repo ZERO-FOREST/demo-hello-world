@@ -417,24 +417,20 @@ bool tcp_client_telemetry_send_data(const telemetry_data_payload_t *telemetry_da
         return false;
     }
 
-    // 创建协议帧
-    protocol_frame_t frame;
-    frame.header.sync_word = PROTOCOL_SYNC_WORD;
-    frame.header.frame_type = FRAME_TYPE_TELEMETRY;
-    frame.header.sequence_number = g_telemetry_client.stats.telemetry_sent_count + 1;
-    frame.header.payload_length = sizeof(telemetry_data_payload_t);
+    // 使用通用协议函数创建遥测帧
+    uint8_t frame_buffer[256];  // 足够大的缓冲区
+    uint16_t frame_length = create_telemetry_frame_common(frame_buffer, sizeof(frame_buffer), telemetry_data);
     
-    // 复制遥测数据到帧负载
-    memcpy(frame.payload, telemetry_data, sizeof(telemetry_data_payload_t));
-    
-    // 计算CRC（简化版本，实际应该使用完整的CRC计算）
-    frame.crc = 0x1234; // 占位符
+    if (frame_length == 0) {
+        ESP_LOGE(TAG, "创建遥测帧失败");
+        g_telemetry_client.stats.telemetry_failed_count++;
+        return false;
+    }
     
     // 发送数据
-    int total_size = sizeof(protocol_header_t) + frame.header.payload_length + sizeof(uint16_t);
-    int sent_bytes = send(g_telemetry_client.socket_fd, &frame, total_size, 0);
+    int sent_bytes = send(g_telemetry_client.socket_fd, frame_buffer, frame_length, 0);
     
-    if (sent_bytes != total_size) {
+    if (sent_bytes != frame_length) {
         ESP_LOGE(TAG, "发送遥测数据失败: %s", strerror(errno));
         g_telemetry_client.stats.telemetry_failed_count++;
         return false;
@@ -479,8 +475,7 @@ bool tcp_client_telemetry_process_received_data(void) {
     if (header_pos >= 0) {
         // 找到帧头，尝试解析完整帧
         if (received_bytes - header_pos >= sizeof(protocol_header_t)) {
-            protocol_frame_t *frame = (protocol_frame_t *)(g_telemetry_client.recv_buffer + header_pos);
-            tcp_client_telemetry_print_received_frame(frame);
+            tcp_client_telemetry_print_received_frame(g_telemetry_client.recv_buffer + header_pos, received_bytes - header_pos);
         }
     }
     
@@ -539,22 +534,20 @@ void tcp_client_telemetry_update_sim_data(tcp_client_telemetry_sim_data_t *sim_d
     if (sim_data->altitude_cm < 0) sim_data->altitude_cm = 0;
 }
 
-void tcp_client_telemetry_print_received_frame(const protocol_frame_t *frame) {
-    if (!frame) {
+void tcp_client_telemetry_print_received_frame(const uint8_t *buffer, uint16_t buffer_len) {
+    if (!buffer || buffer_len < 4) {
+        ESP_LOGW(TAG, "缓冲区无效或长度不足");
         return;
     }
     
-    ESP_LOGI(TAG, "=== 接收到帧 ===");
-    ESP_LOGI(TAG, "同步字: 0x%04X", frame->header.sync_word);
-    ESP_LOGI(TAG, "帧类型: %d", frame->header.frame_type);
-    ESP_LOGI(TAG, "序列号: %d", frame->header.sequence_number);
-    ESP_LOGI(TAG, "负载长度: %d", frame->header.payload_length);
-    ESP_LOGI(TAG, "CRC: 0x%04X", frame->crc);
+    ESP_LOGI(TAG, "=== 接收到协议帧 ===");
+    ESP_LOGI(TAG, "帧头1: 0x%02X", buffer[0]);
+    ESP_LOGI(TAG, "帧头2: 0x%02X", buffer[1]);
+    ESP_LOGI(TAG, "长度: %d", buffer[2]);
+    ESP_LOGI(TAG, "类型: %d", buffer[3]);
     
-    // 根据帧类型解析负载
-    if (frame->header.frame_type == FRAME_TYPE_COMMAND && 
-        frame->header.payload_length >= sizeof(command_payload_t)) {
-        command_payload_t *cmd = (command_payload_t *)frame->payload;
-        ESP_LOGI(TAG, "命令类型: %d, 参数: %d", cmd->command_type, cmd->parameter);
+    if (buffer_len >= buffer[2] + 6) {  // 头部(4) + 载荷(length) + CRC(2)
+        uint16_t crc = buffer[buffer[2] + 4] | (buffer[buffer[2] + 5] << 8);
+        ESP_LOGI(TAG, "CRC: 0x%04X", crc);
     }
 }

@@ -102,29 +102,12 @@ static void tcp_client_hb_update_stats_on_disconnect(void) {
 }
 
 static uint16_t tcp_client_hb_create_packet(uint8_t *buffer, uint16_t buffer_size) {
-    if (!buffer || buffer_size < sizeof(protocol_frame_t)) {
-        ESP_LOGE(TAG, "缓冲区无效或太小");
-        return 0;
-    }
-
-    protocol_frame_t *frame = (protocol_frame_t *)buffer;
+    // 使用通用协议函数创建心跳帧
+    heartbeat_payload_t payload;
+    payload.device_status = g_hb_client.config.device_status;
+    payload.timestamp = (uint32_t)(tcp_client_hb_get_timestamp_ms() / 1000); // 转换为秒
     
-    // 填充帧头
-    frame->header.sync_word = PROTOCOL_SYNC_WORD;
-    frame->header.frame_type = FRAME_TYPE_HEARTBEAT;
-    frame->header.sequence_number = 0; // 心跳包序列号可以为0
-    frame->header.payload_length = sizeof(heartbeat_payload_t);
-    
-    // 填充心跳负载
-    heartbeat_payload_t *payload = (heartbeat_payload_t *)frame->payload;
-    payload->device_status = g_hb_client.config.device_status;
-    payload->timestamp = (uint32_t)(tcp_client_hb_get_timestamp_ms() / 1000); // 转换为秒
-    
-    // 计算CRC（不包括CRC字段本身）
-    uint16_t crc_length = sizeof(protocol_header_t) + frame->header.payload_length;
-    frame->crc = calculate_crc16_modbus(buffer, crc_length);
-    
-    return sizeof(protocol_header_t) + frame->header.payload_length + sizeof(uint16_t);
+    return create_heartbeat_frame(buffer, buffer_size, payload.device_status, payload.timestamp);
 }
 
 static bool tcp_client_hb_send_packet(void) {

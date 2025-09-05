@@ -37,15 +37,14 @@ static void parse_and_dispatch(const uint8_t* data, size_t len) {
         return;
 
     // 判断模式：若缓冲区以协议帧头(0xAA55)起始，则按二进制帧解析；否则按ASCII行命令解析
-    if (len >= 2 && data[0] == ((PROTOCOL_SYNC_WORD >> 8) & 0xFF) && data[1] == (PROTOCOL_SYNC_WORD & 0xFF)) {
+    if (len >= 2 && data[0] == FRAME_HEADER_1 && data[1] == FRAME_HEADER_2) {
         size_t pos = 0;
         while (pos + MIN_FRAME_SIZE <= len) {
             if (pos + sizeof(protocol_header_t) > len)
                 break;
             
-            // 检查同步字
-            uint16_t sync_word = (data[pos] << 8) | data[pos + 1];
-            if (sync_word != PROTOCOL_SYNC_WORD) {
+            // 检查帧头
+            if (data[pos] != FRAME_HEADER_1 || data[pos + 1] != FRAME_HEADER_2) {
                 // 在二进制模式下遇到非帧头字节，跳过1字节
                 pos++;
                 continue;
@@ -53,16 +52,14 @@ static void parse_and_dispatch(const uint8_t* data, size_t len) {
             
             // 获取协议头信息
             protocol_header_t* header = (protocol_header_t*)&data[pos];
-            size_t frame_size = sizeof(protocol_header_t) + header->payload_length + sizeof(uint16_t);
+            size_t frame_size = sizeof(protocol_header_t) + header->length + sizeof(uint16_t);
             
             if (pos + frame_size > len)
                 break; // 帧不完整，等待更多数据
 
-            protocol_frame_t* frame = (protocol_frame_t*)&data[pos];
-            
             // 验证帧
-            if (validate_frame(frame, frame_size)) {
-                switch (frame->header.frame_type) {
+            if (validate_frame(&data[pos], frame_size)) {
+                switch (header->frame_type) {
                 case FRAME_TYPE_COMMAND:
                     // 处理命令帧（如遥控数据）
                     ESP_LOGI(TAG, "Received command frame via USB");
@@ -74,12 +71,12 @@ static void parse_and_dispatch(const uint8_t* data, size_t len) {
                 case FRAME_TYPE_EXTENDED:
                     // 处理扩展帧
                     ESP_LOGI(TAG, "Received extended frame via USB");
-                    if (frame->header.payload_length >= sizeof(extended_cmd_payload_t)) {
-                        handle_extended_command((const extended_cmd_payload_t*)frame->payload);
+                    if (header->length >= sizeof(extended_cmd_payload_t)) {
+                        handle_extended_command((const extended_cmd_payload_t*)&data[pos + sizeof(protocol_header_t)]);
                     }
                     break;
                 default:
-                    ESP_LOGW(TAG, "Unknown frame type: 0x%02X", frame->header.frame_type);
+                    ESP_LOGW(TAG, "Unknown frame type: 0x%02X", header->frame_type);
                     break;
                 }
             } else {

@@ -6,6 +6,7 @@
  */
 
 #include "../inc/tcp_common_protocol.h"
+#include "esp_log.h"
 #include <string.h>
 
 // CRC16 Modbus查找表
@@ -57,73 +58,118 @@ uint16_t calculate_crc16_modbus(const uint8_t *data, uint16_t length) {
 
 uint16_t create_heartbeat_frame(uint8_t *buffer, uint16_t buffer_size, 
                                uint8_t device_status, uint32_t timestamp) {
-    if (!buffer || buffer_size < sizeof(protocol_frame_t)) {
+    if (!buffer || buffer_size < sizeof(protocol_header_t) + sizeof(heartbeat_payload_t) + sizeof(uint16_t)) {
         return 0;
     }
     
-    protocol_frame_t *frame = (protocol_frame_t *)buffer;
+    // 直接操作缓冲区，使用Telemetry协议格式
+    uint8_t *ptr = buffer;
     
-    // 填充协议头
-    frame->header.sync_word = PROTOCOL_SYNC_WORD;
-    frame->header.frame_type = FRAME_TYPE_HEARTBEAT;
-    frame->header.sequence_number = 0; // 心跳包序列号可以为0
-    frame->header.payload_length = sizeof(heartbeat_payload_t);
+    // 填充协议头 (兼容Telemetry协议)
+    protocol_header_t *header = (protocol_header_t *)ptr;
+    header->header1 = FRAME_HEADER_1;                    // 0xAA
+    header->header2 = FRAME_HEADER_2;                    // 0x55
+    header->length = 1 + sizeof(heartbeat_payload_t);    // 长度 = 1(类型) + N(负载)
+    header->frame_type = FRAME_TYPE_HEARTBEAT;           // 0x03
+    ptr += sizeof(protocol_header_t);
     
     // 填充心跳负载
-    heartbeat_payload_t *payload = (heartbeat_payload_t *)frame->payload;
+    heartbeat_payload_t *payload = (heartbeat_payload_t *)ptr;
     payload->device_status = device_status;
     payload->timestamp = timestamp;
+    ptr += sizeof(heartbeat_payload_t);
     
-    // 计算CRC（不包括CRC字段本身）
-    uint16_t crc_length = sizeof(protocol_header_t) + frame->header.payload_length;
-    frame->crc = calculate_crc16_modbus(buffer, crc_length);
+    // 计算CRC（Telemetry协议方式：长度字段 + 类型字段 + 负载数据）
+    uint16_t crc_length = 1 + 1 + sizeof(heartbeat_payload_t); // length + type + payload
+    uint16_t calculated_crc = calculate_crc16_modbus(&buffer[2], crc_length); // 从长度字段开始
     
-    return sizeof(protocol_header_t) + frame->header.payload_length + sizeof(uint16_t);
+    // 直接将CRC写入到正确位置（小端字节序）
+    *ptr++ = calculated_crc & 0xFF;        // CRC低字节
+    *ptr++ = (calculated_crc >> 8) & 0xFF; // CRC高字节
+    
+    return sizeof(protocol_header_t) + sizeof(heartbeat_payload_t) + sizeof(uint16_t);
 }
 
 uint16_t create_telemetry_frame_common(uint8_t *buffer, uint16_t buffer_size, 
                                       const telemetry_data_payload_t *telemetry_data) {
-    if (!buffer || !telemetry_data || buffer_size < sizeof(protocol_frame_t)) {
+    if (!buffer || !telemetry_data || buffer_size < sizeof(protocol_header_t) + sizeof(telemetry_data_payload_t) + sizeof(uint16_t)) {
         return 0;
     }
     
-    protocol_frame_t *frame = (protocol_frame_t *)buffer;
+    // 直接操作缓冲区，使用Telemetry协议格式
+    uint8_t *ptr = buffer;
     
-    // 填充协议头
-    frame->header.sync_word = PROTOCOL_SYNC_WORD;
-    frame->header.frame_type = FRAME_TYPE_TELEMETRY;
-    frame->header.sequence_number = 0; // 可以根据需要设置序列号
-    frame->header.payload_length = sizeof(telemetry_data_payload_t);
+    // 填充协议头 (兼容Telemetry协议)
+    protocol_header_t *header = (protocol_header_t *)ptr;
+    header->header1 = FRAME_HEADER_1;                    // 0xAA
+    header->header2 = FRAME_HEADER_2;                    // 0x55
+    header->length = 1 + sizeof(telemetry_data_payload_t); // 长度 = 1(类型) + N(负载)
+    header->frame_type = FRAME_TYPE_TELEMETRY;           // 0x02
+    ptr += sizeof(protocol_header_t);
     
     // 填充遥测负载
-    memcpy(frame->payload, telemetry_data, sizeof(telemetry_data_payload_t));
+    memcpy(ptr, telemetry_data, sizeof(telemetry_data_payload_t));
+    ptr += sizeof(telemetry_data_payload_t);
     
-    // 计算CRC（不包括CRC字段本身）
-    uint16_t crc_length = sizeof(protocol_header_t) + frame->header.payload_length;
-    frame->crc = calculate_crc16_modbus(buffer, crc_length);
+    // 计算CRC（Telemetry协议方式：长度字段 + 类型字段 + 负载数据）
+    uint16_t crc_length = 1 + 1 + sizeof(telemetry_data_payload_t); // length + type + payload
+    uint16_t calculated_crc = calculate_crc16_modbus(&buffer[2], crc_length); // 从长度字段开始
     
-    return sizeof(protocol_header_t) + frame->header.payload_length + sizeof(uint16_t);
+    // 直接将CRC写入到正确位置（小端字节序）
+    *ptr++ = calculated_crc & 0xFF;        // CRC低字节
+    *ptr++ = (calculated_crc >> 8) & 0xFF; // CRC高字节
+    
+    // 添加调试日志
+    ESP_LOGI("TCP_PROTOCOL", "创建遥测帧: 帧头1=0x%02X, 帧头2=0x%02X, 长度=%d, 类型=%d", 
+             header->header1, header->header2, header->length, header->frame_type);
+    ESP_LOGI("TCP_PROTOCOL", "CRC计算: 数据长度=%d, CRC=0x%04X", crc_length, calculated_crc);
+    
+    // 打印原始数据用于调试
+    uint16_t total_length = sizeof(protocol_header_t) + sizeof(telemetry_data_payload_t) + sizeof(uint16_t);
+    ESP_LOG_BUFFER_HEX("TCP_PROTOCOL", buffer, total_length);
+    
+    return total_length;
 }
 
-bool validate_frame(const protocol_frame_t *frame, uint16_t frame_size) {
-    if (!frame || frame_size < sizeof(protocol_header_t) + sizeof(uint16_t)) {
+bool validate_frame(const uint8_t *buffer, uint16_t buffer_size) {
+    if (!buffer || buffer_size < MIN_FRAME_SIZE) {
         return false;
     }
     
-    // 检查同步字
-    if (frame->header.sync_word != PROTOCOL_SYNC_WORD) {
+    // 验证帧头
+    if (buffer[0] != FRAME_HEADER_1 || buffer[1] != FRAME_HEADER_2) {
         return false;
     }
     
-    // 检查帧大小
-    uint16_t expected_size = sizeof(protocol_header_t) + frame->header.payload_length + sizeof(uint16_t);
-    if (frame_size != expected_size) {
+    // 获取长度字段和帧类型
+    uint8_t length_field = buffer[2];
+    uint8_t frame_type = buffer[3];
+    
+    // 验证帧类型
+    if (frame_type != FRAME_TYPE_HEARTBEAT && 
+        frame_type != FRAME_TYPE_TELEMETRY &&
+        frame_type != FRAME_TYPE_COMMAND &&
+        frame_type != FRAME_TYPE_EXTENDED) {
         return false;
     }
     
-    // 验证CRC
-    uint16_t crc_length = sizeof(protocol_header_t) + frame->header.payload_length;
-    uint16_t calculated_crc = calculate_crc16_modbus((const uint8_t *)frame, crc_length);
+    // 验证帧长度
+    // 完整帧长 = 2(帧头) + 1(长度) + length_field + 2(CRC)
+    uint16_t expected_size = 2 + 1 + length_field + 2;
+    if (buffer_size != expected_size) {
+        return false;
+    }
     
-    return (calculated_crc == frame->crc);
+    // 验证CRC (计算范围：长度字段 + 类型字段 + 负载数据)
+    uint16_t crc_length = 1 + length_field; // length + type + payload
+    uint16_t calculated_crc = calculate_crc16_modbus(&buffer[2], crc_length);
+    
+    // 获取接收到的CRC (小端字节序)
+    uint16_t received_crc = (uint16_t)(buffer[buffer_size - 1] << 8) | buffer[buffer_size - 2];
+    
+    if (received_crc != calculated_crc) {
+        return false;
+    }
+    
+    return true;
 }

@@ -17,21 +17,22 @@ extern "C" {
 #endif
 
 // ----------------- 协议常量 -----------------
-#define PROTOCOL_SYNC_WORD 0xAA55               // 同步字
+#define FRAME_HEADER_1 0xAA                     // 帧头1
+#define FRAME_HEADER_2 0x55                     // 帧头2
 #define FRAME_TYPE_HEARTBEAT 0x03               // 心跳帧类型
 #define FRAME_TYPE_TELEMETRY 0x02               // 遥测帧类型
 #define FRAME_TYPE_COMMAND 0x01                 // 命令帧类型
 #define FRAME_TYPE_EXTENDED 0x04                // 扩展帧类型
 
 #define MAX_PAYLOAD_SIZE 128                    // 最大负载大小
-#define MIN_FRAME_SIZE 8                        // 最小帧大小
+#define MIN_FRAME_SIZE 7                        // 最小帧大小
 
-// ----------------- 协议头结构 -----------------
+// ----------------- 协议头结构 (兼容Telemetry协议) -----------------
 typedef struct __attribute__((packed)) {
-    uint16_t sync_word;                         // 同步字 0xAA55
+    uint8_t header1;                            // 帧头1 0xAA
+    uint8_t header2;                            // 帧头2 0x55
+    uint8_t length;                             // 长度字段 = 1(类型) + N(负载)
     uint8_t frame_type;                         // 帧类型
-    uint8_t sequence_number;                    // 序列号
-    uint16_t payload_length;                    // 负载长度
 } protocol_header_t;
 
 // ----------------- 负载结构定义 -----------------
@@ -65,12 +66,10 @@ typedef struct __attribute__((packed)) {
     uint8_t params[MAX_PAYLOAD_SIZE - 2];       // 参数数据
 } extended_cmd_payload_t;
 
-// ----------------- 协议帧结构 -----------------
-typedef struct __attribute__((packed)) {
-    protocol_header_t header;                   // 协议头
-    uint8_t payload[MAX_PAYLOAD_SIZE];          // 负载数据
-    uint16_t crc;                               // CRC校验
-} protocol_frame_t;
+// ----------------- 协议帧结构 (仅用于参考，实际使用直接操作缓冲区) -----------------
+// 帧格式: [帧头1:1B][帧头2:1B][长度:1B][类型:1B][负载:NB][CRC:2B]
+// 注意：长度字段 = 1(类型字段) + N(负载长度)
+// CRC计算范围：长度字段 + 类型字段 + 负载数据
 
 // ----------------- 函数声明 -----------------
 
@@ -104,12 +103,12 @@ uint16_t create_telemetry_frame_common(uint8_t *buffer, uint16_t buffer_size,
                                       const telemetry_data_payload_t *telemetry_data);
 
 /**
- * @brief 验证帧的完整性
- * @param frame 协议帧指针
- * @param frame_size 帧大小
- * @return true 验证通过，false 验证失败
+ * @brief 验证协议帧
+ * @param buffer 帧缓冲区指针
+ * @param buffer_size 缓冲区大小
+ * @return true 验证成功，false 验证失败
  */
-bool validate_frame(const protocol_frame_t *frame, uint16_t frame_size);
+bool validate_frame(const uint8_t *buffer, uint16_t buffer_size);
 
 #ifdef __cplusplus
 }

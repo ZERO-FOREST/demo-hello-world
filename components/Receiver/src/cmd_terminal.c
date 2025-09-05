@@ -245,9 +245,11 @@ static void handle_text_command(char* line) {
     if (strcmp(cmd, "wifi") == 0 || strcmp(cmd, "wifir") == 0) {
         bool reboot_after = (strcmp(cmd, "wifir") == 0);
         
-        // 解析SSID和密码参数
-        char* ssid = strtok_r(NULL, " \t", &saveptr);
-        char* password = strtok_r(NULL, " \t", &saveptr);
+        // 解析SSID和密码参数 - 使用原始输入保持大小写
+        char* original_saveptr = NULL;
+        char* original_cmd = strtok_r(line, " \t", &original_saveptr);
+        char* ssid = strtok_r(NULL, " \t", &original_saveptr);
+        char* password = strtok_r(NULL, " \t", &original_saveptr);
         
         if (!ssid || !password) {
             respondf("用法: %s <ssid> <password>", cmd);

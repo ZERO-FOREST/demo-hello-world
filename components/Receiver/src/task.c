@@ -2,7 +2,7 @@
  * @Author: tidycraze 2595256284@qq.com
  * @Date: 2025-09-05 10:04:45
  * @LastEditors: tidycraze 2595256284@qq.com
- * @LastEditTime: 2025-09-05 13:57:20
+ * @LastEditTime: 2025-09-05 16:13:10
  * @FilePath: \demo-hello-world\components\Receiver\src\task.c
  * @Description: 任务实现
  * 
@@ -32,7 +32,7 @@ static EventGroupHandle_t s_tcp_event_group = NULL;
 #define TCP_STOP_TASK_BIT         BIT2
 
 // TCP配置
-static const char *s_server_ip = "192.168.4.1";
+static const char *s_server_ip = "192.168.123.132";
 
 // 内部函数声明
 static void wifi_event_callback(wifi_pairing_state_t state, const char* ssid);
@@ -368,7 +368,7 @@ void tcp_task(void) {
     ESP_LOGW(TAG, "使用传统TCP任务函数，建议使用事件驱动的TCP任务管理器");
     
     // 使用指定的服务器配置
-    const char *server_ip = "192.168.4.1";
+    const char *server_ip = "192.168.123.132";
     
     // 初始化心跳模块（使用默认端口7878）
     if (!tcp_client_hb_init(server_ip, 0)) {

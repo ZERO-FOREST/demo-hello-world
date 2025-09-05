@@ -163,9 +163,10 @@ void tcp_client_telemetry_update_sim_data(tcp_client_telemetry_sim_data_t *sim_d
 
 /**
  * @brief 打印接收到的帧信息
- * @param frame 协议帧指针
+ * @param buffer 协议帧缓冲区指针
+ * @param buffer_len 缓冲区长度
  */
-void tcp_client_telemetry_print_received_frame(const protocol_frame_t *frame);
+void tcp_client_telemetry_print_received_frame(const uint8_t *buffer, uint16_t buffer_len);
 
 #ifdef __cplusplus
 }
