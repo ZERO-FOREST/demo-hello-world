@@ -271,6 +271,11 @@ static bool tcp_client_hb_connect_internal(void) {
     tcp_client_hb_set_state(TCP_CLIENT_HB_STATE_CONNECTED);
     ESP_LOGI(TAG, "连接成功");
 
+    // 连接成功后，立即发送第一个心跳包
+    if (!tcp_client_hb_send_packet()) {
+        ESP_LOGW(TAG, "发送初始心跳包失败");
+    }
+
     // 连接成功后，启动心跳定时器，停止重连定时器
     if (g_hb_client.reconnect_timer) {
         xTimerStop(g_hb_client.reconnect_timer, 0);
