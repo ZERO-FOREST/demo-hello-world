@@ -9,11 +9,9 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "tcp_protocol.h"
+#include "tcp_common_protocol.h"
+#include "cmd_terminal.h"
 #include <string.h>
-
-// 对外的行命令处理接口（由 cmd_terminal.c 提供）
-void cmd_terminal_handle_line(const char* line);
 
 static const char* TAG = "usb_rx";
 
@@ -39,38 +37,53 @@ static void parse_and_dispatch(const uint8_t* data, size_t len) {
         return;
 
     // 判断模式：若缓冲区以协议帧头(0xAA55)起始，则按二进制帧解析；否则按ASCII行命令解析
-    if (len >= 2 && data[0] == ((FRAME_HEADER >> 8) & 0xFF) && data[1] == (FRAME_HEADER & 0xFF)) {
+    if (len >= 2 && data[0] == ((PROTOCOL_SYNC_WORD >> 8) & 0xFF) && data[1] == (PROTOCOL_SYNC_WORD & 0xFF)) {
         size_t pos = 0;
         while (pos + MIN_FRAME_SIZE <= len) {
-            if (pos + 3 > len)
+            if (pos + sizeof(protocol_header_t) > len)
                 break;
-            if (!(data[pos] == ((FRAME_HEADER >> 8) & 0xFF) &&
-                  data[pos + 1] == (FRAME_HEADER & 0xFF))) {
+            
+            // 检查同步字
+            uint16_t sync_word = (data[pos] << 8) | data[pos + 1];
+            if (sync_word != PROTOCOL_SYNC_WORD) {
                 // 在二进制模式下遇到非帧头字节，跳过1字节
                 pos++;
                 continue;
             }
-            uint8_t length_field = data[pos + 2];
-            size_t frame_size = 2 + 1 + length_field + 2;
+            
+            // 获取协议头信息
+            protocol_header_t* header = (protocol_header_t*)&data[pos];
+            size_t frame_size = sizeof(protocol_header_t) + header->payload_length + sizeof(uint16_t);
+            
             if (pos + frame_size > len)
                 break; // 帧不完整，等待更多数据
 
-            protocol_frame_t frame;
-            parse_result_t pr = parse_protocol_frame(&data[pos], (uint16_t)frame_size, &frame);
-            if (pr == PARSE_SUCCESS) {
-                switch (frame.frame_type) {
-                case FRAME_TYPE_REMOTE_CONTROL:
-                    handle_remote_control_data(&frame.payload.remote_control);
+            protocol_frame_t* frame = (protocol_frame_t*)&data[pos];
+            
+            // 验证帧
+            if (validate_frame(frame, frame_size)) {
+                switch (frame->header.frame_type) {
+                case FRAME_TYPE_COMMAND:
+                    // 处理命令帧（如遥控数据）
+                    ESP_LOGI(TAG, "Received command frame via USB");
                     break;
                 case FRAME_TYPE_HEARTBEAT:
-                    handle_heartbeat_data(&frame.payload.heartbeat);
+                    // 处理心跳帧
+                    ESP_LOGI(TAG, "Received heartbeat frame via USB");
                     break;
-                case FRAME_TYPE_EXTENDED_CMD:
-                    handle_extended_command(&frame.payload.extended_cmd);
+                case FRAME_TYPE_EXTENDED:
+                    // 处理扩展帧
+                    ESP_LOGI(TAG, "Received extended frame via USB");
+                    if (frame->header.payload_length >= sizeof(extended_cmd_payload_t)) {
+                        handle_extended_command((const extended_cmd_payload_t*)frame->payload);
+                    }
                     break;
                 default:
+                    ESP_LOGW(TAG, "Unknown frame type: 0x%02X", frame->header.frame_type);
                     break;
                 }
+            } else {
+                ESP_LOGW(TAG, "Frame validation failed via USB");
             }
             pos += frame_size;
         }

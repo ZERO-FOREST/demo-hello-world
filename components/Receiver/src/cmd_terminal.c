@@ -8,7 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "tcp_protocol.h"
+#include "tcp_common_protocol.h"
 
 static const char* TAG = "cmd_terminal";
 

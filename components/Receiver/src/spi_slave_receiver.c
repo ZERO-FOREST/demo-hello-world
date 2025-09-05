@@ -10,7 +10,8 @@
 #include "freertos/task.h"
 #include "jpeg_stream_encoder.h"
 #include "settings_manager.h"
-#include "tcp_protocol.h"
+#include "tcp_common_protocol.h"
+#include "cmd_terminal.h"
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -51,37 +52,49 @@ static void spi_parse_and_dispatch(const uint8_t* data, size_t len) {
 
     size_t pos = 0;
     while (pos + MIN_FRAME_SIZE <= len) {
-        if (pos + 3 > len)
+        if (pos + sizeof(protocol_header_t) > len)
             break;
-        if (!(data[pos] == ((FRAME_HEADER >> 8) & 0xFF) &&
-              data[pos + 1] == (FRAME_HEADER & 0xFF))) {
+        
+        // 检查同步字
+        uint16_t sync_word = (data[pos] << 8) | data[pos + 1];
+        if (sync_word != PROTOCOL_SYNC_WORD) {
             pos++;
             continue;
         }
 
-        uint8_t length_field = data[pos + 2];
-        size_t frame_size = 2 + 1 + length_field + 2;
+        // 获取协议头信息
+        protocol_header_t* header = (protocol_header_t*)&data[pos];
+        size_t frame_size = sizeof(protocol_header_t) + header->payload_length + sizeof(uint16_t);
+        
         if (pos + frame_size > len)
             break;
 
-        protocol_frame_t frame;
-        parse_result_t pr = parse_protocol_frame(&data[pos], (uint16_t)frame_size, &frame);
-        if (pr == PARSE_SUCCESS) {
-            switch (frame.frame_type) {
-            case FRAME_TYPE_REMOTE_CONTROL:
-                handle_remote_control_data(&frame.payload.remote_control);
+        protocol_frame_t* frame = (protocol_frame_t*)&data[pos];
+        
+        // 验证帧
+        if (validate_frame(frame, frame_size)) {
+            switch (frame->header.frame_type) {
+            case FRAME_TYPE_COMMAND:
+                // 处理命令帧（如遥控数据）
+                ESP_LOGI(TAG, "Received command frame");
                 break;
             case FRAME_TYPE_HEARTBEAT:
-                handle_heartbeat_data(&frame.payload.heartbeat);
+                // 处理心跳帧
+                ESP_LOGI(TAG, "Received heartbeat frame");
                 break;
-            case FRAME_TYPE_EXTENDED_CMD:
-                handle_extended_command(&frame.payload.extended_cmd);
+            case FRAME_TYPE_EXTENDED:
+                // 处理扩展帧
+                ESP_LOGI(TAG, "Received extended frame");
+                if (frame->header.payload_length >= sizeof(extended_cmd_payload_t)) {
+                    handle_extended_command((const extended_cmd_payload_t*)frame->payload);
+                }
                 break;
             default:
+                ESP_LOGW(TAG, "Unknown frame type: 0x%02X", frame->header.frame_type);
                 break;
             }
         } else {
-            ESP_LOGW(TAG, "parse frame fail: %d", pr);
+            ESP_LOGW(TAG, "Frame validation failed");
         }
         pos += frame_size;
     }
